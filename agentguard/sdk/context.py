@@ -100,3 +100,85 @@ class AgentTrace:
     def tool(self, name: str, input_data: Any = None, metadata: Optional[dict] = None) -> ToolContext:
         """Create a tool context within this agent."""
         return ToolContext(name=name, input_data=input_data, metadata=metadata)
+
+
+class AsyncAgentTrace:
+    """Async context manager for recording agent execution.
+    
+    Example:
+        async with AsyncAgentTrace(name="my-agent", version="v1") as agent:
+            async with agent.tool("search") as t:
+                results = await search(query)
+                t.set_output(results)
+            agent.set_output(results)
+    """
+    
+    def __init__(self, name: str, version: str = "latest", metadata: Optional[dict] = None):
+        self.name = name
+        self.version = version
+        self._metadata = {"agent_version": version, **(metadata or {})}
+        self._span: Optional[Span] = None
+    
+    async def __aenter__(self) -> AsyncAgentTrace:
+        recorder = get_recorder()
+        self._span = Span(
+            span_type=SpanType.AGENT,
+            name=self.name,
+            parent_span_id=recorder.current_span_id,
+            metadata=self._metadata,
+        )
+        recorder.push_span(self._span)
+        return self
+    
+    async def __aexit__(self, exc_type, exc_val, exc_tb):
+        recorder = get_recorder()
+        if self._span:
+            if exc_type:
+                self._span.fail(f"{exc_type.__name__}: {exc_val}")
+            else:
+                self._span.complete()
+            recorder.pop_span(self._span)
+        return False
+    
+    def set_output(self, output: Any) -> None:
+        if self._span:
+            self._span.output_data = output
+    
+    def tool(self, name: str, input_data: Any = None, metadata: Optional[dict] = None) -> AsyncToolContext:
+        return AsyncToolContext(name=name, input_data=input_data, metadata=metadata)
+
+
+class AsyncToolContext:
+    """Async context manager for recording tool calls."""
+    
+    def __init__(self, name: str, input_data: Any = None, metadata: Optional[dict] = None):
+        self.name = name
+        self._input = input_data
+        self._metadata = metadata or {}
+        self._span: Optional[Span] = None
+    
+    async def __aenter__(self) -> AsyncToolContext:
+        recorder = get_recorder()
+        self._span = Span(
+            span_type=SpanType.TOOL,
+            name=self.name,
+            parent_span_id=recorder.current_span_id,
+            input_data=self._input,
+            metadata=self._metadata,
+        )
+        recorder.push_span(self._span)
+        return self
+    
+    async def __aexit__(self, exc_type, exc_val, exc_tb):
+        recorder = get_recorder()
+        if self._span:
+            if exc_type:
+                self._span.fail(f"{exc_type.__name__}: {exc_val}")
+            else:
+                self._span.complete()
+            recorder.pop_span(self._span)
+        return False
+    
+    def set_output(self, output: Any) -> None:
+        if self._span:
+            self._span.output_data = output

@@ -1,0 +1,33 @@
+{
+  "agents": [
+    {
+      "name": "news-collector",
+      "version": "v1.3",
+      "description": "Collects news articles from multiple sources",
+      "tests": [
+        {
+          "name": "output-quality",
+          "assertions": [
+            {"type": "min_count", "target": "articles", "value": 5, "name": "min-articles"},
+            {"type": "each_has", "target": "articles", "fields": ["title", "url", "date"], "name": "required-fields"},
+            {"type": "recency", "target": "articles.date", "within_days": 2, "name": "recent-articles"},
+            {"type": "no_duplicates", "target": "articles", "field": "url", "name": "unique-urls"}
+          ]
+        }
+      ]
+    },
+    {
+      "name": "analyst",
+      "version": "v2.0",
+      "tests": [
+        {
+          "name": "analysis-quality",
+          "assertions": [
+            {"type": "contains", "target": "analysis", "keywords": ["trend", "insight"], "mode": "any", "name": "has-insights"},
+            {"type": "regex", "target": "analysis", "pattern": "\\d+", "name": "has-data-points"}
+          ]
+        }
+      ]
+    }
+  ]
+}

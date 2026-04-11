@@ -8,7 +8,7 @@
 
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
 [![Python 3.11+](https://img.shields.io/badge/python-3.11+-blue.svg)](https://www.python.org/downloads/)
-[![Tests](https://img.shields.io/badge/tests-43%20passed-brightgreen.svg)]()
+[![Tests](https://img.shields.io/badge/tests-46%20passed-brightgreen.svg)]()
 
 </div>
 
@@ -123,6 +123,27 @@ finish_recording()
 
 All spawned agents appear in the same trace tree, properly nested under the parent.
 
+### Option 4: Async Agents
+
+```python
+from agentguard import record_agent_async, record_tool_async, AsyncAgentTrace
+
+@record_tool_async(name="search")
+async def search(query: str) -> list:
+    return await api.search(query)
+
+@record_agent_async(name="researcher", version="v1.0")
+async def researcher(topic: str) -> dict:
+    results = await search(topic)
+    return {"results": results}
+
+# Or with async context manager:
+async with AsyncAgentTrace(name="agent", version="v1") as agent:
+    async with agent.tool("search") as t:
+        results = await search(query)
+        t.set_output(results)
+```
+
 ### View Traces
 
 ```bash
@@ -235,6 +256,18 @@ generate_timeline_html()  # → .agentguard/report.html
 ```
 
 Opens a standalone HTML page with dark-theme timeline visualization — no JS frameworks, no build step.
+
+
+## CLI Reference
+
+```bash
+agentguard show <trace.json>                    # Display trace tree
+agentguard list [--dir .agentguard/traces]      # List all traces
+agentguard eval <trace.json> [--config cfg.json] # Evaluate against rules
+agentguard report [--dir DIR] [--output FILE]   # Generate HTML report
+agentguard guard [--dir DIR] [--interval 60]    # Continuous monitoring
+                 [--threshold 3] [--log FILE]
+```
 
 ## Design Principles
 
