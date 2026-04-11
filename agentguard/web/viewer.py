@@ -1,19 +1,33 @@
-"""Simple web viewer for traces — single HTML page, zero JS framework deps."""
+"""Standalone HTML trace report generator.
+
+Generates a single HTML file with dark-theme multi-agent timeline visualization.
+Zero JS framework dependencies — vanilla HTML/CSS/JS only.
+"""
 
 from __future__ import annotations
 
 import json
 from pathlib import Path
-from typing import Optional
 
 
-def generate_timeline_html(traces_dir: str = ".agentguard/traces", output: str = ".agentguard/report.html") -> str:
-    """Generate a standalone HTML report with multi-agent timeline."""
+def generate_timeline_html(
+    traces_dir: str = ".agentguard/traces",
+    output: str = ".agentguard/report.html",
+) -> str:
+    """Generate a standalone HTML report with multi-agent timeline.
+    
+    Args:
+        traces_dir: Directory containing trace JSON files.
+        output: Path for the output HTML file.
+    
+    Returns:
+        Path to the generated HTML file.
+    """
     traces_path = Path(traces_dir)
     traces = []
     
     if traces_path.exists():
-        for f in sorted(traces_path.glob("*.json"), key=lambda x: x.stat().st_mtime, reverse=True)[:20]:
+        for f in sorted(traces_path.glob("*.json"), key=lambda x: x.stat().st_mtime, reverse=True)[:50]:
             try:
                 traces.append(json.loads(f.read_text(encoding="utf-8")))
             except Exception:
@@ -27,140 +41,151 @@ def generate_timeline_html(traces_dir: str = ".agentguard/traces", output: str =
 
 
 def _build_html(traces: list[dict]) -> str:
-    """Build the complete HTML page."""
+    total_spans = sum(len(t.get("spans", [])) for t in traces)
+    passed = sum(1 for t in traces if t.get("status") == "completed")
+    failed = sum(1 for t in traces if t.get("status") == "failed")
+    total_duration = sum(t.get("duration_ms", 0) or 0 for t in traces)
+    avg_duration = total_duration / max(len(traces), 1)
+    
     trace_cards = "\n".join(_render_trace_card(t) for t in traces)
     
-    return f"""<!DOCTYPE html>
+    return f'''<!DOCTYPE html>
 <html lang="en">
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>🛡️ AgentGuard — Trace Report</title>
+<title>AgentGuard — Trace Report</title>
 <style>
+:root {{
+  --bg: #0d1117; --surface: #161b22; --border: #21262d;
+  --text: #c9d1d9; --text-dim: #8b949e; --text-bright: #f0f6fc;
+  --green: #3fb950; --red: #f85149; --blue: #58a6ff; --yellow: #d29922;
+  --green-bg: #1a3a1a; --red-bg: #3a1a1a;
+}}
 * {{ margin: 0; padding: 0; box-sizing: border-box; }}
-body {{ font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; 
-       background: #0d1117; color: #c9d1d9; padding: 20px; }}
-.header {{ text-align: center; padding: 30px 0; border-bottom: 1px solid #21262d; margin-bottom: 30px; }}
-.header h1 {{ font-size: 28px; color: #f0f6fc; }}
-.header p {{ color: #8b949e; margin-top: 8px; }}
-.stats {{ display: flex; gap: 20px; justify-content: center; margin: 20px 0; }}
-.stat {{ background: #161b22; border: 1px solid #21262d; border-radius: 8px; padding: 16px 24px; text-align: center; }}
-.stat .value {{ font-size: 24px; font-weight: 700; color: #f0f6fc; }}
-.stat .label {{ font-size: 12px; color: #8b949e; margin-top: 4px; }}
-.trace-card {{ background: #161b22; border: 1px solid #21262d; border-radius: 12px; 
-               margin-bottom: 20px; overflow: hidden; }}
-.trace-header {{ padding: 16px 20px; display: flex; justify-content: space-between; 
-                  align-items: center; border-bottom: 1px solid #21262d; }}
-.trace-title {{ font-weight: 600; color: #f0f6fc; }}
-.trace-meta {{ font-size: 12px; color: #8b949e; }}
-.badge {{ padding: 3px 10px; border-radius: 12px; font-size: 12px; font-weight: 600; }}
-.badge-pass {{ background: #1a3a1a; color: #3fb950; }}
-.badge-fail {{ background: #3a1a1a; color: #f85149; }}
-.timeline {{ padding: 16px 20px; }}
-.span {{ display: flex; align-items: center; padding: 6px 0; font-size: 14px; }}
-.span-indent {{ display: inline-block; }}
-.span-icon {{ margin-right: 8px; }}
-.span-name {{ font-weight: 500; color: #c9d1d9; }}
-.span-version {{ color: #8b949e; font-size: 12px; margin-left: 6px; }}
-.span-status {{ margin-left: auto; padding-left: 16px; }}
-.span-duration {{ color: #58a6ff; font-size: 12px; margin-left: 12px; min-width: 50px; text-align: right; }}
-.span-error {{ color: #f85149; font-size: 12px; padding-left: 40px; margin-top: 2px; }}
-.bar {{ height: 4px; border-radius: 2px; margin-top: 4px; }}
-.bar-pass {{ background: #238636; }}
-.bar-fail {{ background: #da3633; }}
-.empty {{ text-align: center; padding: 60px; color: #8b949e; }}
+body {{ font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, monospace;
+       background: var(--bg); color: var(--text); padding: 20px; max-width: 1200px; margin: 0 auto; }}
+.header {{ text-align: center; padding: 30px 0; border-bottom: 1px solid var(--border); margin-bottom: 24px; }}
+.header h1 {{ font-size: 24px; color: var(--text-bright); letter-spacing: -0.5px; }}
+.header p {{ color: var(--text-dim); margin-top: 6px; font-size: 14px; }}
+.stats {{ display: grid; grid-template-columns: repeat(auto-fit, minmax(140px, 1fr)); gap: 12px; margin-bottom: 24px; }}
+.stat {{ background: var(--surface); border: 1px solid var(--border); border-radius: 8px; padding: 16px; text-align: center; }}
+.stat .v {{ font-size: 28px; font-weight: 700; color: var(--text-bright); }}
+.stat .l {{ font-size: 11px; color: var(--text-dim); margin-top: 4px; text-transform: uppercase; letter-spacing: 0.5px; }}
+.card {{ background: var(--surface); border: 1px solid var(--border); border-radius: 8px; margin-bottom: 12px; overflow: hidden; }}
+.card-hdr {{ padding: 12px 16px; display: flex; justify-content: space-between; align-items: center;
+             border-bottom: 1px solid var(--border); cursor: pointer; }}
+.card-hdr:hover {{ background: rgba(255,255,255,0.02); }}
+.card-title {{ font-weight: 600; font-size: 14px; color: var(--text-bright); }}
+.card-meta {{ font-size: 12px; color: var(--text-dim); }}
+.badge {{ padding: 2px 8px; border-radius: 10px; font-size: 11px; font-weight: 600; }}
+.badge-pass {{ background: var(--green-bg); color: var(--green); }}
+.badge-fail {{ background: var(--red-bg); color: var(--red); }}
+.timeline {{ padding: 12px 16px; display: none; }}
+.timeline.open {{ display: block; }}
+.span {{ display: flex; align-items: center; padding: 4px 0; font-size: 13px; font-family: monospace; }}
+.span-icon {{ width: 20px; text-align: center; margin-right: 6px; flex-shrink: 0; }}
+.span-name {{ font-weight: 500; }}
+.span-ver {{ color: var(--text-dim); font-size: 11px; margin-left: 4px; }}
+.span-right {{ margin-left: auto; display: flex; align-items: center; gap: 8px; }}
+.span-dur {{ color: var(--blue); font-size: 12px; min-width: 50px; text-align: right; }}
+.span-err {{ color: var(--red); font-size: 12px; padding: 2px 0 2px 28px; }}
+.empty {{ text-align: center; padding: 60px; color: var(--text-dim); }}
+.footer {{ text-align: center; padding: 20px; color: var(--text-dim); font-size: 12px; border-top: 1px solid var(--border); margin-top: 24px; }}
 </style>
 </head>
 <body>
+
 <div class="header">
   <h1>🛡️ AgentGuard</h1>
   <p>Multi-Agent Trace Report</p>
 </div>
 
 <div class="stats">
-  <div class="stat">
-    <div class="value">{len(traces)}</div>
-    <div class="label">Traces</div>
-  </div>
-  <div class="stat">
-    <div class="value">{sum(len(t.get('spans',[])) for t in traces)}</div>
-    <div class="label">Total Spans</div>
-  </div>
-  <div class="stat">
-    <div class="value">{sum(1 for t in traces if t.get('status')=='completed')}</div>
-    <div class="label">Passed</div>
-  </div>
-  <div class="stat">
-    <div class="value">{sum(1 for t in traces if t.get('status')=='failed')}</div>
-    <div class="label">Failed</div>
-  </div>
+  <div class="stat"><div class="v">{len(traces)}</div><div class="l">Traces</div></div>
+  <div class="stat"><div class="v">{total_spans}</div><div class="l">Total Spans</div></div>
+  <div class="stat"><div class="v" style="color:var(--green)">{passed}</div><div class="l">Passed</div></div>
+  <div class="stat"><div class="v" style="color:var(--red)">{failed}</div><div class="l">Failed</div></div>
+  <div class="stat"><div class="v">{avg_duration/1000:.1f}s</div><div class="l">Avg Duration</div></div>
 </div>
 
-{trace_cards if traces else '<div class="empty">No traces found. Record some agent executions first.</div>'}
+{trace_cards if traces else '<div class="empty">No traces found.<br>Record some agent executions to see them here.</div>'}
 
+<div class="footer">Generated by AgentGuard · github.com/betaHi/AgentGuard</div>
+
+<script>
+document.querySelectorAll('.card-hdr').forEach(h => {{
+  h.addEventListener('click', () => {{
+    const tl = h.nextElementSibling;
+    tl.classList.toggle('open');
+    h.querySelector('.arrow').textContent = tl.classList.contains('open') ? '▼' : '▶';
+  }});
+}});
+// Open first card by default
+const first = document.querySelector('.timeline');
+if (first) {{ first.classList.add('open'); const a = first.previousElementSibling.querySelector('.arrow'); if(a) a.textContent = '▼'; }}
+</script>
 </body>
-</html>"""
+</html>'''
 
 
 def _render_trace_card(trace: dict) -> str:
-    """Render a single trace as an HTML card."""
     status = trace.get("status", "unknown")
-    badge_class = "badge-pass" if status == "completed" else "badge-fail"
-    badge_text = "✓ PASS" if status == "completed" else "✗ FAIL"
-    duration = trace.get("duration_ms")
-    dur_str = f"{duration:.0f}ms" if duration and duration < 1000 else (f"{duration/1000:.1f}s" if duration else "—")
+    badge_cls = "badge-pass" if status == "completed" else "badge-fail"
+    badge_txt = "PASS" if status == "completed" else "FAIL"
+    dur = trace.get("duration_ms")
+    dur_s = f"{dur:.0f}ms" if dur and dur < 1000 else (f"{dur/1000:.1f}s" if dur else "—")
+    spans = trace.get("spans", [])
     
     # Build tree
-    spans = trace.get("spans", [])
-    span_map = {s["span_id"]: s for s in spans}
+    span_map = {}
     for s in spans:
-        s["_children"] = []
+        span_map[s["span_id"]] = {**s, "children": []}
     roots = []
     for s in spans:
         pid = s.get("parent_span_id")
         if pid and pid in span_map:
-            span_map[pid]["_children"].append(s)
+            span_map[pid]["children"].append(span_map[s["span_id"]])
         else:
-            roots.append(s)
+            roots.append(span_map[s["span_id"]])
     
-    span_html = "\n".join(_render_span_html(r, 0) for r in roots)
+    span_html = "\n".join(_render_span(r, 0) for r in roots)
     
-    return f"""<div class="trace-card">
-  <div class="trace-header">
+    return f'''<div class="card">
+  <div class="card-hdr">
     <div>
-      <span class="trace-title">{trace.get('task', '(unnamed)')}</span>
-      <span class="trace-meta"> · {trace.get('trigger', '')} · {dur_str} · {len(spans)} spans</span>
+      <span class="arrow">▶</span>
+      <span class="card-title">{trace.get("task", "(unnamed)")}</span>
+      <span class="card-meta"> · {trace.get("trigger", "")} · {dur_s} · {len(spans)} spans</span>
     </div>
-    <span class="badge {badge_class}">{badge_text}</span>
+    <span class="badge {badge_cls}">{badge_txt}</span>
   </div>
   <div class="timeline">{span_html}</div>
-</div>"""
+</div>'''
 
 
-def _render_span_html(span: dict, depth: int) -> str:
-    """Render a span and its children as HTML."""
+def _render_span(span: dict, depth: int) -> str:
     icons = {"agent": "🤖", "tool": "🔧", "llm_call": "🧠", "handoff": "🔀"}
     icon = icons.get(span.get("span_type", ""), "●")
     name = span.get("name", "")
-    status = span.get("status", "running")
-    duration = span.get("duration_ms")
-    dur_str = f"{duration:.0f}ms" if duration and duration < 1000 else (f"{duration/1000:.1f}s" if duration else "")
-    version = span.get("metadata", {}).get("agent_version", "")
+    status = span.get("status", "")
+    dur = span.get("duration_ms")
+    dur_s = f"{dur:.0f}ms" if dur and dur < 1000 else (f"{dur/1000:.1f}s" if dur else "")
+    ver = span.get("metadata", {}).get("agent_version", "")
     
-    status_badge = f'<span class="badge badge-pass">✓</span>' if status == "completed" else f'<span class="badge badge-fail">✗</span>' if status == "failed" else ""
-    version_html = f'<span class="span-version">({version})</span>' if version else ""
-    indent = f'style="padding-left: {depth * 24}px"'
+    s_badge = f'<span class="badge badge-pass">✓</span>' if status == "completed" else (f'<span class="badge badge-fail">✗</span>' if status == "failed" else "")
+    ver_html = f'<span class="span-ver">({ver})</span>' if ver else ""
+    pad = f'style="padding-left:{depth*20}px"'
     
-    error_html = ""
+    err = ""
     if span.get("error"):
-        error_html = f'\n    <div class="span-error" style="padding-left: {depth * 24 + 32}px">⚠ {span["error"]}</div>'
+        err = f'\n<div class="span-err" style="padding-left:{depth*20+28}px">⚠ {span["error"]}</div>'
     
-    children_html = "\n".join(_render_span_html(c, depth + 1) for c in span.get("_children", []))
+    children = "\n".join(_render_span(c, depth + 1) for c in span.get("children", []))
     
-    return f"""    <div class="span" {indent}>
-      <span class="span-icon">{icon}</span>
-      <span class="span-name">{name}</span>{version_html}
-      <span class="span-status">{status_badge}</span>
-      <span class="span-duration">{dur_str}</span>
-    </div>{error_html}
-{children_html}"""
+    return f'''<div class="span" {pad}>
+  <span class="span-icon">{icon}</span>
+  <span class="span-name">{name}</span>{ver_html}
+  <span class="span-right">{s_badge}<span class="span-dur">{dur_s}</span></span>
+</div>{err}
+{children}'''

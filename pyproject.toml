@@ -12,18 +12,34 @@ requires-python = ">=3.11"
 authors = [
     {name = "betaHi"},
 ]
-keywords = ["ai", "agent", "observability", "testing", "reliability"]
+keywords = ["ai", "agent", "observability", "testing", "reliability", "multi-agent", "evaluation"]
 classifiers = [
     "Development Status :: 3 - Alpha",
     "Intended Audience :: Developers",
     "License :: OSI Approved :: MIT License",
     "Programming Language :: Python :: 3.11",
     "Programming Language :: Python :: 3.12",
+    "Programming Language :: Python :: 3.13",
     "Topic :: Software Development :: Testing",
+    "Topic :: Software Development :: Quality Assurance",
+    "Topic :: System :: Monitoring",
 ]
 
 [project.optional-dependencies]
+yaml = ["pyyaml>=6.0"]
 dev = ["pytest>=7.0"]
+all = ["pyyaml>=6.0"]
+
+[project.scripts]
+agentguard = "agentguard.cli.main:main"
+
+[project.urls]
+Homepage = "https://github.com/betaHi/AgentGuard"
+Repository = "https://github.com/betaHi/AgentGuard"
+Issues = "https://github.com/betaHi/AgentGuard/issues"
+
+[tool.setuptools.packages.find]
+include = ["agentguard*"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
