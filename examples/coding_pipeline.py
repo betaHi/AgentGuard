@@ -333,6 +333,22 @@ def main():
     print(f"\n  📊 CLI: agentguard show .agentguard/traces/{trace.trace_id}.json")
     print(f"  📊 CLI: agentguard analyze .agentguard/traces/{trace.trace_id}.json")
     print(f"  🌐 Web: {report}")
+    # Self-reflection and learning
+    from agentguard.evolve import EvolutionEngine
+    engine = EvolutionEngine()
+    reflection = engine.learn(trace)
+    
+    print(f"\n  🧠 Self-Reflection:")
+    for l in reflection.lessons[:3]:
+        icon = {"failure": "🔴", "bottleneck": "🐢", "handoff": "🔀"}.get(l.category, "•")
+        print(f"    {icon} {l.agent}: {l.suggestion[:60]}")
+    
+    suggestions = engine.suggest()
+    if suggestions:
+        print(f"\n  💡 Top Suggestion (from {engine.kb.trace_count} runs):")
+        s = suggestions[0]
+        print(f"    {s.agent}: {s.suggestion} ({s.confidence:.0%} confidence)")
+    
     print(f"{'═' * 70}")
 
 
