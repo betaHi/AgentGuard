@@ -19,6 +19,9 @@ Pipeline:
 
 import time
 import random
+
+# Seed for reproducible demo output
+random.seed(42)
 import sys
 import os
 
