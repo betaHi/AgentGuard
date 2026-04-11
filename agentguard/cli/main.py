@@ -210,7 +210,7 @@ def cmd_analyze(args):
     data = json.loads(path.read_text(encoding="utf-8"))
     trace = ExecutionTrace.from_dict(data)
     
-    from agentguard.analysis import analyze_failures, analyze_flow
+    from agentguard.analysis import analyze_failures, analyze_flow, analyze_bottleneck
     
     # Failure analysis
     failures = analyze_failures(trace)
