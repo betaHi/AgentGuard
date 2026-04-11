@@ -27,26 +27,29 @@ Existing tools (Langfuse, Phoenix, etc.) show you what happens inside a single L
 
 ## Screenshots
 
-### Multi-Agent Trace: 7 Agents, 10 Tools, 4 Handoffs
+### Orchestration Timeline
 
 <p align="center">
-  <img src="docs/screenshots/cli-trace-complex.png" alt="AgentGuard — Complex Multi-Agent Trace" width="740">
+  <img src="docs/screenshots/prototype-hero.png" alt="AgentGuard — Gantt-style orchestration timeline" width="1100">
 </p>
 
-> A real pipeline: planner → researcher → data-enricher → analyst → writer → notifier. Shows handoffs (🔀), graceful fallback (vector_search → keyword_search), bottleneck annotation (🐢 analyst 50%), and unhandled failure (💥 notifier).
+> Gantt-style timeline: 7 agents, 10 tools, 4 handoffs with context sizes. Bottleneck (🐢 analyst 50%), fallback (⚡ vector_search → keyword_search), and unhandled failure (💥 notifier) all visible at a glance.
 
 ### Orchestration Diagnostics
 
 <p align="center">
-  <img src="docs/screenshots/cli-analysis.png" alt="AgentGuard — Failure Propagation & Bottleneck Analysis" width="650">
+  <img src="docs/screenshots/prototype-diagnostics.png" alt="AgentGuard — Failure propagation, bottleneck, handoff flow, critical path" width="900">
 </p>
 
-> `agentguard analyze`: failure propagation (handled vs unhandled), resilience score, bottleneck identification with agent rankings, handoff flow with context sizes.
+> Four diagnostic panels: failure propagation (handled vs unhandled), bottleneck analysis with agent rankings, handoff flow with context sizes, and critical path identification.
 
-### Web Dashboard
+### CLI Trace & Analysis
 
 <p align="center">
-  <img src="docs/screenshots/web-report-hero.png" alt="AgentGuard Web Dashboard" width="900">
+  <img src="docs/screenshots/cli-trace-complex.png" alt="AgentGuard CLI — Complex trace" width="740">
+</p>
+<p align="center">
+  <img src="docs/screenshots/cli-analysis.png" alt="AgentGuard CLI — Diagnostics" width="650">
 </p>
 
 ## Core: The Trace
