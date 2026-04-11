@@ -106,3 +106,14 @@ The sprint is COMPLETE when:
 - Created repo structure
 - Wrote program.md
 - Starting Sprint 1
+
+### 2026-04-11 — Sprint 1 Complete ✅
+- Core trace schema: ExecutionTrace, Span (agent/tool/llm_call/handoff)
+- SDK decorators: @record_agent, @record_tool with automatic nesting
+- TraceRecorder: thread-safe, parent-child context propagation
+- CLI: `agentguard show` with colored tree view, `agentguard list`
+- Demo: multi-agent workflow (orchestrator → news collector → tech analyst)
+- Demo: failure detection with error propagation visualization
+- Tests: 11/11 passing
+- README: with demo output screenshots
+- Zero external dependencies for core

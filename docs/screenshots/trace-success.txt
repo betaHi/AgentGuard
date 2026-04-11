@@ -1,0 +1,27 @@
+
+════════════════════════════════════════════════════════════
+  🛡️  AgentGuard Trace Report
+════════════════════════════════════════════════════════════
+
+  Trace ID:    7d3b7fe1-71d1-41
+  Task:        AI Agent Daily Report
+  Trigger:     cron
+  Status:       ✓ PASS 
+  Duration:    1.2s
+  Agents:      3
+  Tool calls:  5
+  Total spans: 8
+
+  Execution Timeline
+  ──────────────────────────────────────────────────
+  🤖 基围小小虾 🦐 (v1.0)   ✓ PASS   1.2s
+  ├── 🤖 北极虾 ❄️ (v1.3)   ✓ PASS   547ms
+  │   ├── 🔧 web_search   ✓ PASS   115ms
+  │   ├── 🔧 github_trending   ✓ PASS   152ms
+  │   └── 🔧 summarize   ✓ PASS   281ms
+  └── 🤖 皮皮虾 👊 (v2.0)   ✓ PASS   632ms
+      ├── 🔧 web_search   ✓ PASS   272ms
+      └── 🔧 summarize   ✓ PASS   360ms
+
+════════════════════════════════════════════════════════════
+

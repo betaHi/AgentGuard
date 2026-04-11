@@ -8,6 +8,7 @@
 
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
 [![Python 3.11+](https://img.shields.io/badge/python-3.11+-blue.svg)](https://www.python.org/downloads/)
+[![Tests](https://img.shields.io/badge/tests-11%20passed-brightgreen.svg)]()
 
 </div>
 
@@ -39,13 +40,70 @@ Record  →  Replay  →  Evaluate  →  Guard
 | **Evaluate** | Rule + LLM quality assessment | Define what "good" looks like |
 | **Guard** | Continuous monitoring & regression alerts | Catch degradation before users do |
 
-## Key Design Decisions
+## Demo
 
-- **Framework-agnostic** — Works with any agent system (LangChain, CrewAI, custom, etc.)
-- **Zero dependencies to start** — Core SDK uses only Python stdlib
-- **Local-first** — No cloud, no database, no Docker required
-- **OTel-compatible** — Follows OpenTelemetry GenAI semantic conventions
-- **Not another framework** — We don't build agents. We make sure yours keep working.
+### ✅ Multi-Agent Success Trace
+
+```
+════════════════════════════════════════════════════════════
+  🛡️  AgentGuard Trace Report
+════════════════════════════════════════════════════════════
+
+  Trace ID:    7d3b7fe1-71d1-41
+  Task:        AI Agent Daily Report
+  Trigger:     cron
+  Status:       ✓ PASS
+  Duration:    1.2s
+  Agents:      3
+  Tool calls:  5
+  Total spans: 8
+
+  Execution Timeline
+  ──────────────────────────────────────────────────
+  🤖 基围小小虾 🦐 (v1.0)   ✓ PASS   1.2s
+  ├── 🤖 北极虾 ❄️ (v1.3)   ✓ PASS   547ms
+  │   ├── 🔧 web_search   ✓ PASS   115ms
+  │   ├── 🔧 github_trending   ✓ PASS   152ms
+  │   └── 🔧 summarize   ✓ PASS   281ms
+  └── 🤖 皮皮虾 👊 (v2.0)   ✓ PASS   632ms
+      ├── 🔧 web_search   ✓ PASS   272ms
+      └── 🔧 summarize   ✓ PASS   360ms
+
+════════════════════════════════════════════════════════════
+```
+
+### ❌ Failure Detection & Error Propagation
+
+```
+════════════════════════════════════════════════════════════
+  🛡️  AgentGuard Trace Report
+════════════════════════════════════════════════════════════
+
+  Trace ID:    251d1a2e-ad6e-49
+  Task:        AI Daily Report (with failures)
+  Trigger:     cron
+  Status:       ✗ FAIL
+  Duration:    251ms
+  Agents:      3
+  Tool calls:  3
+  Total spans: 6
+
+  Execution Timeline
+  ──────────────────────────────────────────────────
+  🤖 基围小小虾 🦐 (v1.0)   ✓ PASS   250ms
+  ├── 🤖 北极虾 ❄️ (v1.3)   ✓ PASS   150ms
+  │   ├── 🔧 web_search   ✗ FAIL   100ms
+  │   │      ⚠ ConnectionError: Search API timeout after 10s
+  │   └── 🔧 cache_lookup   ✓ PASS   50ms
+  └── 🤖 皮皮虾 👊 (v2.0)   ✗ FAIL   100ms
+         ⚠ ConnectionError: Search API timeout after 10s
+      └── 🔧 web_search   ✗ FAIL   100ms
+             ⚠ ConnectionError: Search API timeout after 10s
+
+════════════════════════════════════════════════════════════
+```
+
+> Notice: 北极虾 gracefully fell back to cache, while 皮皮虾 propagated the failure upward. AgentGuard makes this visible.
 
 ## Quick Start
 
@@ -57,71 +115,68 @@ pip install agentguard
 
 ```python
 from agentguard import record_agent, record_tool
+from agentguard.sdk.recorder import init_recorder, finish_recording
 
-@record_agent(name="news-collector", version="v1.0")
+# Initialize a recording session
+recorder = init_recorder(task="Daily Report", trigger="cron")
+
+@record_agent(name="news-collector", version="v1.3")
 def collect_news(topic: str) -> list[dict]:
-    articles = search_web(topic)
-    return summarize(articles)
+    results = search_web(topic)
+    return summarize(results)
 
 @record_tool(name="web_search")
 def search_web(query: str) -> list[str]:
     # your search logic
     ...
+
+# Run your agents
+collect_news("AI developments")
+
+# Save the trace
+trace = finish_recording()
+# → .agentguard/traces/<trace_id>.json
 ```
 
-### Evaluate
-
-```yaml
-# agentguard.yaml
-agents:
-  - name: news-collector
-    tests:
-      - name: daily-report-quality
-        assertions:
-          - type: min_count
-            target: articles
-            value: 5
-          - type: each_has
-            target: articles
-            fields: [title, date, url]
-          - type: recency
-            target: articles.date
-            within_days: 2
-```
+### View Traces
 
 ```bash
-agentguard eval run
+# Show a specific trace
+python -m agentguard.cli.main show .agentguard/traces/<trace_id>.json
+
+# List all traces
+python -m agentguard.cli.main list
 ```
 
-### Guard
+## Key Design Decisions
 
-```bash
-agentguard guard --watch --alert-on regression
-```
+- **Framework-agnostic** — Works with any agent (LangChain, CrewAI, custom, etc.)
+- **Zero dependencies** — Core SDK uses only Python stdlib
+- **Local-first** — No cloud, no database, no Docker required
+- **OTel-compatible** — Follows OpenTelemetry GenAI semantic conventions
+- **Not another framework** — We don't build agents. We make sure yours keep working.
 
 ## How This Project Is Built
 
-AgentGuard is developed using the [Ralph Loop](https://ghuntley.com/ralph/) methodology combined with [autoresearch](https://github.com/karpathy/autoresearch) principles:
+AgentGuard is developed using the [Ralph Loop](https://ghuntley.com/ralph/) methodology:
 
-> An AI agent iteratively builds this SDK — writing code, running tests, evaluating results, and improving. The project is its own first user.
+> A simple loop that repeatedly lets an AI agent execute → evaluate → improve, turning predictable failures into progress.
 
-See [`program.md`](program.md) for the current development program.
+Combined with [Karpathy's autoresearch](https://github.com/karpathy/autoresearch) principles — the agent modifies code, humans edit [`program.md`](program.md).
 
 ## Positioning
 
-AgentGuard is **not** competing with:
-- **Langfuse / Phoenix** — They do LLM-call-level observability (great at it). We do multi-agent orchestration level.
-- **LangChain / CrewAI** — They build agents. We make sure agents keep working.
-- **OpenTelemetry** — We follow OTel standards. AgentGuard is a consumer of OTel, not a replacement.
-
-AgentGuard sits **above** these tools — the engineering layer between "agent works in dev" and "agent works in production."
+| Tool | Focus | Relationship |
+|------|-------|-------------|
+| **Langfuse** | LLM call-level tracing | AgentGuard sits above — orchestration level |
+| **LangChain / CrewAI** | Building agents | AgentGuard ensures they keep working |
+| **OpenTelemetry** | Observability standard | AgentGuard follows OTel conventions |
 
 ## Roadmap
 
-- [x] Project structure & program.md
-- [ ] **Sprint 1:** Core schemas + SDK + CLI skeleton
-- [ ] **Sprint 2:** Evaluation engine (rules + LLM)
-- [ ] **Sprint 3:** Replay + regression detection
+- [x] **Sprint 1:** Core schemas + SDK decorators + CLI trace viewer
+- [ ] **Sprint 2:** Rule-based evaluation engine + config versioning
+- [ ] **Sprint 3:** Replay + LLM evaluator + regression detection
 - [ ] **Sprint 4:** Guard mode + Web UI
 
 ## Contributing
