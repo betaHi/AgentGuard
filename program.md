@@ -6,7 +6,7 @@
 ## Project Identity
 
 - **Name:** AgentGuard
-- **One-liner:** Record, Replay, Evaluate, and Guard your AI Agents.
+- **One-liner:** Observability for multi-agent orchestration.
 - **Repo:** https://github.com/betaHi/AgentGuard
 - **License:** MIT
 - **Language:** Python 3.11+
