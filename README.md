@@ -52,6 +52,24 @@ Existing tools (Langfuse, Phoenix, etc.) show you what happens inside a single L
   <img src="docs/screenshots/cli-analysis.png" alt="AgentGuard CLI — Diagnostics" width="650">
 </p>
 
+## Example: Multi-Agent Coding Pipeline
+
+The included demo (`examples/coding_pipeline.py`) models a realistic AI coding agent:
+
+```
+coding-pipeline (coordinator)
+├── planner          — LLM breaks user request into subtasks
+├── code-searcher    — vector search + codebase search (with fallback)  
+├── code-generator   — LLM writes implementation
+├── code-reviewer    — LLM reviews + static analysis
+├── test-runner      — executes test suite
+├── deployer         — creates PR + triggers CI
+└── notifier         — sends Slack notifications (may fail)
+```
+
+8 agents, 11 tools, 6 handoffs, real failures, real fallbacks.
+This is the kind of pipeline behind Cursor, Copilot Workspace, and Claude Code.
+
 ## Core: The Trace
 
 Everything in AgentGuard is built on one data model — the **multi-agent execution trace**.
