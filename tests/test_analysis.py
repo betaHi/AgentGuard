@@ -133,3 +133,26 @@ def test_flow_analysis_context_tracking():
         h = flow.handoffs[0]
         assert h.context_size_bytes > 0
         assert isinstance(h.context_keys, list)
+
+
+def test_bottleneck_analysis():
+    """Identifies the performance bottleneck."""
+    from agentguard.analysis import analyze_bottleneck
+    trace = _make_flow_trace()
+    result = analyze_bottleneck(trace)
+    
+    assert result.bottleneck_span != ""
+    assert result.bottleneck_duration_ms > 0
+    assert result.bottleneck_pct > 0
+    assert len(result.agent_rankings) > 0
+    assert len(result.critical_path) > 0
+
+
+def test_bottleneck_report():
+    """Bottleneck report is readable."""
+    from agentguard.analysis import analyze_bottleneck
+    trace = _make_flow_trace()
+    result = analyze_bottleneck(trace)
+    report = result.to_report()
+    assert "Bottleneck" in report
+    assert "Critical path" in report

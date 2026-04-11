@@ -310,3 +310,98 @@ def analyze_flow(trace: ExecutionTrace) -> FlowAnalysis:
         critical_path_duration_ms=critical_duration,
         parallel_groups=parallel_groups,
     )
+
+
+@dataclass
+class BottleneckReport:
+    """Identifies performance bottlenecks in multi-agent execution."""
+    critical_path: list[str]
+    critical_path_duration_ms: float
+    bottleneck_span: str  # name of the slowest span on the critical path
+    bottleneck_duration_ms: float
+    bottleneck_pct: float  # % of total trace time consumed by bottleneck
+    agent_rankings: list[dict]  # agents sorted by duration
+
+    def to_dict(self) -> dict:
+        return {
+            "critical_path": self.critical_path,
+            "critical_path_duration_ms": round(self.critical_path_duration_ms, 1),
+            "bottleneck": self.bottleneck_span,
+            "bottleneck_duration_ms": round(self.bottleneck_duration_ms, 1),
+            "bottleneck_pct": round(self.bottleneck_pct, 1),
+            "agent_rankings": self.agent_rankings,
+        }
+
+    def to_report(self) -> str:
+        lines = [
+            "# Bottleneck Analysis",
+            "",
+            f"- **Critical path:** {' → '.join(self.critical_path)}",
+            f"- **Bottleneck:** {self.bottleneck_span} ({self.bottleneck_duration_ms:.0f}ms, {self.bottleneck_pct:.0f}% of total)",
+            "",
+            "## Agent Rankings (slowest first)",
+            "",
+        ]
+        for i, a in enumerate(self.agent_rankings):
+            lines.append(f"{i+1}. **{a['name']}** — {a['duration_ms']:.0f}ms ({a['pct']:.0f}%)")
+        return "\n".join(lines)
+
+
+def analyze_bottleneck(trace: ExecutionTrace) -> BottleneckReport:
+    """Identify the performance bottleneck in a trace.
+    
+    Answers: "Which agent is the performance bottleneck?"
+    """
+    span_map = {s.span_id: s for s in trace.spans}
+    children_map: dict[str, list[Span]] = {}
+    for s in trace.spans:
+        if s.parent_span_id:
+            children_map.setdefault(s.parent_span_id, []).append(s)
+    
+    # Find critical path (longest chain)
+    def longest_path(span_id: str) -> tuple[list[str], float]:
+        span = span_map.get(span_id)
+        if not span:
+            return [], 0
+        children = children_map.get(span_id, [])
+        if not children:
+            return [span.name], span.duration_ms or 0
+        best_path, best_dur = [], 0
+        for child in children:
+            cp, cd = longest_path(child.span_id)
+            if cd > best_dur:
+                best_path, best_dur = cp, cd
+        return [span.name] + best_path, (span.duration_ms or 0)
+    
+    roots = [s for s in trace.spans if s.parent_span_id is None or s.parent_span_id not in span_map]
+    critical_path, critical_dur = [], 0
+    for root in roots:
+        path, dur = longest_path(root.span_id)
+        if dur > critical_dur:
+            critical_path, critical_dur = path, dur
+    
+    # Find bottleneck: slowest span on critical path
+    total_dur = trace.duration_ms or 1
+    path_spans = [s for s in trace.spans if s.name in critical_path]
+    bottleneck = max(path_spans, key=lambda s: s.duration_ms or 0) if path_spans else trace.spans[0] if trace.spans else None
+    
+    # Rank agents by duration
+    agent_rankings = []
+    for s in trace.agent_spans:
+        d = s.duration_ms or 0
+        agent_rankings.append({
+            "name": s.name,
+            "duration_ms": d,
+            "pct": (d / max(total_dur, 1)) * 100,
+            "status": s.status.value,
+        })
+    agent_rankings.sort(key=lambda x: x["duration_ms"], reverse=True)
+    
+    return BottleneckReport(
+        critical_path=critical_path,
+        critical_path_duration_ms=critical_dur,
+        bottleneck_span=bottleneck.name if bottleneck else "",
+        bottleneck_duration_ms=bottleneck.duration_ms or 0 if bottleneck else 0,
+        bottleneck_pct=((bottleneck.duration_ms or 0) / max(total_dur, 1)) * 100 if bottleneck else 0,
+        agent_rankings=agent_rankings,
+    )
