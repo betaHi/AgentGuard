@@ -401,7 +401,7 @@ def main():
     
     args = parser.parse_args()
     
-    cmds = {"show": cmd_show, "list": cmd_list, "eval": cmd_eval, "validate": cmd_validate, "diff": cmd_diff, "analyze": cmd_analyze, "report": cmd_report, "guard": cmd_guard}
+    cmds = {"show": cmd_show, "list": cmd_list, "eval": cmd_eval, "validate": cmd_validate, "diff": cmd_diff, "analyze": cmd_analyze, "evolve": cmd_evolve, "report": cmd_report, "guard": cmd_guard}
     if args.command in cmds:
         cmds[args.command](args)
     else:
