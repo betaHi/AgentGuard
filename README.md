@@ -250,11 +250,15 @@ export_jsonl(trace, "output.jsonl")    # for log aggregation
 ## CLI
 
 ```bash
-agentguard show <trace.json>                     # display trace tree
-agentguard list [--dir DIR]                      # list traces
-agentguard eval <trace.json> [--config cfg.json] # evaluate against rules
-agentguard report [--dir DIR]                    # generate HTML report
-agentguard guard [--dir DIR] [--interval 60]     # continuous monitoring
+agentguard show <trace.json>                      # display trace tree
+agentguard list [--dir DIR]                       # list traces
+agentguard eval <trace.json> [--config cfg.json]  # evaluate against rules
+agentguard validate <trace.json>                  # check trace integrity
+agentguard diff <trace_a> <trace_b>               # compare two traces
+agentguard analyze <trace.json>                   # failure + bottleneck + flow + context
+agentguard evolve --learn --suggest               # self-reflection + knowledge
+agentguard report [--dir DIR]                     # generate HTML panel
+agentguard guard [--dir DIR] [--interval 60]      # continuous monitoring
 ```
 
 ## Design
@@ -277,12 +281,12 @@ agentguard guard [--dir DIR] [--interval 60]     # continuous monitoring
 ## Architecture
 
 ```
-Your Agents → AgentGuard SDK → Traces (JSON) → Analysis Tools
+Your Agents → AgentGuard SDK → Traces (JSON) → Analysis + Evolution
                                     │
                     ┌───────────────┼───────────────┐
                     ▼               ▼               ▼
-              CLI viewer      Eval engine      Web report
-              Guard mode      Replay engine    OTel export
+              CLI (9 commands)  Web panel       Evolve engine
+              Guard mode       Eval/Replay     OTel export
 ```
 
 See [docs/architecture.md](docs/architecture.md) for details.
