@@ -18,7 +18,11 @@ Integration styles:
     async with AsyncAgentTrace(name="my-agent", version="v1") as agent:
         ...
     
-    # Style 5: Spawned processes
+    # Style 6: Explicit handoff recording
+    from agentguard import record_handoff
+    record_handoff(from_agent="a", to_agent="b", context={...})
+    
+    # Style 7: Spawned processes
     from agentguard.sdk.distributed import inject_trace_context, init_recorder_from_env
 """
 
@@ -27,10 +31,12 @@ __version__ = "0.1.0"
 from agentguard.sdk.decorators import record_agent, record_tool
 from agentguard.sdk.async_decorators import record_agent_async, record_tool_async
 from agentguard.sdk.context import AgentTrace, ToolContext, AsyncAgentTrace, AsyncToolContext
+from agentguard.sdk.handoff import record_handoff
 
 __all__ = [
     "record_agent", "record_tool",
     "record_agent_async", "record_tool_async",
     "AgentTrace", "ToolContext",
     "AsyncAgentTrace", "AsyncToolContext",
+    "record_handoff",
 ]
