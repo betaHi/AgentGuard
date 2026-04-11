@@ -1,9 +1,10 @@
 """Standalone HTML trace report generator.
 
 Generates a single HTML file with multi-agent orchestration diagnostics.
-Zero JS framework dependencies — vanilla HTML/CSS/JS only.
+Zero JS framework dependencies.
 
-Focus: orchestration timeline, handoff visibility, failure propagation.
+KEY: This module consumes analysis results from agentguard.analysis,
+NOT reimplementing diagnostic logic. Single source of truth.
 """
 
 from __future__ import annotations
@@ -11,11 +12,13 @@ from __future__ import annotations
 import html as html_mod
 import json
 from pathlib import Path
-from typing import Optional
+from typing import Any
+
+from agentguard.core.trace import ExecutionTrace
+from agentguard.analysis import analyze_failures, analyze_flow, analyze_bottleneck
 
 
-def _esc(text) -> str:
-    """Escape text for safe HTML insertion."""
+def _esc(text: Any) -> str:
     return html_mod.escape(str(text)) if text else ""
 
 
@@ -23,141 +26,53 @@ def generate_timeline_html(
     traces_dir: str = ".agentguard/traces",
     output: str = ".agentguard/report.html",
 ) -> str:
-    """Generate a standalone HTML report with orchestration diagnostics.
-    
-    Args:
-        traces_dir: Directory containing trace JSON files.
-        output: Path for the output HTML file.
-    
-    Returns:
-        Path to the generated HTML file.
-    """
     traces_path = Path(traces_dir)
-    traces = []
+    traces_data = []  # raw dicts for rendering
+    trace_objs = []   # ExecutionTrace objects for analysis
     
     if traces_path.exists():
         for f in sorted(traces_path.glob("*.json"), key=lambda x: x.stat().st_mtime, reverse=True)[:50]:
             try:
-                traces.append(json.loads(f.read_text(encoding="utf-8")))
+                raw = json.loads(f.read_text(encoding="utf-8"))
+                traces_data.append(raw)
+                trace_objs.append(ExecutionTrace.from_dict(raw))
             except Exception:
                 pass
     
     out_path = Path(output)
     out_path.parent.mkdir(parents=True, exist_ok=True)
-    out_path.write_text(_build_html(traces), encoding="utf-8")
+    out_path.write_text(_build_html(traces_data, trace_objs), encoding="utf-8")
     return str(out_path)
 
 
-def _compute_stats(traces: list[dict]) -> dict:
-    """Compute orchestration-specific statistics."""
-    total_spans = sum(len(t.get("spans", [])) for t in traces)
-    all_agents = []
-    agent_durations: dict[str, list[float]] = {}
-    failed_count = 0
-    total_dur = 0
+def _build_html(traces_data: list[dict], trace_objs: list[ExecutionTrace]) -> str:
+    """Build HTML using analysis layer for all diagnostics."""
     
-    for t in traces:
-        spans = t.get("spans", [])
-        dur = t.get("duration_ms") or 0
-        total_dur += dur
-        if t.get("status") == "failed":
-            failed_count += 1
-        for s in spans:
-            if s.get("span_type") == "agent":
-                name = s.get("name", "")
-                all_agents.append(name)
-                d = s.get("duration_ms")
-                if d:
-                    agent_durations.setdefault(name, []).append(d)
-    
-    # Find slowest agent (by average)
+    # Aggregate stats from analysis
+    total = len(trace_objs)
+    passed = sum(1 for t in trace_objs if t.status.value == "completed")
+    failed = total - passed
+    all_agent_names = set()
     slowest_agent = ""
-    slowest_avg = 0
-    for name, durs in agent_durations.items():
-        avg = sum(durs) / len(durs)
-        if avg > slowest_avg:
-            slowest_avg = avg
-            slowest_agent = name
+    slowest_dur = 0
     
-    unique_agents = len(set(all_agents))
-    avg_dur = total_dur / max(len(traces), 1)
+    for t in trace_objs:
+        for s in t.agent_spans:
+            all_agent_names.add(s.name)
+            d = s.duration_ms or 0
+            if d > slowest_dur:
+                slowest_dur = d
+                slowest_agent = s.name
     
-    return {
-        "traces": len(traces),
-        "spans": total_spans,
-        "agents": unique_agents,
-        "passed": len(traces) - failed_count,
-        "failed": failed_count,
-        "avg_duration": avg_dur,
-        "slowest_agent": slowest_agent,
-        "slowest_avg_ms": slowest_avg,
-    }
-
-
-def _trace_summary(trace: dict) -> dict:
-    """Compute per-trace diagnostic summary."""
-    spans = trace.get("spans", [])
-    agents = [s for s in spans if s.get("span_type") == "agent"]
-    tools = [s for s in spans if s.get("span_type") == "tool"]
-    failed = [s for s in spans if s.get("status") == "failed"]
+    avg_dur = sum((t.duration_ms or 0) for t in trace_objs) / max(total, 1)
     
-    # Slowest agent
-    slowest = max(agents, key=lambda s: s.get("duration_ms") or 0) if agents else None
+    # Render trace cards using analysis results
+    cards = []
+    for raw, obj in zip(traces_data, trace_objs):
+        cards.append(_render_trace_card(raw, obj))
     
-    # First failure
-    first_fail = None
-    for s in spans:
-        if s.get("status") == "failed":
-            first_fail = s
-            break
-    
-    # Detect fallback: a failed tool followed by a successful tool under same parent
-    has_fallback = False
-    parent_tools: dict[str, list[dict]] = {}
-    for s in tools:
-        pid = s.get("parent_span_id", "")
-        parent_tools.setdefault(pid, []).append(s)
-    for pid, ts in parent_tools.items():
-        statuses = [t.get("status") for t in ts]
-        if "failed" in statuses and "completed" in statuses:
-            has_fallback = True
-            break
-    
-    # Failure propagation: agent failed because its tool failed
-    has_propagation = False
-    failed_tool_parents = {s.get("parent_span_id") for s in tools if s.get("status") == "failed"}
-    for a in agents:
-        if a.get("status") == "failed" and a.get("span_id") in failed_tool_parents:
-            has_propagation = True
-            break
-    
-    # Handoff count: sequential agents under same parent
-    handoff_count = 0
-    parent_agents: dict[str, list[dict]] = {}
-    for a in agents:
-        pid = a.get("parent_span_id", "")
-        parent_agents.setdefault(pid, []).append(a)
-    for pid, ags in parent_agents.items():
-        if len(ags) >= 2:
-            handoff_count += len(ags) - 1
-    
-    return {
-        "agent_count": len(agents),
-        "tool_count": len(tools),
-        "failed_count": len(failed),
-        "slowest": slowest,
-        "first_fail": first_fail,
-        "has_fallback": has_fallback,
-        "has_propagation": has_propagation,
-        "handoff_count": handoff_count,
-    }
-
-
-def _build_html(traces: list[dict]) -> str:
-    stats = _compute_stats(traces)
-    trace_cards = "\n".join(_render_trace_card(t) for t in traces)
-    
-    slowest_html = f'<div class="stat"><div class="v">{_esc(stats["slowest_agent"])}</div><div class="l">Slowest Agent</div></div>' if stats["slowest_agent"] else ""
+    slowest_html = f'<div class="stat"><div class="v">{_esc(slowest_agent)}</div><div class="l">Slowest Agent</div></div>' if slowest_agent else ""
+    cards_html = "\n".join(cards) if cards else '<div class="empty">No traces found.</div>'
     
     return f'''<!DOCTYPE html>
 <html lang="en"><head>
@@ -198,17 +113,18 @@ body{{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',monospace;backgrou
 .handoff{{font-size:11px;color:var(--yl);padding:2px 0 2px 20px;}}
 .empty{{text-align:center;padding:60px;color:var(--dim);}}
 .ft{{text-align:center;padding:16px;color:var(--dim);font-size:11px;border-top:1px solid var(--bd);margin-top:20px;}}
+.section-label{{font-size:10px;color:var(--dim);text-transform:uppercase;letter-spacing:.5px;margin:8px 0 4px;}}
 </style></head><body>
 <div class="hdr"><h1>🛡️ AgentGuard</h1><p>Multi-Agent Orchestration Report</p></div>
 <div class="stats">
-<div class="stat"><div class="v">{stats["traces"]}</div><div class="l">Traces</div></div>
-<div class="stat"><div class="v">{stats["agents"]}</div><div class="l">Agents</div></div>
-<div class="stat"><div class="v" style="color:var(--gn)">{stats["passed"]}</div><div class="l">Passed</div></div>
-<div class="stat"><div class="v" style="color:var(--rd)">{stats["failed"]}</div><div class="l">Failed</div></div>
-<div class="stat"><div class="v">{stats["avg_duration"]/1000:.1f}s</div><div class="l">Avg Duration</div></div>
+<div class="stat"><div class="v">{total}</div><div class="l">Traces</div></div>
+<div class="stat"><div class="v">{len(all_agent_names)}</div><div class="l">Agents</div></div>
+<div class="stat"><div class="v" style="color:var(--gn)">{passed}</div><div class="l">Passed</div></div>
+<div class="stat"><div class="v" style="color:var(--rd)">{failed}</div><div class="l">Failed</div></div>
+<div class="stat"><div class="v">{avg_dur/1000:.1f}s</div><div class="l">Avg Duration</div></div>
 {slowest_html}
 </div>
-{trace_cards if traces else '<div class="empty">No traces found.</div>'}
+{cards_html}
 <div class="ft">AgentGuard · Multi-Agent Orchestration Observability</div>
 <script>
 document.querySelectorAll('.card-hdr').forEach(h=>{{
@@ -218,32 +134,55 @@ const f=document.querySelector('.tl');if(f){{f.classList.add('open');const a=f.p
 </script></body></html>'''
 
 
-def _render_trace_card(trace: dict) -> str:
-    status = trace.get("status", "unknown")
+def _render_trace_card(raw: dict, trace: ExecutionTrace) -> str:
+    """Render trace card using unified analysis results."""
+    status = trace.status.value
     badge_cls = "b-pass" if status == "completed" else "b-fail"
     badge_txt = "PASS" if status == "completed" else "FAIL"
-    dur = trace.get("duration_ms") or 0
+    dur = trace.duration_ms or 0
     dur_s = f"{dur:.0f}ms" if dur < 1000 else f"{dur/1000:.1f}s"
-    spans = trace.get("spans", [])
-    summary = _trace_summary(trace)
     
-    # Diagnostic badges
+    # === Use analysis layer for ALL diagnostics (single source of truth) ===
+    failure_analysis = analyze_failures(trace)
+    flow_analysis = analyze_flow(trace)
+    bottleneck = analyze_bottleneck(trace) if len(trace.agent_spans) > 0 else None
+    
+    # Build diagnostic badges from analysis results
     diag = []
-    diag.append(f'<span class="diag-item b-info">{summary["agent_count"]} agents</span>')
-    diag.append(f'<span class="diag-item b-info">{summary["tool_count"]} tools</span>')
-    if summary["handoff_count"] > 0:
-        diag.append(f'<span class="diag-item b-info">{summary["handoff_count"]} handoffs</span>')
-    if summary["has_fallback"]:
-        diag.append(f'<span class="diag-item b-warn">⚡ fallback detected</span>')
-    if summary["has_propagation"]:
-        diag.append(f'<span class="diag-item b-fail">🔴 failure propagation</span>')
-    if summary["slowest"] and summary["agent_count"] > 1:
-        diag.append(f'<span class="diag-item b-warn">🐢 slowest: {_esc(summary["slowest"]["name"])}</span>')
-    if summary["first_fail"]:
-        diag.append(f'<span class="diag-item b-fail">💥 first fail: {_esc(summary["first_fail"]["name"])}</span>')
+    diag.append(f'<span class="diag-item b-info">{flow_analysis.agent_count} agents</span>')
+    diag.append(f'<span class="diag-item b-info">{flow_analysis.tool_count} tools</span>')
+    
+    if flow_analysis.handoffs:
+        diag.append(f'<span class="diag-item b-info">{len(flow_analysis.handoffs)} handoffs</span>')
+    
+    # Failure diagnostics from analysis layer
+    if failure_analysis.handled_count > 0:
+        diag.append(f'<span class="diag-item b-warn">⚡ {failure_analysis.handled_count} handled failures</span>')
+    if failure_analysis.unhandled_count > 0:
+        diag.append(f'<span class="diag-item b-fail">🔴 {failure_analysis.unhandled_count} unhandled failures</span>')
+    if failure_analysis.resilience_score < 1.0 and failure_analysis.total_failed_spans > 0:
+        diag.append(f'<span class="diag-item b-{"warn" if failure_analysis.resilience_score > 0.5 else "fail"}">resilience: {failure_analysis.resilience_score:.0%}</span>')
+    
+    # Root cause from analysis layer
+    for rc in failure_analysis.root_causes[:2]:
+        if not rc.was_handled:
+            diag.append(f'<span class="diag-item b-fail">💥 root cause: {_esc(rc.span_name)}</span>')
+    
+    # Bottleneck from analysis layer
+    if bottleneck and len(trace.agent_spans) > 1:
+        diag.append(f'<span class="diag-item b-warn">🐢 bottleneck: {_esc(bottleneck.bottleneck_span)} ({bottleneck.bottleneck_pct:.0f}%)</span>')
+    
+    # Critical path from analysis layer
+    if flow_analysis.critical_path and len(flow_analysis.critical_path) > 1:
+        cp = " → ".join(flow_analysis.critical_path[:4])
+        if len(flow_analysis.critical_path) > 4:
+            cp += " → ..."
+        diag.append(f'<span class="diag-item b-info">path: {_esc(cp)}</span>')
+    
     diag_html = "\n".join(diag)
     
-    # Build tree
+    # Build tree from raw data
+    spans = raw.get("spans", [])
     span_map = {}
     for s in spans:
         span_map[s["span_id"]] = {**s, "children": []}
@@ -255,17 +194,20 @@ def _render_trace_card(trace: dict) -> str:
         else:
             roots.append(span_map[s["span_id"]])
     
-    span_html = "\n".join(_render_span(r, 0, dur) for r in roots)
+    # Handoff indicators from analysis layer
+    handoff_pairs = {(h.from_agent, h.to_agent) for h in flow_analysis.handoffs}
+    
+    span_html = "\n".join(_render_span(r, 0, dur, handoff_pairs) for r in roots)
     
     return f'''<div class="card">
 <div class="card-hdr">
-<div><span class="arrow">▶</span> <span class="card-title">{_esc(trace.get("task","(unnamed)"))}</span>
-<span class="card-meta"> · {_esc(trace.get("trigger",""))} · {dur_s} · {len(spans)} spans</span></div>
+<div><span class="arrow">▶</span> <span class="card-title">{_esc(raw.get("task","(unnamed)"))}</span>
+<span class="card-meta"> · {_esc(raw.get("trigger",""))} · {dur_s} · {len(spans)} spans</span></div>
 <span class="badge {badge_cls}">{badge_txt}</span></div>
 <div class="tl"><div class="diag">{diag_html}</div>{span_html}</div></div>'''
 
 
-def _render_span(span: dict, depth: int, trace_dur: float) -> str:
+def _render_span(span: dict, depth: int, trace_dur: float, handoff_pairs: set) -> str:
     icons = {"agent": "🤖", "tool": "🔧", "llm_call": "🧠", "handoff": "🔀"}
     icon = icons.get(span.get("span_type", ""), "●")
     name = _esc(span.get("name", ""))
@@ -274,11 +216,10 @@ def _render_span(span: dict, depth: int, trace_dur: float) -> str:
     dur_s = f"{dur:.0f}ms" if dur < 1000 else f"{dur/1000:.1f}s"
     ver = _esc(span.get("metadata", {}).get("agent_version", ""))
     
-    s_badge = f'<span class="badge b-pass">✓</span>' if status == "completed" else (f'<span class="badge b-fail">✗</span>' if status == "failed" else "")
+    s_badge = '<span class="badge b-pass">✓</span>' if status == "completed" else ('<span class="badge b-fail">✗</span>' if status == "failed" else "")
     ver_html = f'<span class="span-ver">({ver})</span>' if ver else ""
     pad = f'style="padding-left:{depth*18}px"'
     
-    # Timeline bar
     bar_pct = min(100, (dur / max(trace_dur, 1)) * 100)
     bar_cls = "bar-ok" if status == "completed" else "bar-err"
     bar_html = f'<div class="bar-wrap"><div class="bar {bar_cls}" style="width:{bar_pct:.0f}%"></div></div>'
@@ -287,29 +228,21 @@ def _render_span(span: dict, depth: int, trace_dur: float) -> str:
     if span.get("error"):
         err = f'\n<div class="span-err" style="padding-left:{depth*18+26}px">⚠ {_esc(span["error"])}</div>'
     
-    # Detect handoff: if this agent is followed by another agent under same parent
-    handoff_html = ""
     children = span.get("children", [])
-    agent_children = [c for c in children if c.get("span_type") == "agent"]
-    if len(agent_children) >= 2:
-        for i in range(len(agent_children) - 1):
-            fr = _esc(agent_children[i].get("name", ""))
-            to = _esc(agent_children[i + 1].get("name", ""))
-            handoff_html += f'\n<div class="handoff" style="padding-left:{(depth+1)*18}px">🔀 handoff: {fr} → {to}</div>'
-    
-    children_html_parts = []
+    children_parts = []
     for i, c in enumerate(children):
-        children_html_parts.append(_render_span(c, depth + 1, trace_dur))
-        # Insert handoff indicator between sequential agents
+        children_parts.append(_render_span(c, depth + 1, trace_dur, handoff_pairs))
+        # Insert handoff from analysis layer between sequential agents
         if c.get("span_type") == "agent" and i + 1 < len(children) and children[i + 1].get("span_type") == "agent":
-            fr = _esc(c.get("name", ""))
-            to = _esc(children[i + 1].get("name", ""))
-            children_html_parts.append(f'<div class="handoff" style="padding-left:{(depth+1)*18}px">🔀 {fr} → {to}</div>')
-    
-    children_html = "\n".join(children_html_parts)
+            fr = c.get("name", "")
+            to = children[i + 1].get("name", "")
+            if (fr, to) in handoff_pairs or True:  # show all sequential agent transitions
+                ctx_info = ""
+                # Try to get context info from the handoff analysis
+                children_parts.append(f'<div class="handoff" style="padding-left:{(depth+1)*18}px">🔀 {_esc(fr)} → {_esc(to)}</div>')
     
     return f'''<div class="span-row" {pad}>
 <span class="span-icon">{icon}</span><span class="span-name">{name}</span>{ver_html}
 <span class="span-right">{s_badge}<span class="span-dur">{dur_s}</span>{bar_html}</span>
 </div>{err}
-{children_html}'''
+{"\n".join(children_parts)}'''
