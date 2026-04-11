@@ -37,7 +37,12 @@ class Span:
     Spans form a tree structure via parent_span_id, allowing representation
     of nested agent → tool → llm_call hierarchies.
     
-    Attributes:
+    Schema Stability:
+        - Fields marked [stable] are part of the public contract and will not
+          change without a major version bump.
+        - Fields marked [experimental] may change in minor versions.
+    
+    Attributes (stable):
         span_id: Unique identifier for this span.
         trace_id: ID of the parent trace.
         parent_span_id: ID of the parent span (None for root spans).
@@ -66,13 +71,13 @@ class Span:
     metadata: dict[str, Any] = field(default_factory=dict)
     children: list[Span] = field(default_factory=list)
     
-    # Handoff tracking: populated when span_type is HANDOFF
+    # Handoff tracking [experimental]: populated when span_type is HANDOFF
     handoff_from: Optional[str] = None      # agent_id that initiated the handoff
     handoff_to: Optional[str] = None        # agent_id that received the handoff
     context_passed: Optional[dict] = None   # keys/summary of context passed
     context_size_bytes: Optional[int] = None  # size of context at handoff point
     
-    # Failure propagation tracking
+    # Failure propagation tracking [experimental]
     caused_by: Optional[str] = None         # span_id of the root cause failure
     failure_handled: bool = False           # True if error was caught (try/except)
 

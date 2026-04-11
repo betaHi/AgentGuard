@@ -1,7 +1,8 @@
-"""Replay engine — re-run agents with fixed inputs and compare results.
+"""Regression harness — compare agent outputs against saved baselines.
 
-The replay engine enables deterministic comparison of agent versions
-by capturing and replaying the same inputs.
+The regression harness enables comparison of agent version outputs
+against saved baselines. Note: this does not replay the actual execution
+(which depends on external state); it compares outputs given the same inputs.
 
 Usage:
     from agentguard.replay import ReplayEngine

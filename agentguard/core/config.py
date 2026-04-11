@@ -1,7 +1,10 @@
 """Agent configuration and versioning.
 
-Supports loading config from YAML (agentguard.yaml) or Python dicts.
-No external YAML dependency — uses a simple built-in parser for basic YAML.
+Supports loading config from JSON (zero dependencies) or YAML (requires PyYAML).
+
+- JSON path: agentguard.json — zero external dependencies
+- YAML path: agentguard.yaml — requires `pip install agentguard[yaml]`
+- Python dict: GuardConfig.from_dict() — always available
 """
 
 from __future__ import annotations
