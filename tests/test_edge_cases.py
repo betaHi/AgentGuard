@@ -178,7 +178,7 @@ def test_trace_file_roundtrip():
 # --- Bug fix tests ---
 
 def test_distributed_child_writes_separate_file():
-    """Child process should write to separate file, not overwrite parent."""
+    """Child process writes separate file; merge persists and cleans up."""
     import tempfile, os
     from agentguard.sdk.distributed import inject_trace_context, init_recorder_from_env, merge_child_traces
     from agentguard import AgentTrace
@@ -186,11 +186,12 @@ def test_distributed_child_writes_separate_file():
     with tempfile.TemporaryDirectory() as tmpdir:
         traces_dir = str(Path(tmpdir) / "traces")
         
-        # Parent
+        # Parent records a trace
         parent_rec = init_recorder(task="parent-task", output_dir=traces_dir)
         parent_trace_id = parent_rec.trace.trace_id
         env = inject_trace_context(parent_rec, parent_span_id="fake-parent-span")
         parent_trace = finish_recording()
+        parent_span_count = len(parent_trace.spans)
         
         # Simulate child by setting env vars
         for k, v in env.items():
@@ -200,18 +201,30 @@ def test_distributed_child_writes_separate_file():
         child_rec = init_recorder_from_env()
         with AgentTrace(name="child-agent") as agent:
             agent.set_output("child result")
-        child_trace = finish_recording()
+        finish_recording()
         
-        # Check: parent and child files should both exist
+        # Pre-merge: both files exist
         parent_file = Path(traces_dir) / f"{parent_trace_id}.json"
         child_files = list(Path(traces_dir).glob(f"{parent_trace_id}_child_*.json"))
-        
         assert parent_file.exists(), "Parent trace file should exist"
         assert len(child_files) >= 1, "Child trace file should exist separately"
         
-        # Merge
+        # Merge with persist=True, cleanup=True (defaults)
         merged = merge_child_traces(parent_trace, traces_dir)
-        assert len(merged.spans) > len(parent_trace.spans) or len(child_files) > 0
+        
+        # Verify: merged trace has more spans than original parent
+        assert len(merged.spans) > parent_span_count, "Merged trace should include child spans"
+        
+        # Verify: parent file on disk now contains merged result
+        persisted = ExecutionTrace.from_json(parent_file.read_text())
+        assert len(persisted.spans) == len(merged.spans), "Persisted file should have merged spans"
+        
+        # Verify: child files cleaned up
+        remaining_child_files = list(Path(traces_dir).glob(f"{parent_trace_id}_child_*.json"))
+        assert len(remaining_child_files) == 0, "Child files should be cleaned up after merge"
+        
+        # Verify: CLI/web can now read the single merged file
+        assert len(list(Path(traces_dir).glob("*.json"))) == 1, "Only one trace file should remain"
         
         # Cleanup env
         for k in env:
@@ -253,17 +266,19 @@ def test_guard_tool_failure_not_escalated_as_agent():
 
 
 def test_html_xss_prevention():
-    """HTML report should escape potentially malicious content."""
+    """HTML report should escape ALL user-controlled fields including error."""
     from agentguard.web.viewer import generate_timeline_html
     
     with tempfile.TemporaryDirectory() as tmpdir:
         traces_dir = Path(tmpdir) / "traces"
         traces_dir.mkdir()
         
-        # Create trace with XSS payload in task name and error
-        trace = ExecutionTrace(task='<script>alert("xss")</script>')
-        span = Span(name='<img onerror="alert(1)" src=x>', span_type=SpanType.AGENT)
-        span.fail(error='Error: <script>document.cookie</script>')
+        # XSS payloads in every user-controlled field
+        trace = ExecutionTrace(task='<script>alert("task-xss")</script>')
+        trace.trigger = '<img src=x onerror=alert("trigger")>'
+        span = Span(name='<script>alert("name")</script>', span_type=SpanType.AGENT,
+                    metadata={"agent_version": '<script>alert("ver")</script>'})
+        span.fail(error='<script>document.cookie</script>')
         trace.add_span(span)
         trace.fail()
         (traces_dir / f"{trace.trace_id}.json").write_text(trace.to_json())
@@ -273,7 +288,14 @@ def test_html_xss_prevention():
         
         html_content = Path(output_path).read_text()
         
-        # Verify XSS payloads are escaped
-        assert '<script>alert' not in html_content, "Script tags should be escaped"
-        assert 'onerror="alert' not in html_content, "Event handlers should be escaped"
-        assert '&lt;script&gt;' in html_content or '&lt;img' in html_content, "Content should be HTML-escaped"
+        # NONE of these raw XSS strings should appear unescaped
+        assert '<script>alert("task-xss")' not in html_content, "Task XSS not escaped"
+        assert '<script>alert("name")' not in html_content, "Name XSS not escaped"
+        assert '<script>document.cookie' not in html_content, "Error XSS not escaped"
+        # Trigger: html.escape converts < > " but not =, which is fine
+        # The key is that <img> tag can't be created because < > are escaped
+        assert '<img src=x onerror' not in html_content, "Trigger XSS: raw img tag not escaped"
+        assert '<script>alert("ver")' not in html_content, "Version XSS not escaped"
+        
+        # Escaped versions SHOULD appear
+        assert '&lt;script&gt;' in html_content, "Content should be HTML-escaped"

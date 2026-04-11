@@ -162,7 +162,7 @@ def _render_trace_card(trace: dict) -> str:
     <div>
       <span class="arrow">▶</span>
       <span class="card-title">{_esc(trace.get("task", "(unnamed)"))}</span>
-      <span class="card-meta"> · {trace.get("trigger", "")} · {dur_s} · {len(spans)} spans</span>
+      <span class="card-meta"> · {_esc(trace.get("trigger", ""))} · {dur_s} · {len(spans)} spans</span>
     </div>
     <span class="badge {badge_cls}">{badge_txt}</span>
   </div>
@@ -185,7 +185,7 @@ def _render_span(span: dict, depth: int) -> str:
     
     err = ""
     if span.get("error"):
-        err = f'\n<div class="span-err" style="padding-left:{depth*20+28}px">⚠ {span["error"]}</div>'
+        err = f'\n<div class="span-err" style="padding-left:{depth*20+28}px">⚠ {_esc(span["error"])}</div>'
     
     children = "\n".join(_render_span(c, depth + 1) for c in span.get("children", []))
     
