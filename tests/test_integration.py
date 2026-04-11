@@ -500,3 +500,62 @@ def test_e2e_query_workflow():
         # Agent stats
         stats = store.agent_stats()
         assert "test-agent" in stats
+
+
+# ──────────────────────────────────────────────────────
+# Test 14: User runs self-reflection and evolution
+# ──────────────────────────────────────────────────────
+
+def test_e2e_evolve_workflow():
+    """User records traces, then runs self-reflection to get improvement suggestions."""
+    
+    @record_tool(name="flaky_api")
+    def flaky_api():
+        raise ConnectionError("timeout")
+    
+    @record_tool(name="backup")
+    def backup():
+        return {"ok": True}
+
+    @record_agent(name="agent-with-fallback", version="v1")
+    def agent_fb():
+        try: return flaky_api()
+        except: return backup()
+
+    @record_agent(name="agent-fragile", version="v1")
+    def agent_fr():
+        return flaky_api()
+
+    @record_agent(name="coord", version="v1")
+    def coord():
+        a = agent_fb()
+        try: b = agent_fr()
+        except: b = {"error": True}
+        return {"a": a, "b": b}
+
+    with tempfile.TemporaryDirectory() as tmpdir:
+        from agentguard.evolve import EvolutionEngine
+        engine = EvolutionEngine(knowledge_dir=f"{tmpdir}/kb")
+        
+        # Run 3 times, learn each time
+        for _ in range(3):
+            rec = init_recorder(task="Evolve Test", output_dir=f"{tmpdir}/traces")
+            coord()
+            trace = finish_recording()
+            reflection = engine.learn(trace)
+            assert len(reflection.lessons) >= 1
+        
+        # Should have accumulated knowledge
+        assert engine.kb.trace_count == 3
+        
+        # Should have suggestions
+        suggestions = engine.suggest(min_confidence=0.5)
+        assert len(suggestions) >= 1
+        
+        # Should detect trends
+        trends = engine.detect_trends()
+        assert len(trends) >= 1
+        
+        # Knowledge persists
+        engine2 = EvolutionEngine(knowledge_dir=f"{tmpdir}/kb")
+        assert engine2.kb.trace_count == 3
