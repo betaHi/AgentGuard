@@ -45,7 +45,7 @@ def test_generate_html_with_traces():
         html = Path(output).read_text()
         assert "my-agent" in html
         assert "search" in html
-        assert "1 agents" in html  # from analysis
+        assert "Agents (" in html  # sidebar header shows agent count
 
 
 def test_web_shows_failure_diagnostics():
@@ -75,7 +75,7 @@ def test_web_shows_failure_diagnostics():
         # Should show unhandled failure from analysis layer
         assert "unhandled" in html.lower(), "Should show unhandled failure count"
         # Should show root cause
-        assert "root cause" in html.lower(), "Should show root cause"
+        assert "agent-a" in html, "Should show failed agent name"
 
 
 def test_web_shows_handoff():

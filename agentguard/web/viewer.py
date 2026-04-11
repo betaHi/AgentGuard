@@ -1,10 +1,11 @@
-"""Standalone HTML trace report generator.
+"""Standalone HTML report generator — orchestration diagnostics panel.
 
-Generates a single HTML file with multi-agent orchestration diagnostics.
-Zero JS framework dependencies.
+Generates a single HTML file matching the target prototype design:
+- Left sidebar: agent health cards
+- Main area: Gantt-style timeline with handoff indicators
+- Bottom: diagnostics grid (failures, bottleneck, handoffs, critical path)
 
-KEY: This module consumes analysis results from agentguard.analysis,
-NOT reimplementing diagnostic logic. Single source of truth.
+All diagnostics powered by analysis.py (single source of truth).
 """
 
 from __future__ import annotations
@@ -14,8 +15,8 @@ import json
 from pathlib import Path
 from typing import Any
 
-from agentguard.core.trace import ExecutionTrace
-from agentguard.analysis import analyze_failures, analyze_flow, analyze_bottleneck
+from agentguard.core.trace import ExecutionTrace, Span, SpanType, SpanStatus
+from agentguard.analysis import analyze_failures, analyze_flow, analyze_bottleneck, analyze_context_flow
 
 
 def _esc(text: Any) -> str:
@@ -27,222 +28,360 @@ def generate_timeline_html(
     output: str = ".agentguard/report.html",
 ) -> str:
     traces_path = Path(traces_dir)
-    traces_data = []  # raw dicts for rendering
-    trace_objs = []   # ExecutionTrace objects for analysis
+    trace_objs = []
     
     if traces_path.exists():
         for f in sorted(traces_path.glob("*.json"), key=lambda x: x.stat().st_mtime, reverse=True)[:50]:
             try:
-                raw = json.loads(f.read_text(encoding="utf-8"))
-                traces_data.append(raw)
-                trace_objs.append(ExecutionTrace.from_dict(raw))
+                trace_objs.append(ExecutionTrace.from_dict(
+                    json.loads(f.read_text(encoding="utf-8"))
+                ))
             except Exception:
                 pass
     
     out_path = Path(output)
     out_path.parent.mkdir(parents=True, exist_ok=True)
-    out_path.write_text(_build_html(traces_data, trace_objs), encoding="utf-8")
+    out_path.write_text(_build_full_html(trace_objs), encoding="utf-8")
     return str(out_path)
 
 
-def _build_html(traces_data: list[dict], trace_objs: list[ExecutionTrace]) -> str:
-    """Build HTML using analysis layer for all diagnostics."""
+def _build_full_html(traces: list[ExecutionTrace]) -> str:
+    if not traces:
+        return _build_empty_html()
     
-    # Aggregate stats from analysis
-    total = len(trace_objs)
-    passed = sum(1 for t in trace_objs if t.status.value == "completed")
-    failed = total - passed
-    all_agent_names = set()
-    slowest_agent = ""
-    slowest_dur = 0
+    # Use the most recent trace as the primary display
+    primary = traces[0]
+    failures = analyze_failures(primary)
+    flow = analyze_flow(primary)
+    bn = analyze_bottleneck(primary) if primary.agent_spans else None
+    ctx = analyze_context_flow(primary)
     
-    for t in trace_objs:
-        for s in t.agent_spans:
-            all_agent_names.add(s.name)
-            d = s.duration_ms or 0
-            if d > slowest_dur:
-                slowest_dur = d
-                slowest_agent = s.name
+    dur_total = primary.duration_ms or 1
     
-    avg_dur = sum((t.duration_ms or 0) for t in trace_objs) / max(total, 1)
+    # Build sidebar agent cards
+    agent_cards = _build_sidebar(primary, failures, bn)
     
-    # Render trace cards using analysis results
-    cards = []
-    for raw, obj in zip(traces_data, trace_objs):
-        cards.append(_render_trace_card(raw, obj))
+    # Build Gantt timeline
+    timeline = _build_gantt(primary, flow, dur_total)
     
-    slowest_html = f'<div class="stat"><div class="v">{_esc(slowest_agent)}</div><div class="l">Slowest Agent</div></div>' if slowest_agent else ""
-    cards_html = "\n".join(cards) if cards else '<div class="empty">No traces found.</div>'
+    # Build diagnostics grid
+    diagnostics = _build_diagnostics(failures, bn, flow, ctx)
+    
+    # Trace selector (if multiple traces)
+    trace_count = len(traces)
+    status_txt = "PASS" if primary.status == SpanStatus.COMPLETED else "FAIL"
+    status_cls = "b-pass" if primary.status == SpanStatus.COMPLETED else "b-fail"
     
     return f'''<!DOCTYPE html>
 <html lang="en"><head>
 <meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1.0">
-<title>AgentGuard — Orchestration Report</title>
+<title>AgentGuard — Orchestration Panel</title>
 <style>
-:root{{--bg:#0d1117;--sf:#161b22;--bd:#21262d;--tx:#c9d1d9;--dim:#8b949e;--br:#f0f6fc;
---gn:#3fb950;--rd:#f85149;--bl:#58a6ff;--yl:#d29922;--gn-bg:#1a3a1a;--rd-bg:#3a1a1a;--yl-bg:#3a2f1a;--bl-bg:#1a2a3a;}}
+:root{{--bg:#0d1117;--sf:#161b22;--bd:#21262d;--tx:#c9d1d9;--dim:#6e7681;--br:#f0f6fc;
+--gn:#3fb950;--rd:#f85149;--bl:#58a6ff;--yl:#d29922;--pp:#bc8cff;
+--gn-bg:#1a3a1a;--rd-bg:#3a1a1a;--yl-bg:#3a2f1a;--bl-bg:#1a2a3a;--pp-bg:#2a1a3a;}}
 *{{margin:0;padding:0;box-sizing:border-box;}}
-body{{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',monospace;background:var(--bg);color:var(--tx);padding:20px;max-width:1200px;margin:0 auto;}}
-.hdr{{text-align:center;padding:24px 0;border-bottom:1px solid var(--bd);margin-bottom:20px;}}
-.hdr h1{{font-size:22px;color:var(--br);}} .hdr p{{color:var(--dim);font-size:13px;margin-top:4px;}}
-.stats{{display:grid;grid-template-columns:repeat(auto-fit,minmax(120px,1fr));gap:10px;margin-bottom:20px;}}
-.stat{{background:var(--sf);border:1px solid var(--bd);border-radius:6px;padding:12px;text-align:center;}}
-.stat .v{{font-size:22px;font-weight:700;color:var(--br);}} .stat .l{{font-size:10px;color:var(--dim);margin-top:3px;text-transform:uppercase;letter-spacing:.5px;}}
-.card{{background:var(--sf);border:1px solid var(--bd);border-radius:8px;margin-bottom:10px;overflow:hidden;}}
-.card-hdr{{padding:10px 14px;display:flex;justify-content:space-between;align-items:center;border-bottom:1px solid var(--bd);cursor:pointer;}}
-.card-hdr:hover{{background:rgba(255,255,255,.02);}}
-.card-title{{font-weight:600;font-size:13px;color:var(--br);}}
-.card-meta{{font-size:11px;color:var(--dim);}}
+body{{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',system-ui,monospace;background:var(--bg);color:var(--tx);}}
+.top-bar{{background:var(--sf);border-bottom:1px solid var(--bd);padding:10px 20px;display:flex;align-items:center;justify-content:space-between;}}
+.top-bar h1{{font-size:14px;color:var(--br);}} .top-bar .meta{{font-size:11px;color:var(--dim);}}
 .badge{{padding:2px 7px;border-radius:8px;font-size:10px;font-weight:600;}}
 .b-pass{{background:var(--gn-bg);color:var(--gn);}} .b-fail{{background:var(--rd-bg);color:var(--rd);}}
 .b-warn{{background:var(--yl-bg);color:var(--yl);}} .b-info{{background:var(--bl-bg);color:var(--bl);}}
-.tl{{padding:12px 14px;display:none;}}
-.tl.open{{display:block;}}
-.diag{{display:flex;flex-wrap:wrap;gap:6px;margin-bottom:10px;font-size:11px;}}
-.diag-item{{padding:3px 8px;border-radius:4px;}}
-.span-row{{display:flex;align-items:center;padding:3px 0;font-size:12px;font-family:monospace;}}
-.span-icon{{width:18px;text-align:center;margin-right:5px;flex-shrink:0;}}
-.span-name{{font-weight:500;white-space:nowrap;}}
-.span-ver{{color:var(--dim);font-size:10px;margin-left:4px;}}
-.span-right{{margin-left:auto;display:flex;align-items:center;gap:6px;white-space:nowrap;}}
-.span-dur{{color:var(--bl);font-size:11px;min-width:45px;text-align:right;}}
-.span-err{{color:var(--rd);font-size:11px;padding:1px 0 1px 26px;}}
-.bar-wrap{{flex:1;max-width:200px;margin-left:8px;height:6px;background:var(--bd);border-radius:3px;overflow:hidden;}}
-.bar{{height:100%;border-radius:3px;min-width:2px;}}
-.bar-ok{{background:var(--gn);}} .bar-err{{background:var(--rd);}}
-.handoff{{font-size:11px;color:var(--yl);padding:2px 0 2px 20px;}}
+.b-pp{{background:var(--pp-bg);color:var(--pp);}}
+.layout{{display:grid;grid-template-columns:240px 1fr;min-height:calc(100vh - 42px);}}
+.sidebar{{background:var(--sf);border-right:1px solid var(--bd);padding:12px;overflow-y:auto;}}
+.sidebar h2{{font-size:10px;text-transform:uppercase;letter-spacing:1px;color:var(--dim);margin-bottom:10px;}}
+.ag-card{{background:var(--bg);border:1px solid var(--bd);border-radius:6px;padding:8px 10px;margin-bottom:6px;}}
+.ag-name{{font-weight:600;font-size:12px;color:var(--br);display:flex;align-items:center;gap:5px;}}
+.ag-stats{{font-size:10px;color:var(--dim);margin-top:3px;display:flex;gap:8px;}}
+.ag-bar{{height:3px;border-radius:2px;margin-top:4px;background:var(--bd);}}
+.ag-bar-fill{{height:100%;border-radius:2px;}}
+.dot{{width:7px;height:7px;border-radius:50%;display:inline-block;flex-shrink:0;}}
+.dot-ok{{background:var(--gn);}} .dot-err{{background:var(--rd);}} .dot-warn{{background:var(--yl);}}
+.main{{padding:14px 16px;overflow-x:auto;}}
+.main h2{{font-size:10px;text-transform:uppercase;letter-spacing:1px;color:var(--dim);margin-bottom:8px;}}
+.tl-header{{display:flex;padding:0 0 6px 180px;border-bottom:1px solid var(--bd);margin-bottom:2px;}}
+.tl-header .tick{{font-size:9px;color:var(--dim);flex:1;text-align:center;}}
+.g-row{{display:flex;align-items:center;padding:2px 0;min-height:24px;border-bottom:1px solid rgba(48,54,61,0.2);}}
+.g-row:hover{{background:rgba(56,139,253,0.03);}}
+.g-lbl{{width:180px;flex-shrink:0;display:flex;align-items:center;gap:5px;font-size:11px;padding-right:6px;overflow:hidden;}}
+.g-lbl .icon{{font-size:12px;}} .g-lbl .nm{{font-weight:500;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;}}
+.g-lbl .vr{{font-size:9px;color:var(--dim);}}
+.g-bar-area{{flex:1;position:relative;height:18px;}}
+.g-bar{{position:absolute;height:12px;top:3px;border-radius:3px;min-width:3px;display:flex;align-items:center;justify-content:flex-end;padding:0 3px;font-size:8px;color:rgba(255,255,255,0.7);}}
+.g-bar.ok{{background:linear-gradient(90deg,#238636,#2ea043);}}
+.g-bar.err{{background:linear-gradient(90deg,#da3633,#f85149);}}
+.g-bar.slow{{background:linear-gradient(90deg,#9e6a03,#d29922);}}
+.g-bar.ho{{background:var(--pp);height:2px;top:8px;}}
+.g-err{{position:absolute;top:-1px;font-size:8px;color:var(--rd);white-space:nowrap;}}
+.g-ann{{position:absolute;top:-1px;font-size:8px;white-space:nowrap;}}
+.ho-row{{display:flex;align-items:center;min-height:16px;}}
+.ho-line{{margin-left:180px;flex:1;display:flex;align-items:center;gap:3px;font-size:9px;color:var(--pp);}}
+.ho-arrow{{height:1px;width:40px;background:var(--pp);}}
+.ctx-badge{{background:var(--pp-bg);color:var(--pp);padding:1px 5px;border-radius:3px;font-size:8px;}}
+.diag{{background:var(--sf);border:1px solid var(--bd);border-radius:8px;padding:14px;margin-top:14px;}}
+.diag h3{{font-size:11px;color:var(--br);margin-bottom:10px;}}
+.diag-grid{{display:grid;grid-template-columns:1fr 1fr;gap:10px;}}
+.d-box{{background:var(--bg);border:1px solid var(--bd);border-radius:6px;padding:10px;}}
+.d-box h4{{font-size:9px;text-transform:uppercase;letter-spacing:.5px;color:var(--dim);margin-bottom:5px;}}
+.d-box .val{{font-size:16px;font-weight:700;color:var(--br);}}
+.d-box .det{{font-size:10px;color:var(--dim);margin-top:3px;}}
+.d-box .items{{font-size:10px;margin-top:5px;}}
+.d-box .item{{padding:1px 0;display:flex;align-items:center;gap:3px;}}
+.ff-node{{padding:1px 6px;border-radius:3px;font-size:9px;}}
+.ff-h{{background:var(--yl-bg);color:var(--yl);}} .ff-u{{background:var(--rd-bg);color:var(--rd);}}
 .empty{{text-align:center;padding:60px;color:var(--dim);}}
-.ft{{text-align:center;padding:16px;color:var(--dim);font-size:11px;border-top:1px solid var(--bd);margin-top:20px;}}
-.section-label{{font-size:10px;color:var(--dim);text-transform:uppercase;letter-spacing:.5px;margin:8px 0 4px;}}
+.ft{{text-align:center;padding:12px;color:var(--dim);font-size:10px;border-top:1px solid var(--bd);margin-top:14px;}}
 </style></head><body>
-<div class="hdr"><h1>🛡️ AgentGuard</h1><p>Multi-Agent Orchestration Report</p></div>
-<div class="stats">
-<div class="stat"><div class="v">{total}</div><div class="l">Traces</div></div>
-<div class="stat"><div class="v">{len(all_agent_names)}</div><div class="l">Agents</div></div>
-<div class="stat"><div class="v" style="color:var(--gn)">{passed}</div><div class="l">Passed</div></div>
-<div class="stat"><div class="v" style="color:var(--rd)">{failed}</div><div class="l">Failed</div></div>
-<div class="stat"><div class="v">{avg_dur/1000:.1f}s</div><div class="l">Avg Duration</div></div>
-{slowest_html}
-</div>
-{cards_html}
-<div class="ft">AgentGuard · Multi-Agent Orchestration Observability</div>
-<script>
-document.querySelectorAll('.card-hdr').forEach(h=>{{
-h.addEventListener('click',()=>{{const t=h.nextElementSibling;t.classList.toggle('open');
-h.querySelector('.arrow').textContent=t.classList.contains('open')?'▼':'▶';}});}});
-const f=document.querySelector('.tl');if(f){{f.classList.add('open');const a=f.previousElementSibling.querySelector('.arrow');if(a)a.textContent='▼';}}
-</script></body></html>'''
+
+<div class="top-bar">
+<h1>🛡️ AgentGuard</h1>
+<div class="meta">
+{_esc(primary.task)} · {_esc(primary.trigger)} · {dur_total/1000:.1f}s · {len(primary.spans)} spans
+<span class="badge {status_cls}" style="margin-left:8px">{status_txt}</span>
+{f'<span style="margin-left:8px;color:var(--dim)">{trace_count} traces</span>' if trace_count > 1 else ''}
+</div></div>
+
+<div class="layout">
+<div class="sidebar">{agent_cards}</div>
+<div class="main">
+<h2>Execution Timeline</h2>
+{timeline}
+{diagnostics}
+<div class="ft">AgentGuard · Orchestration Observability</div>
+</div></div>
+
+</body></html>'''
 
 
-def _render_trace_card(raw: dict, trace: ExecutionTrace) -> str:
-    """Render trace card using unified analysis results."""
-    status = trace.status.value
-    badge_cls = "b-pass" if status == "completed" else "b-fail"
-    badge_txt = "PASS" if status == "completed" else "FAIL"
-    dur = trace.duration_ms or 0
-    dur_s = f"{dur:.0f}ms" if dur < 1000 else f"{dur/1000:.1f}s"
+def _build_empty_html() -> str:
+    return '''<!DOCTYPE html><html><head><title>AgentGuard</title>
+<style>body{background:#0d1117;color:#8b949e;font-family:monospace;display:flex;justify-content:center;align-items:center;height:100vh;}
+</style></head><body><div style="text-align:center"><h1>🛡️ AgentGuard</h1><p>No traces found. Record some agent executions first.</p></div></body></html>'''
+
+
+def _build_sidebar(trace: ExecutionTrace, failures, bn) -> str:
+    cards = [f'<h2>Agents ({len(trace.agent_spans)})</h2>']
+    dur_total = trace.duration_ms or 1
     
-    # === Use analysis layer for ALL diagnostics (single source of truth) ===
-    failure_analysis = analyze_failures(trace)
-    flow_analysis = analyze_flow(trace)
-    bottleneck = analyze_bottleneck(trace) if len(trace.agent_spans) > 0 else None
+    # Get failure info per agent
+    failed_agents = {rc.span_name for rc in failures.root_causes if not rc.was_handled}
+    warned_agents = {rc.span_name for rc in failures.root_causes if rc.was_handled}
+    bn_name = bn.bottleneck_span if bn else ""
     
-    # Build diagnostic badges from analysis results
-    diag = []
-    diag.append(f'<span class="diag-item b-info">{flow_analysis.agent_count} agents</span>')
-    diag.append(f'<span class="diag-item b-info">{flow_analysis.tool_count} tools</span>')
+    # Sort: failed first, then by duration desc
+    agents = sorted(trace.agent_spans, key=lambda s: (
+        0 if s.status == SpanStatus.FAILED else 1,
+        -(s.duration_ms or 0)
+    ))
     
-    if flow_analysis.handoffs:
-        diag.append(f'<span class="diag-item b-info">{len(flow_analysis.handoffs)} handoffs</span>')
-    
-    # Failure diagnostics from analysis layer
-    if failure_analysis.handled_count > 0:
-        diag.append(f'<span class="diag-item b-warn">⚡ {failure_analysis.handled_count} handled failures</span>')
-    if failure_analysis.unhandled_count > 0:
-        diag.append(f'<span class="diag-item b-fail">🔴 {failure_analysis.unhandled_count} unhandled failures</span>')
-    if failure_analysis.resilience_score < 1.0 and failure_analysis.total_failed_spans > 0:
-        diag.append(f'<span class="diag-item b-{"warn" if failure_analysis.resilience_score > 0.5 else "fail"}">resilience: {failure_analysis.resilience_score:.0%}</span>')
-    
-    # Root cause from analysis layer
-    for rc in failure_analysis.root_causes[:2]:
-        if not rc.was_handled:
-            diag.append(f'<span class="diag-item b-fail">💥 root cause: {_esc(rc.span_name)}</span>')
-    
-    # Bottleneck from analysis layer
-    if bottleneck and len(trace.agent_spans) > 1:
-        diag.append(f'<span class="diag-item b-warn">🐢 bottleneck: {_esc(bottleneck.bottleneck_span)} ({bottleneck.bottleneck_pct:.0f}%)</span>')
-    
-    # Critical path from analysis layer
-    if flow_analysis.critical_path and len(flow_analysis.critical_path) > 1:
-        cp = " → ".join(flow_analysis.critical_path[:4])
-        if len(flow_analysis.critical_path) > 4:
-            cp += " → ..."
-        diag.append(f'<span class="diag-item b-info">path: {_esc(cp)}</span>')
-    
-    diag_html = "\n".join(diag)
-    
-    # Build tree from raw data
-    spans = raw.get("spans", [])
-    span_map = {}
-    for s in spans:
-        span_map[s["span_id"]] = {**s, "children": []}
-    roots = []
-    for s in spans:
-        pid = s.get("parent_span_id")
-        if pid and pid in span_map:
-            span_map[pid]["children"].append(span_map[s["span_id"]])
+    for s in agents:
+        dur = s.duration_ms or 0
+        pct = (dur / dur_total) * 100
+        ver = _esc(s.metadata.get("agent_version", ""))
+        
+        if s.status == SpanStatus.FAILED or s.name in failed_agents:
+            dot_cls = "dot-err"
+            bar_color = "var(--rd)"
+            extra = f'<span style="color:var(--rd)">✗ {_esc(s.error or "failed")[:30]}</span>'
+        elif s.name == bn_name and len(trace.agent_spans) > 1:
+            dot_cls = "dot-warn"
+            bar_color = "var(--yl)"
+            extra = f'<span style="color:var(--yl)">🐢 bottleneck ({pct:.0f}%)</span>'
+        elif s.name in warned_agents:
+            dot_cls = "dot-warn"
+            bar_color = "var(--yl)"
+            extra = '<span style="color:var(--yl)">⚡ fallback used</span>'
         else:
-            roots.append(span_map[s["span_id"]])
+            dot_cls = "dot-ok"
+            bar_color = "var(--gn)"
+            extra = '<span>✓ pass</span>'
+        
+        dur_s = f"{dur:.0f}ms" if dur < 1000 else f"{dur/1000:.1f}s"
+        
+        cards.append(f'''<div class="ag-card">
+<div class="ag-name"><span class="dot {dot_cls}"></span> {_esc(s.name)} <span style="font-size:9px;color:var(--dim)">{ver}</span></div>
+<div class="ag-stats"><span>{dur_s}</span>{extra}</div>
+<div class="ag-bar"><div class="ag-bar-fill" style="width:{max(pct,2):.0f}%;background:{bar_color}"></div></div>
+</div>''')
     
-    # Handoff indicators from analysis layer
-    handoff_pairs = {(h.from_agent, h.to_agent) for h in flow_analysis.handoffs}
-    
-    span_html = "\n".join(_render_span(r, 0, dur, handoff_pairs) for r in roots)
-    
-    return f'''<div class="card">
-<div class="card-hdr">
-<div><span class="arrow">▶</span> <span class="card-title">{_esc(raw.get("task","(unnamed)"))}</span>
-<span class="card-meta"> · {_esc(raw.get("trigger",""))} · {dur_s} · {len(spans)} spans</span></div>
-<span class="badge {badge_cls}">{badge_txt}</span></div>
-<div class="tl"><div class="diag">{diag_html}</div>{span_html}</div></div>'''
+    return "\n".join(cards)
 
 
-def _render_span(span: dict, depth: int, trace_dur: float, handoff_pairs: set) -> str:
+def _build_gantt(trace: ExecutionTrace, flow, dur_total: float) -> str:
+    # Time axis
+    steps = 6
+    step_ms = dur_total / steps
+    ticks = "".join(f'<div class="tick">{int(i*step_ms)}ms</div>' for i in range(steps + 1))
+    header = f'<div class="tl-header">{ticks}</div>'
+    
+    # Build span tree for rendering
+    span_map = {s.span_id: s for s in trace.spans}
+    children_map: dict[str, list[Span]] = {}
+    for s in trace.spans:
+        if s.parent_span_id:
+            children_map.setdefault(s.parent_span_id, []).append(s)
+    
+    roots = [s for s in trace.spans if s.parent_span_id is None or s.parent_span_id not in span_map]
+    
+    # Handoff pairs from analysis
+    handoff_pairs = {(h.from_agent, h.to_agent): h for h in flow.handoffs}
+    
+    # Compute time offsets — use started_at relative to trace start
+    trace_start = trace.started_at
+    
+    rows = []
+    for root in roots:
+        rows.extend(_render_gantt_rows(root, 0, trace_start, dur_total, children_map, span_map, handoff_pairs))
+    
+    return header + "\n" + "\n".join(rows)
+
+
+def _render_gantt_rows(span: Span, depth: int, trace_start: str, dur_total: float,
+                       children_map, span_map, handoff_pairs) -> list[str]:
+    from datetime import datetime
+    rows = []
+    
+    # Calculate position
+    try:
+        t_start = datetime.fromisoformat(trace_start)
+        s_start = datetime.fromisoformat(span.started_at) if span.started_at else t_start
+        offset_ms = (s_start - t_start).total_seconds() * 1000
+    except:
+        offset_ms = 0
+    
+    dur = span.duration_ms or 0
+    left_pct = (offset_ms / max(dur_total, 1)) * 100
+    width_pct = (dur / max(dur_total, 1)) * 100
+    
+    # Determine bar style
     icons = {"agent": "🤖", "tool": "🔧", "llm_call": "🧠", "handoff": "🔀"}
-    icon = icons.get(span.get("span_type", ""), "●")
-    name = _esc(span.get("name", ""))
-    status = span.get("status", "")
-    dur = span.get("duration_ms") or 0
+    icon = icons.get(span.span_type.value, "●")
+    
+    if span.span_type == SpanType.HANDOFF:
+        # Render handoff as a special row
+        ctx_size = span.context_size_bytes or 0
+        ctx_str = f"{ctx_size:,}B" if ctx_size else ""
+        rows.append(f'''<div class="ho-row"><div class="ho-line" style="padding-left:{depth*16}px">
+<span>🔀</span><span class="ho-arrow"></span><span>{_esc(span.name)}</span>
+{f'<span class="ctx-badge">{ctx_str}</span>' if ctx_str else ''}
+</div></div>''')
+        return rows
+    
+    bar_cls = "ok"
+    annotation = ""
+    if span.status == SpanStatus.FAILED:
+        bar_cls = "err"
+    
     dur_s = f"{dur:.0f}ms" if dur < 1000 else f"{dur/1000:.1f}s"
-    ver = _esc(span.get("metadata", {}).get("agent_version", ""))
+    ver = _esc(span.metadata.get("agent_version", ""))
+    ver_html = f'<span class="vr">({ver})</span>' if ver else ""
     
-    s_badge = '<span class="badge b-pass">✓</span>' if status == "completed" else ('<span class="badge b-fail">✗</span>' if status == "failed" else "")
-    ver_html = f'<span class="span-ver">({ver})</span>' if ver else ""
-    pad = f'style="padding-left:{depth*18}px"'
+    opacity = "opacity:0.65;" if span.span_type == SpanType.TOOL else ""
     
-    bar_pct = min(100, (dur / max(trace_dur, 1)) * 100)
-    bar_cls = "bar-ok" if status == "completed" else "bar-err"
-    bar_html = f'<div class="bar-wrap"><div class="bar {bar_cls}" style="width:{bar_pct:.0f}%"></div></div>'
+    # Error annotation
+    err_html = ""
+    if span.error:
+        err_left = min(left_pct + width_pct + 1, 95)
+        err_html = f'<div class="g-err" style="left:{err_left}%">⚠ {_esc(span.error)[:40]}</div>'
     
-    err = ""
-    if span.get("error"):
-        err = f'\n<div class="span-err" style="padding-left:{depth*18+26}px">⚠ {_esc(span["error"])}</div>'
+    rows.append(f'''<div class="g-row" style="{opacity}">
+<div class="g-lbl" style="padding-left:{depth*16}px"><span class="icon">{icon}</span><span class="nm">{_esc(span.name)}</span>{ver_html}</div>
+<div class="g-bar-area"><div class="g-bar {bar_cls}" style="left:{left_pct:.1f}%;width:{max(width_pct,0.5):.1f}%">{dur_s}</div>{err_html}</div>
+</div>''')
     
-    children = span.get("children", [])
-    children_parts = []
-    for i, c in enumerate(children):
-        children_parts.append(_render_span(c, depth + 1, trace_dur, handoff_pairs))
-        # Insert handoff from analysis layer between sequential agents
-        if c.get("span_type") == "agent" and i + 1 < len(children) and children[i + 1].get("span_type") == "agent":
-            fr = c.get("name", "")
-            to = children[i + 1].get("name", "")
-            if (fr, to) in handoff_pairs:  # only show analysis-confirmed handoffs
-                ctx_info = ""
-                # Try to get context info from the handoff analysis
-                children_parts.append(f'<div class="handoff" style="padding-left:{(depth+1)*18}px">🔀 {_esc(fr)} → {_esc(to)}</div>')
+    # Render children
+    children = children_map.get(span.span_id, [])
+    children_sorted = sorted(children, key=lambda s: s.started_at or "")
     
-    return f'''<div class="span-row" {pad}>
-<span class="span-icon">{icon}</span><span class="span-name">{name}</span>{ver_html}
-<span class="span-right">{s_badge}<span class="span-dur">{dur_s}</span>{bar_html}</span>
-</div>{err}
-{"\n".join(children_parts)}'''
+    for i, child in enumerate(children_sorted):
+        rows.extend(_render_gantt_rows(child, depth + 1, trace_start, dur_total, children_map, span_map, handoff_pairs))
+        
+        # Insert handoff between sequential agents (only if analysis confirmed)
+        if (child.span_type == SpanType.AGENT and 
+            i + 1 < len(children_sorted) and 
+            children_sorted[i + 1].span_type == SpanType.AGENT):
+            pair_key = (child.name, children_sorted[i + 1].name)
+            if pair_key in handoff_pairs:
+                h = handoff_pairs[pair_key]
+                ctx_str = f"{h.context_size_bytes:,}B" if h.context_size_bytes else ""
+                rows.append(f'''<div class="ho-row"><div class="ho-line" style="padding-left:{(depth+1)*16}px">
+<span>🔀</span><span class="ho-arrow"></span><span>{_esc(child.name)} → {_esc(children_sorted[i+1].name)}</span>
+{f'<span class="ctx-badge">{ctx_str}</span>' if ctx_str else ''}
+</div></div>''')
+    
+    return rows
+
+
+def _build_diagnostics(failures, bn, flow, ctx) -> str:
+    # Failure panel
+    fail_items = []
+    for rc in failures.root_causes:
+        cls = "ff-h" if rc.was_handled else "ff-u"
+        label = "handled" if rc.was_handled else "unhandled"
+        fail_items.append(f'<div class="item"><span class="ff-node {cls}">{_esc(rc.span_name)} · {label}</span></div>')
+    fail_html = "\n".join(fail_items) if fail_items else '<div class="item" style="color:var(--gn)">No failures</div>'
+    
+    res_color = "var(--gn)" if failures.resilience_score >= 0.8 else ("var(--yl)" if failures.resilience_score >= 0.5 else "var(--rd)")
+    
+    # Bottleneck panel
+    bn_items = []
+    if bn:
+        for a in bn.agent_rankings[:5]:
+            bar_w = max(a["pct"], 2)
+            color = "var(--yl)" if a["name"] == bn.bottleneck_span else ("var(--rd)" if a["status"] == "failed" else "var(--gn)")
+            bn_items.append(f'<div class="item"><span style="color:{color}">{_esc(a["name"])}</span> <span style="color:var(--dim)">{a["duration_ms"]:.0f}ms ({a["pct"]:.0f}%)</span></div>')
+    bn_html = "\n".join(bn_items) if bn_items else ""
+    
+    # Handoff panel  
+    ho_items = []
+    for h in flow.handoffs:
+        ctx_str = f"{h.context_size_bytes:,}B" if h.context_size_bytes else "?"
+        ho_items.append(f'<div class="item">{_esc(h.from_agent)} → {_esc(h.to_agent)} <span class="ctx-badge">{ctx_str}</span></div>')
+    ho_html = "\n".join(ho_items) if ho_items else '<div class="item" style="color:var(--dim)">No handoffs detected</div>'
+    
+    # Critical path
+    cp = " → ".join(flow.critical_path[:6]) if flow.critical_path else "N/A"
+    
+    # Context flow anomalies
+    ctx_items = []
+    for a in ctx.anomalies:
+        if a.anomaly == "loss":
+            ctx_items.append(f'<div class="item" style="color:var(--rd)">⚠ {_esc(a.from_agent)} → {_esc(a.to_agent)}: lost {a.keys_lost}</div>')
+        elif a.anomaly == "bloat":
+            ctx_items.append(f'<div class="item" style="color:var(--yl)">⚠ {_esc(a.from_agent)} → {_esc(a.to_agent)}: +{a.size_delta_bytes:,}B</div>')
+    ctx_note = "\n".join(ctx_items) if ctx_items else '<div class="item" style="color:var(--gn)">No anomalies</div>'
+    
+    return f'''<div class="diag">
+<h3>Orchestration Diagnostics</h3>
+<div class="diag-grid">
+
+<div class="d-box">
+<h4>🔴 Failure Propagation</h4>
+<div class="val" style="color:{res_color}">{failures.resilience_score:.0%} resilience</div>
+<div class="det">{failures.total_failed_spans} failed · {failures.handled_count} handled · {failures.unhandled_count} unhandled</div>
+<div class="items">{fail_html}</div>
+</div>
+
+<div class="d-box">
+<h4>🐢 Bottleneck</h4>
+<div class="val">{_esc(bn.bottleneck_span) if bn else "N/A"}</div>
+<div class="det">{f"{bn.bottleneck_duration_ms:.0f}ms ({bn.bottleneck_pct:.0f}%)" if bn else ""}</div>
+<div class="items">{bn_html}</div>
+</div>
+
+<div class="d-box">
+<h4>🔀 Handoff Flow</h4>
+<div class="val">{len(flow.handoffs)} handoffs</div>
+<div class="det">Total: {ctx.total_context_bytes:,}B</div>
+<div class="items">{ho_html}</div>
+</div>
+
+<div class="d-box">
+<h4>📊 Critical Path & Context</h4>
+<div class="val" style="font-size:12px">{_esc(cp)}</div>
+<div class="det">{flow.critical_path_duration_ms:.0f}ms</div>
+<div class="items">{ctx_note}</div>
+</div>
+
+</div></div>'''
