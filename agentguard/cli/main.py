@@ -200,6 +200,52 @@ def cmd_eval(args):
         sys.exit(1)
 
 
+def cmd_diff(args):
+    """Compare two traces side by side."""
+    from agentguard.diff import diff_traces
+    
+    for f_path in [args.trace_a, args.trace_b]:
+        if not Path(f_path).exists():
+            print(f"{C.RED}Error: {f_path} not found{C.RESET}", file=sys.stderr)
+            sys.exit(1)
+    
+    data_a = json.loads(Path(args.trace_a).read_text(encoding="utf-8"))
+    data_b = json.loads(Path(args.trace_b).read_text(encoding="utf-8"))
+    trace_a = ExecutionTrace.from_dict(data_a)
+    trace_b = ExecutionTrace.from_dict(data_b)
+    
+    result = diff_traces(trace_a, trace_b)
+    
+    print(f"\n{C.BOLD}  🔍 Trace Diff{C.RESET}")
+    print(f"  {\"─\" * 50}")
+    print(f"  {C.DIM}Trace A:{C.RESET} {trace_a.trace_id} ({trace_a.task})")
+    print(f"  {C.DIM}Trace B:{C.RESET} {trace_b.trace_id} ({trace_b.task})")
+    print(f"  {C.DIM}Changes:{C.RESET} {len(result.diffs)}")
+    print(f"  {C.GREEN}Improvements:{C.RESET} {len(result.improvements)}")
+    print(f"  {C.RED}Regressions:{C.RESET}  {len(result.regressions)}")
+    
+    if result.spans_added:
+        print(f"\n  {C.GREEN}+ Spans added:{C.RESET}")
+        for s in result.spans_added:
+            print(f"    + {s}")
+    
+    if result.spans_removed:
+        print(f"\n  {C.RED}- Spans removed:{C.RESET}")
+        for s in result.spans_removed:
+            print(f"    - {s}")
+    
+    if result.diffs:
+        print(f"\n  {C.BOLD}Changes:{C.RESET}")
+        for d in result.diffs:
+            icon = f"{C.GREEN}📈{C.RESET}" if d.verdict == "improved" else f"{C.RED}📉{C.RESET}" if d.verdict == "regressed" else "🔄"
+            print(f"    {icon} {C.BOLD}{d.name}{C.RESET} ({d.span_type}) — {d.field}: {d.value_a} → {d.value_b}")
+    
+    if not result.has_changes:
+        print(f"\n  {C.GREEN}No differences found.{C.RESET}")
+    
+    print()
+
+
 def cmd_analyze(args):
     """Analyze failure propagation and flow in a trace."""
     path = Path(args.file)
@@ -300,6 +346,11 @@ def main():
     p.add_argument("--dir", default=".agentguard/traces", help="Traces directory")
     p.add_argument("--output", default=".agentguard/report.html", help="Output HTML path")
     
+    # diff
+    p = sub.add_parser("diff", help="Compare two traces")
+    p.add_argument("trace_a", help="First trace file")
+    p.add_argument("trace_b", help="Second trace file")
+    
     # analyze
     p = sub.add_parser("analyze", help="Analyze failure propagation and flow")
     p.add_argument("file", help="Path to trace JSON file")
@@ -313,7 +364,7 @@ def main():
     
     args = parser.parse_args()
     
-    cmds = {"show": cmd_show, "list": cmd_list, "eval": cmd_eval, "analyze": cmd_analyze, "report": cmd_report, "guard": cmd_guard}
+    cmds = {"show": cmd_show, "list": cmd_list, "eval": cmd_eval, "diff": cmd_diff, "analyze": cmd_analyze, "report": cmd_report, "guard": cmd_guard}
     if args.command in cmds:
         cmds[args.command](args)
     else:
