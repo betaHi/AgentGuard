@@ -7,7 +7,22 @@
 
 ## 1. 先说结论
 
-当前示例面板已经是一个**合格的本地 trace viewer**，但还不是一个足够有辨识度的**多 Agent 编排层可观测性面板**。
+当前示例面板已经从“合格的本地 trace viewer”继续往前走了一步，开始具备**多 Agent 编排诊断面板**的雏形。
+
+相比上一轮评审，它已经新增了：
+
+- 更贴近编排层的顶部指标
+- 每个 trace 的诊断摘要
+- 更明显的 handoff 与 failure propagation 表达
+- 简化版的时间条表达
+
+这说明产品方向是在收敛的，UI 也确实开始向“多 Agent 编排层可观测性”靠拢。
+
+但当前最大的剩余问题已经从“界面表达太弱”变成了：
+
+**Web 面板里的诊断语义正在和分析层分叉。**
+
+也就是说，问题不再主要是“看起来不像”，而是“显示出来的诊断结论是否和系统内部统一分析逻辑一致”。
 
 也就是说，它已经能承担：
 
@@ -23,7 +38,11 @@
 - context flow
 - orchestration diagnostics
 
-如果以后希望让这个项目更贴近“多 Agent 编排层可观测性”的定位，这个面板需要从“trace list + tree viewer”继续往“编排分析面板”升级。
+如果以后希望让这个项目真正稳定地承担“多 Agent 编排层可观测性”的核心展示面，这个面板下一步最应该解决的是：
+
+- 统一诊断来源
+- 明确时间与关键路径语义
+- 避免 UI 自己再发明一套和分析层不同的规则
 
 ---
 
@@ -343,3 +362,156 @@
 2. 从 orchestration viewer 升级为 orchestration diagnostics panel。
 
 只有这样，它才会从“看起来有个 dashboard”变成“真正体现项目方向和工程价值的核心展示面”。
+
+---
+
+## 10. 2026-04-12 增量评审
+
+在 rebased `main` 上重新查看后，当前 UI 已经相较上一篇评审明显升级：
+
+- 页面标题与 README 叙事已经统一到 `Multi-Agent Orchestration` 方向。
+- 顶部指标不再只有通用 trace 指标，而是开始加入 `Agents` 和 `Slowest Agent`。
+- trace 展开区新增了诊断标签，如 handoffs、fallback、failure propagation、slowest、first fail。
+- span 右侧新增了简化版的相对时间条，时间信息比之前更容易扫读。
+- 截图展示力比早期版本更强，至少已经能看出“这不是普通 trace list”。
+
+这部分说明方向是对的，UI 升级也不是表面修饰，而是确实在往编排层诊断靠近。
+
+### 10.1 当前最主要的问题
+
+当前最值得警惕的问题，不是 UI 风格，而是**诊断语义重复实现**。
+
+仓库已经有正式分析层：
+
+- [agentguard/analysis.py](../agentguard/analysis.py)
+
+它定义了：
+
+- failure propagation 分析
+- root cause / handled / unhandled
+- handoff 分析
+- critical path
+- parallel groups
+
+但 Web 面板当前没有直接消费这套分析结果，而是在：
+
+- [agentguard/web/viewer.py](../agentguard/web/viewer.py)
+
+里重新用启发式规则计算：
+
+- `has_fallback`
+- `has_propagation`
+- `handoff_count`
+- `first_fail`
+- 局部 handoff 文本
+
+这会带来三个直接风险。
+
+#### 1. CLI 与 Web 的诊断语义可能分叉
+
+CLI 的分析能力和 Web 面板看到的结论，未来可能不是同一套逻辑。
+
+#### 2. Trace schema 的实验字段没有真正被利用
+
+当前 trace schema 已经定义了实验字段：
+
+- `handoff_from`
+- `handoff_to`
+- `context_size_bytes`
+- `caused_by`
+- `failure_handled`
+
+如果以后 SDK 开始稳定写这些字段，而 Web 仍然沿用自己的一套简化推断逻辑，展示结果会越来越不准确。
+
+#### 3. 维护成本会变高
+
+分析规则一旦需要升级，未来很容易出现：
+
+- 分析层修了一次
+- CLI 跟了一次
+- Web 还要再修一次
+
+这种重复实现对长期演进是不利的。
+
+### 10.2 当前具体问题
+
+#### 10.2.1 `first fail` 取的是列表顺序，不是真正的首个失败点
+
+当前 Web 里 `first_fail` 是按 `spans` 原始顺序取到的第一个失败项，而不是按时间排序后的首个失败点。
+
+这意味着在以下场景下它可能误导用户：
+
+- distributed merge 后 spans 顺序变化
+- 手工构造 trace
+- 外部导入 trace
+
+如果界面要表达“第一个失败点”，就应该以时间为依据，而不是依赖列表顺序。
+
+#### 10.2.2 handoff 表达仍然是推断性的，不是真正的 handoff 事件
+
+当前 UI 中的 handoff 更多是：
+
+- 同父节点下相邻 agent 的关系提示
+
+它仍然不等同于真正的 handoff span，也没有带上上下文转移信息。
+
+这对于当前截图演示是够用的，但对于未来产品语义来说还不够硬。
+
+#### 10.2.3 Web 回归测试没有覆盖这些新增诊断能力
+
+现有 `tests/test_web.py` 仍然主要验证：
+
+- HTML 能生成
+- 页面里出现了基本字符串
+
+但没有验证：
+
+- handoff 标签是否正确
+- failure propagation 标签是否正确
+- slowest agent 是否正确
+- first fail 是否正确
+- Web 是否与分析层结果一致
+
+这意味着这次 UI 升级最有价值的新能力，还没有被自动化保护住。
+
+### 10.3 这一版 UI 的重新评分
+
+基于当前 rebased `main`，我会把评分调整为：
+
+#### 工程可用性
+
+`8 / 10`
+
+已经比上一版更像真正可用的本地诊断面板。
+
+#### 信息清晰度
+
+`7.5 / 10`
+
+顶部摘要和诊断标签明显提高了可读性。
+
+#### 与项目定位的匹配度
+
+`7 / 10`
+
+方向已经明显向“编排层 observability”靠拢，但分析语义还未统一。
+
+#### 传播展示力
+
+`6.5 / 10`
+
+截图的辨识度比之前强，但还没有强到“一眼就只能是这个产品”。
+
+### 10.4 下一步最应该做什么
+
+如果只做一件事，最建议的是：
+
+**让 Web 面板直接消费分析层结果，而不是在 `viewer.py` 里再次实现一套诊断逻辑。**
+
+最自然的顺序是：
+
+1. 先让 `viewer.py` 调用 `analyze_failures()` 和 `analyze_flow()`。
+2. 再让 UI 用统一分析结果展示 handoff、root cause、propagation、critical path。
+3. 最后补上对应的 Web 回归测试。
+
+这样改完之后，Web 才会真正从“看起来更像诊断面板”变成“和系统核心语义一致的诊断面板”。
