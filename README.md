@@ -8,7 +8,7 @@
 
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
 [![Python 3.11+](https://img.shields.io/badge/python-3.11+-blue.svg)](https://www.python.org/downloads/)
-[![Tests](https://img.shields.io/badge/tests-46%20passed-brightgreen.svg)]()
+[![Tests](https://img.shields.io/badge/tests-53%20passed-brightgreen.svg)]()
 
 </div>
 
@@ -258,6 +258,44 @@ generate_timeline_html()  # → .agentguard/report.html
 Opens a standalone HTML page with dark-theme timeline visualization — no JS frameworks, no build step.
 
 
+### Option 5: Manual API (maximum control)
+
+For event-driven, callback-based, or complex architectures:
+
+```python
+from agentguard.sdk.manual import ManualTracer
+
+tracer = ManualTracer(task="Pipeline Run")
+
+agent_id = tracer.start_agent("processor", version="v1")
+tool_id = tracer.start_tool("database_query", parent=agent_id, input_data={"sql": "SELECT ..."})
+tracer.end_tool(tool_id, output=rows)
+tracer.end_agent(agent_id, output={"processed": len(rows)})
+
+trace = tracer.finish()
+```
+
+### Replay & Regression Testing
+
+```python
+from agentguard.replay import ReplayEngine
+
+engine = ReplayEngine()
+
+# Save a baseline
+engine.save_baseline("daily-report", input_data={"topic": "AI"}, 
+                     output_data={"articles": [...]},
+                     rules=[{"type": "min_count", "target": "articles", "value": 5}])
+
+# Later: compare new output against baseline
+result = engine.compare("daily-report", candidate_output=new_output)
+print(result.verdict)  # "improved", "regressed", or "neutral"
+
+# Or run full regression suite
+results = engine.run_regression(my_agent_fn)
+```
+
+
 ## CLI Reference
 
 ```bash
@@ -324,8 +362,8 @@ This project is developed using the [Ralph Loop](https://ghuntley.com/ralph/) me
 - [x] Guard mode with alerts (stdout, file, webhook)
 - [x] Standalone HTML timeline viewer
 - [x] 41 tests passing
-- [ ] Async agent/tool support
-- [ ] PyPI package publishing
+- [x] Async agent/tool support (decorators + context managers)
+- [x] PyPI-ready packaging with entry point
 - [ ] LLM-based evaluation (pairwise compare)
 - [ ] Interactive web dashboard
 - [ ] OTel exporter
