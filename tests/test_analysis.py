@@ -156,3 +156,42 @@ def test_bottleneck_report():
     report = result.to_report()
     assert "Bottleneck" in report
     assert "Critical path" in report
+
+
+def test_context_flow_with_handoff_spans():
+    """Context flow analysis uses explicit handoff spans."""
+    from agentguard.analysis import analyze_context_flow
+    from agentguard.core.trace import SpanType as ST
+    
+    trace = ExecutionTrace(task="flow-test")
+    coord = Span(name="coordinator", span_type=ST.AGENT)
+    a = Span(name="researcher", span_type=ST.AGENT, parent_span_id=coord.span_id)
+    a.complete(output={"articles": [1,2,3]})
+    
+    h = Span(name="researcher → analyst", span_type=ST.HANDOFF, parent_span_id=coord.span_id)
+    h.handoff_from = "researcher"
+    h.handoff_to = "analyst"
+    h.context_size_bytes = 500
+    h.metadata = {"handoff.context_keys": ["articles"]}
+    h.complete()
+    
+    b = Span(name="analyst", span_type=ST.AGENT, parent_span_id=coord.span_id)
+    b.complete()
+    coord.complete()
+    
+    for s in [coord, a, h, b]:
+        trace.add_span(s)
+    trace.complete()
+    
+    report = analyze_context_flow(trace)
+    assert report.handoff_count >= 1
+    assert report.total_context_bytes > 0
+
+
+def test_context_flow_report():
+    """Context flow generates readable report."""
+    from agentguard.analysis import analyze_context_flow
+    trace = _make_flow_trace()
+    report = analyze_context_flow(trace)
+    text = report.to_report()
+    assert "Context Flow" in text

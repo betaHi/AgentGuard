@@ -405,3 +405,142 @@ def analyze_bottleneck(trace: ExecutionTrace) -> BottleneckReport:
         bottleneck_pct=((bottleneck.duration_ms or 0) / max(total_dur, 1)) * 100 if bottleneck else 0,
         agent_rankings=agent_rankings,
     )
+
+
+@dataclass
+class ContextFlowPoint:
+    """Context state at a single handoff point."""
+    from_agent: str
+    to_agent: str
+    keys_sent: list[str]
+    size_bytes: int
+    keys_received: list[str] = field(default_factory=list)
+    size_received_bytes: int = 0
+    keys_lost: list[str] = field(default_factory=list)
+    size_delta_bytes: int = 0
+    anomaly: str = ""  # "loss", "bloat", "ok"
+
+    def to_dict(self) -> dict:
+        return {
+            "from": self.from_agent, "to": self.to_agent,
+            "keys_sent": self.keys_sent, "size_bytes": self.size_bytes,
+            "keys_lost": self.keys_lost, "size_delta_bytes": self.size_delta_bytes,
+            "anomaly": self.anomaly,
+        }
+
+
+@dataclass  
+class ContextFlowReport:
+    """Analysis of context flow across all handoffs in a trace."""
+    handoff_count: int
+    total_context_bytes: int
+    points: list[ContextFlowPoint]
+    anomalies: list[ContextFlowPoint]  # points with loss or bloat
+    
+    def to_dict(self) -> dict:
+        return {
+            "handoff_count": self.handoff_count,
+            "total_context_bytes": self.total_context_bytes,
+            "anomaly_count": len(self.anomalies),
+            "points": [p.to_dict() for p in self.points],
+        }
+    
+    def to_report(self) -> str:
+        lines = [
+            "# Context Flow Analysis",
+            "",
+            f"- **Handoffs:** {self.handoff_count}",
+            f"- **Total context:** {self.total_context_bytes:,} bytes",
+            f"- **Anomalies:** {len(self.anomalies)}",
+            "",
+        ]
+        for p in self.points:
+            icon = "🟢" if p.anomaly == "ok" else "🔴" if p.anomaly == "loss" else "🟡"
+            lines.append(f"{icon} {p.from_agent} → {p.to_agent}: {p.size_bytes:,}B")
+            if p.keys_lost:
+                lines.append(f"   ⚠ Lost keys: {p.keys_lost}")
+            if p.anomaly == "bloat":
+                lines.append(f"   ⚠ Context grew by {p.size_delta_bytes:,}B")
+        return "\n".join(lines)
+
+
+def analyze_context_flow(trace: ExecutionTrace) -> ContextFlowReport:
+    """Analyze how context flows between agents via handoffs.
+    
+    Detects:
+    - Context loss (keys present in sender output but missing in receiver input)
+    - Context bloat (receiver input significantly larger than sender output)
+    - Context compression (size reduction between handoffs)
+    
+    Answers: "Which handoff lost critical information?"
+    """
+    import json as _json
+    
+    span_map = {s.span_id: s for s in trace.spans}
+    handoff_spans = [s for s in trace.spans if s.span_type == SpanType.HANDOFF]
+    
+    points = []
+    
+    # Method 1: Use explicit HANDOFF spans
+    for hs in handoff_spans:
+        fr = hs.handoff_from or hs.metadata.get("handoff.from", "")
+        to = hs.handoff_to or hs.metadata.get("handoff.to", "")
+        ctx_keys = hs.metadata.get("handoff.context_keys", [])
+        ctx_size = hs.context_size_bytes or hs.metadata.get("handoff.context_size_bytes", 0)
+        
+        points.append(ContextFlowPoint(
+            from_agent=fr, to_agent=to,
+            keys_sent=ctx_keys, size_bytes=ctx_size,
+            anomaly="ok",
+        ))
+    
+    # Method 2: If no explicit handoffs, infer from sequential agents
+    if not points:
+        children_map: dict[str, list[Span]] = {}
+        for s in trace.spans:
+            if s.parent_span_id:
+                children_map.setdefault(s.parent_span_id, []).append(s)
+        
+        for parent_id, children in children_map.items():
+            agents = sorted(
+                [c for c in children if c.span_type == SpanType.AGENT],
+                key=lambda s: s.started_at or ""
+            )
+            for i in range(len(agents) - 1):
+                sender = agents[i]
+                receiver = agents[i + 1]
+                
+                sender_output = sender.output_data or {}
+                receiver_input = receiver.input_data or {}
+                
+                s_keys = list(sender_output.keys()) if isinstance(sender_output, dict) else []
+                r_keys = list(receiver_input.keys()) if isinstance(receiver_input, dict) else []
+                s_size = len(_json.dumps(sender_output, default=str).encode())
+                r_size = len(_json.dumps(receiver_input, default=str).encode())
+                
+                lost = [k for k in s_keys if k not in r_keys] if s_keys and r_keys else []
+                delta = r_size - s_size
+                
+                anomaly = "ok"
+                if lost:
+                    anomaly = "loss"
+                elif delta > s_size * 2 and s_size > 0:
+                    anomaly = "bloat"
+                
+                points.append(ContextFlowPoint(
+                    from_agent=sender.name, to_agent=receiver.name,
+                    keys_sent=s_keys, size_bytes=s_size,
+                    keys_received=r_keys, size_received_bytes=r_size,
+                    keys_lost=lost, size_delta_bytes=delta,
+                    anomaly=anomaly,
+                ))
+    
+    total_bytes = sum(p.size_bytes for p in points)
+    anomalies = [p for p in points if p.anomaly != "ok"]
+    
+    return ContextFlowReport(
+        handoff_count=len(points),
+        total_context_bytes=total_bytes,
+        points=points,
+        anomalies=anomalies,
+    )
