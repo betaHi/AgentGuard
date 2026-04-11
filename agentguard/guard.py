@@ -90,13 +90,19 @@ class Guard:
         rules: Optional[list[dict]] = None,
         alert_handlers: Optional[list[AlertHandler]] = None,
         fail_threshold: int = 3,
+        auto_learn: bool = False,
     ):
         self.traces_dir = Path(traces_dir)
         self.rules = rules or []
         self.alert_handlers = alert_handlers or [StdoutAlert()]
         self.fail_threshold = fail_threshold
+        self.auto_learn = auto_learn
         self._seen: set[str] = set()
         self._consecutive_fails: dict[str, int] = {}
+        self._evolve_engine = None
+        if auto_learn:
+            from agentguard.evolve import EvolutionEngine
+            self._evolve_engine = EvolutionEngine()
     
     def _alert(self, message: str, severity: str = "warning", metadata: dict = None) -> None:
         for handler in self.alert_handlers:
@@ -175,6 +181,10 @@ class Guard:
                                     severity="warning",
                                     metadata={"agent": span.name, "trace_id": trace.trace_id}
                                 )
+            
+                # Auto-learn from this trace
+                if self._evolve_engine:
+                    self._evolve_engine.learn(trace)
             
             except Exception as e:
                 self._alert(f"Error processing {trace_file.name}: {e}", severity="warning")
