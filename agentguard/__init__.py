@@ -1,18 +1,17 @@
 """AgentGuard — Record, Replay, Evaluate, and Guard your AI Agents.
 
-Quick Start:
-    from agentguard import record_agent, record_tool, AgentTrace
-    from agentguard.sdk.recorder import init_recorder, finish_recording
-    
-    # Option 1: Decorators
+Three integration styles, pick what fits:
+
+    # Style 1: Decorators (minimal code change)
     @record_agent(name="my-agent", version="v1")
     def my_agent(task): ...
     
-    # Option 2: Context managers (less intrusive)
+    # Style 2: Context managers (zero decoration)
     with AgentTrace(name="my-agent", version="v1") as agent:
-        with agent.tool("search") as t:
-            results = search(query)
-            t.set_output(results)
+        ...
+    
+    # Style 3: Spawned processes (multi-process agents)
+    from agentguard.sdk.distributed import inject_trace_context, init_recorder_from_env
 """
 
 __version__ = "0.1.0"

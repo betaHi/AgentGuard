@@ -8,7 +8,7 @@
 
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
 [![Python 3.11+](https://img.shields.io/badge/python-3.11+-blue.svg)](https://www.python.org/downloads/)
-[![Tests](https://img.shields.io/badge/tests-41%20passed-brightgreen.svg)]()
+[![Tests](https://img.shields.io/badge/tests-43%20passed-brightgreen.svg)]()
 
 </div>
 
@@ -84,6 +84,44 @@ with AgentTrace(name="researcher", version="v1.3") as agent:
 
 trace = finish_recording()
 ```
+
+
+### Option 3: Spawned / Multi-Process Agents
+
+For agents launched via `subprocess`, `multiprocessing`, or any spawn mechanism:
+
+```python
+import subprocess, os
+from agentguard.sdk.recorder import init_recorder, finish_recording
+from agentguard.sdk.distributed import inject_trace_context
+
+# Parent process: start recording and propagate context
+recorder = init_recorder(task="Distributed Research", trigger="api")
+env = inject_trace_context()
+
+# Spawn child agents — trace context propagated via env vars
+subprocess.run(["python", "agent_a.py"], env={**os.environ, **env})
+subprocess.run(["python", "agent_b.py"], env={**os.environ, **env})
+
+trace = finish_recording()
+```
+
+```python
+# agent_a.py (child process)
+from agentguard import AgentTrace
+from agentguard.sdk.distributed import init_recorder_from_env
+from agentguard.sdk.recorder import finish_recording
+
+init_recorder_from_env()  # automatically joins parent trace
+
+with AgentTrace(name="agent-a", version="v1") as agent:
+    result = do_work()
+    agent.set_output(result)
+
+finish_recording()
+```
+
+All spawned agents appear in the same trace tree, properly nested under the parent.
 
 ### View Traces
 

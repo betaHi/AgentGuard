@@ -3,8 +3,8 @@
   🛡️  AgentGuard Trace Report
 ════════════════════════════════════════════════════════════
 
-  Trace ID:    251d1a2e-ad6e-49
-  Task:        AI Daily Report (with failures)
+  Trace ID:    2806ed90-929c-41
+  Task:        Daily Report (with failures)
   Trigger:     cron
   Status:       ✗ FAIL 
   Duration:    251ms
@@ -14,12 +14,12 @@
 
   Execution Timeline
   ──────────────────────────────────────────────────
-  🤖 基围小小虾 🦐 (v1.0)   ✓ PASS   250ms
-  ├── 🤖 北极虾 ❄️ (v1.3)   ✓ PASS   150ms
+  🤖 coordinator (v1.0)   ✓ PASS   251ms
+  ├── 🤖 news-collector (v1.3)   ✓ PASS   150ms
   │   ├── 🔧 web_search   ✗ FAIL   100ms
   │   │      ⚠ ConnectionError: Search API timeout after 10s
   │   └── 🔧 cache_lookup   ✓ PASS   50ms
-  └── 🤖 皮皮虾 👊 (v2.0)   ✗ FAIL   100ms
+  └── 🤖 analyst (v2.0)   ✗ FAIL   100ms
          ⚠ ConnectionError: Search API timeout after 10s
       └── 🔧 web_search   ✗ FAIL   100ms
              ⚠ ConnectionError: Search API timeout after 10s

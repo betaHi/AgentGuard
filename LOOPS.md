@@ -1,185 +1,173 @@
 # AgentGuard — Multi-Loop Development Architecture
 
-> 解决单 Loop 上下文耗尽问题 + 并行开发效率
+> Solving single-loop context exhaustion + enabling parallel development
 
-## 问题
+## Problem
 
-单个 Ralph Loop 有三个瓶颈：
-1. **上下文窗口有限** — 一个 session 不可能装下整个项目
-2. **串行低效** — SDK 和 Eval 可以并行开发，没必要排队
-3. **知识丢失** — session 结束后，下一个 session 不知道上一个做了什么
+A single Ralph Loop has three bottlenecks:
+1. **Limited context window** — one session cannot hold the entire project
+2. **Serial inefficiency** — SDK and Eval can be developed in parallel
+3. **Knowledge loss** — next session doesn't know what the previous one did
 
-## 解决方案：Multi-Loop + Handoff Protocol
+## Solution: Multi-Loop + Handoff Protocol
 
-### 架构
+### Architecture
 
 ```
-program.md (人类编辑 — 总方向)
+program.md (human-edited — overall direction)
     │
     ├── Loop-1: SDK Loop ──────── sdk-progress.md
     ├── Loop-2: Eval Loop ─────── eval-progress.md
     ├── Loop-3: CLI Loop ──────── cli-progress.md
     └── Loop-4: Docs Loop ─────── docs-progress.md
     
-    每个 Loop:
-    ┌──────────────────────────────────────┐
-    │  1. 读 program.md (总方向)           │
-    │  2. 读 {module}-progress.md (进度)   │
-    │  3. 读相关代码文件                    │
-    │  4. 执行一个 sprint                  │
-    │  5. 跑测试                           │
-    │  6. 更新 {module}-progress.md        │
-    │  7. 检查上下文预算                    │
-    │     - 充裕 → 继续下一轮              │
-    │     - 紧张 → 写 handoff → 新 session │
-    └──────────────────────────────────────┘
+    Each Loop:
+    ┌──────────────────────────────────────────┐
+    │  1. Read program.md (direction)           │
+    │  2. Read {module}-progress.md (status)    │
+    │  3. Read relevant code files              │
+    │  4. Execute one sprint                    │
+    │  5. Run tests                             │
+    │  6. Update {module}-progress.md           │
+    │  7. Check context budget                  │
+    │     - Sufficient → continue next round    │
+    │     - Tight → write handoff → new session │
+    └──────────────────────────────────────────┘
 ```
 
-### 上下文管理策略
+### Context Management Strategies
 
-#### 策略 1：Scoped Context（限定范围）
-每个 Loop 只加载自己需要的文件，不要贪：
+#### Strategy 1: Scoped Context
+Each Loop only loads files it needs:
 
 ```
-SDK Loop 只需要看:
-  - program.md (方向)
-  - sdk-progress.md (进度)
+SDK Loop needs:
+  - program.md (direction)
+  - sdk-progress.md (progress)
   - agentguard/core/*.py
   - agentguard/sdk/*.py
   - tests/test_trace.py, tests/test_decorators.py
 
-Eval Loop 只需要看:
+Eval Loop needs:
   - program.md
   - eval-progress.md
-  - agentguard/core/trace.py (数据模型，只读)
+  - agentguard/core/trace.py (read-only)
   - agentguard/eval/*.py
   - tests/test_eval.py
 ```
 
-#### 策略 2：Handoff Protocol（交班协议）
-当上下文快满时，Loop 必须写一份 handoff 文件给下一个 session：
+#### Strategy 2: Handoff Protocol
+When context is nearly full, the Loop writes a handoff file for the next session:
 
 ```markdown
 # Handoff: SDK Loop Session 3 → Session 4
 
-## 完成了什么
-- @record_agent 和 @record_tool 已实现并测试
-- TraceRecorder 支持多线程
-- JSON 序列化/反序列化通过
+## Completed
+- @record_agent and @record_tool implemented and tested
+- TraceRecorder supports multi-threading
+- JSON serialization/deserialization passing
 
-## 还没完成
+## Remaining
 - [ ] Context propagation across async calls
 - [ ] Trace export to OTel format
 
-## 当前状态
+## Current State
 - Tests: 15/15 passing
-- 无已知 bug
+- No known bugs
 
-## 下一步
-1. 实现 async 版本的 decorator
-2. 添加 OTel exporter
+## Next Steps
+1. Implement async decorator variants
+2. Add OTel exporter
 
-## 关键设计决定（别改）
-- Span 用 flat list + parent_span_id，不用嵌套结构存储
-- trace_id 用 uuid 前 16 位
+## Key Design Decisions (DO NOT CHANGE)
+- Spans stored as flat list + parent_span_id, not nested
+- trace_id = uuid4()[:16]
 ```
 
-#### 策略 3：Progress File（进度文件）
-每个模块有一个持久化的进度文件，是 Loop 之间的"记忆"：
+#### Strategy 3: Progress Files
+Each module has a persistent progress file — the "memory" between Loops:
 
 ```
 .loops/
-├── sdk-progress.md      # SDK 模块进度
-├── eval-progress.md     # Eval 模块进度
-├── cli-progress.md      # CLI 模块进度
-├── docs-progress.md     # 文档进度
-└── handoffs/            # 交班记录
+├── sdk-progress.md
+├── eval-progress.md
+├── cli-progress.md
+├── docs-progress.md
+└── handoffs/
     ├── sdk-session-3-to-4.md
     └── eval-session-1-to-2.md
 ```
 
-#### 策略 4：Context Budget Check（上下文预算检查）
-每轮 Loop 开始时估算上下文使用情况：
+#### Strategy 4: Context Budget Check
+Estimate context usage at the start of each Loop:
 
 ```
 Rule of thumb:
-- 每个 .py 文件 ≈ 100-300 tokens
+- Each .py file ≈ 100-300 tokens
 - program.md ≈ 500 tokens
 - progress.md ≈ 200 tokens
-- 测试输出 ≈ 200 tokens
+- Test output ≈ 200 tokens
 
-如果一个 Loop 需要操作 5 个 .py 文件:
-  5 × 200 + 500 + 200 + 200 = ~2000 tokens 输入
-  加上对话历史，大约 3-5 轮后就该考虑交班
+If a Loop operates on 5 .py files:
+  5 × 200 + 500 + 200 + 200 = ~2000 tokens input
+  After 3-5 conversation turns, consider handing off
 ```
 
-### 并行 Loop 定义
+### Parallel Loop Definitions
 
 #### Loop 1: SDK Loop
 ```
-职责: agentguard/core/ + agentguard/sdk/
-输入: program.md, sdk-progress.md
-输出: 代码 + 测试 + sdk-progress.md
-sprint 周期: 1-2 个功能点
+Scope: agentguard/core/ + agentguard/sdk/
+Input: program.md, sdk-progress.md
+Output: code + tests + sdk-progress.md
+Sprint cycle: 1-2 features
 ```
 
 #### Loop 2: Eval Loop
 ```
-职责: agentguard/eval/
-输入: program.md, eval-progress.md, core/trace.py (只读)
-输出: 代码 + 测试 + eval-progress.md
-依赖: SDK Loop 完成 core schemas
-sprint 周期: 1 个评估器
+Scope: agentguard/eval/
+Input: program.md, eval-progress.md, core/trace.py (read-only)
+Output: code + tests + eval-progress.md
+Depends on: SDK Loop completing core schemas
+Sprint cycle: 1 evaluator
 ```
 
 #### Loop 3: CLI Loop
 ```
-职责: agentguard/cli/
-输入: program.md, cli-progress.md, core/ + sdk/ + eval/ (只读)
-输出: CLI 代码 + cli-progress.md
-依赖: SDK Loop + Eval Loop
-sprint 周期: 1-2 个命令
+Scope: agentguard/cli/
+Input: program.md, cli-progress.md, core/ + sdk/ + eval/ (read-only)
+Output: CLI code + cli-progress.md
+Depends on: SDK Loop + Eval Loop
+Sprint cycle: 1-2 commands
 ```
 
 #### Loop 4: Docs Loop
 ```
-职责: README.md, docs/, examples/
-输入: program.md, docs-progress.md, 所有代码 (只读)
-输出: 文档 + 示例 + docs-progress.md
-独立运行，随时可以启动
+Scope: README.md, docs/, examples/
+Input: program.md, docs-progress.md, all code (read-only)
+Output: docs + examples + docs-progress.md
+Independent — can run anytime
 ```
 
-### 跨 Loop 通信规则
+### Cross-Loop Communication Rules
 
-1. **只通过文件通信** — 不共享内存、不共享上下文
-2. **progress.md 是唯一的状态源** — 每个 Loop 写自己的，读别人的
-3. **代码是共享产物** — 一个 Loop 写的代码，另一个 Loop 可以读
-4. **不要跨界修改** — SDK Loop 不改 eval/ 代码，反之亦然
-5. **依赖通过 interface 解耦** — Eval Loop 只依赖 core/trace.py 的 schema，不依赖 SDK 实现
-
-### 启动命令
-
-```bash
-# 启动 SDK Loop（Sprint 2: async support + OTel export）
-# 读 program.md + sdk-progress.md，开始工作
-
-# 启动 Eval Loop（Sprint 2: rule-based assertions）  
-# 读 program.md + eval-progress.md，开始工作
-
-# 两个可以并行跑
-```
+1. **File-only communication** — no shared memory, no shared context
+2. **progress.md is the single source of state** — each Loop writes its own, reads others'
+3. **Code is shared output** — code written by one Loop can be read by another
+4. **No cross-boundary edits** — SDK Loop doesn't modify eval/ code, and vice versa
+5. **Decouple via interfaces** — Eval Loop depends on core/trace.py schema, not SDK implementation
 
 ### Dogfooding
 
-最酷的地方：**AgentGuard 的多 Loop 开发过程本身就是一个多 Agent 协作场景。**
+AgentGuard's multi-loop development process is itself a multi-agent collaboration scenario.
 
-我们可以用 AgentGuard 来记录和观测自己的开发 Loop：
+We can use AgentGuard to record and observe its own development Loops:
 - Loop 1 = Agent "SDK-Dev"
 - Loop 2 = Agent "Eval-Dev"  
-- 它们的执行、交班、依赖关系，正好用 AgentGuard trace 来展示
+- Their execution, handoffs, and dependencies can be traced with AgentGuard itself.
 
-**用自己做的工具来观测自己做这个工具的过程。** Meta-dogfooding.
+**Using the tool you're building to observe the process of building that tool.** Meta-dogfooding.
 
 ---
 
-_This architecture is itself a living document. Update as we learn._
+_This architecture is a living document. Update as we learn._
