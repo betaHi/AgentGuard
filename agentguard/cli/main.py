@@ -217,7 +217,8 @@ def cmd_diff(args):
     result = diff_traces(trace_a, trace_b)
     
     print(f"\n{C.BOLD}  🔍 Trace Diff{C.RESET}")
-    print(f"  {\"─\" * 50}")
+    line = "─" * 50
+    print(f"  {line}")
     print(f"  {C.DIM}Trace A:{C.RESET} {trace_a.trace_id} ({trace_a.task})")
     print(f"  {C.DIM}Trace B:{C.RESET} {trace_b.trace_id} ({trace_b.task})")
     print(f"  {C.DIM}Changes:{C.RESET} {len(result.diffs)}")

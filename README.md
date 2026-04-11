@@ -27,21 +27,23 @@ Existing tools (Langfuse, Phoenix, etc.) show you what happens inside a single L
 
 ## Screenshots
 
-### CLI: Multi-Agent Trace Tree
+### Multi-Agent Trace: 7 Agents, 10 Tools, 4 Handoffs
 
 <p align="center">
-  <img src="docs/screenshots/cli-trace-success.png" alt="AgentGuard CLI - Success Trace" width="680">
+  <img src="docs/screenshots/cli-trace-complex.png" alt="AgentGuard — Complex Multi-Agent Trace" width="740">
 </p>
 
-### CLI: Failure Propagation
+> A real pipeline: planner → researcher → data-enricher → analyst → writer → notifier. Shows handoffs (🔀), graceful fallback (vector_search → keyword_search), bottleneck annotation (🐢 analyst 50%), and unhandled failure (💥 notifier).
+
+### Orchestration Diagnostics
 
 <p align="center">
-  <img src="docs/screenshots/cli-trace-failure.png" alt="AgentGuard CLI - Failure Trace" width="680">
+  <img src="docs/screenshots/cli-analysis.png" alt="AgentGuard — Failure Propagation & Bottleneck Analysis" width="650">
 </p>
 
-> `news-collector` caught the tool failure and fell back to cache. `analyst` didn't — the error propagated upward. AgentGuard makes this topology visible.
+> `agentguard analyze`: failure propagation (handled vs unhandled), resilience score, bottleneck identification with agent rankings, handoff flow with context sizes.
 
-### Web Timeline
+### Web Dashboard
 
 <p align="center">
   <img src="docs/screenshots/web-report-hero.png" alt="AgentGuard Web Dashboard" width="900">
