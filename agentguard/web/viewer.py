@@ -18,6 +18,17 @@ from typing import Any
 from agentguard.core.trace import ExecutionTrace, Span, SpanType, SpanStatus
 from agentguard.analysis import analyze_failures, analyze_flow, analyze_bottleneck, analyze_context_flow
 
+def _try_evolve(trace):
+    """Try to get evolution suggestions if knowledge exists."""
+    try:
+        from agentguard.evolve import EvolutionEngine
+        engine = EvolutionEngine()
+        if engine.kb.trace_count > 0:
+            return engine.suggest(min_confidence=0.6)[:3]
+    except Exception:
+        pass
+    return []
+
 
 def _esc(text: Any) -> str:
     return html_mod.escape(str(text)) if text else ""
@@ -312,6 +323,16 @@ def _render_gantt_rows(span: Span, depth: int, trace_start: str, dur_total: floa
     
     return rows
 
+
+def _build_suggestions_panel(trace) -> str:
+    suggestions = _try_evolve(trace)
+    if not suggestions:
+        return ''
+    items = []
+    for s in suggestions:
+        icon = {'failure': '🔴', 'bottleneck': '🐢', 'handoff': '🔀'}.get(s.category, '•')
+        items.append(f'<div class="item">{icon} <b>{_esc(s.agent)}</b> ({s.confidence:.0%}): {_esc(s.suggestion[:60])}</div>')
+    return f'<div class="d-box" style="grid-column:1/-1"><h4>🧠 Learned Suggestions</h4><div class="items">{chr(10).join(items)}</div></div>'
 
 def _build_diagnostics(failures, bn, flow, ctx) -> str:
     # Failure panel
