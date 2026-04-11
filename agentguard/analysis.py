@@ -1,0 +1,312 @@
+"""Trace analysis — failure propagation, context flow, critical path.
+
+Given a multi-agent execution trace, these functions answer:
+- Where did the failure originate? (root cause)
+- How did it propagate? (blast radius)
+- Was it handled or did it bubble up? (resilience)
+- How did context flow between agents? (handoff analysis)
+- What was the critical path? (bottleneck)
+"""
+
+from __future__ import annotations
+
+from dataclasses import dataclass, field
+from typing import Any, Optional
+
+from agentguard.core.trace import ExecutionTrace, Span, SpanType, SpanStatus
+
+
+@dataclass
+class FailureNode:
+    """A node in the failure propagation tree."""
+    span_id: str
+    span_name: str
+    span_type: str
+    error: str
+    is_root_cause: bool = False
+    was_handled: bool = False
+    affected_children: list[FailureNode] = field(default_factory=list)
+
+    def to_dict(self) -> dict:
+        return {
+            "span_id": self.span_id,
+            "name": self.span_name,
+            "type": self.span_type,
+            "error": self.error,
+            "is_root_cause": self.is_root_cause,
+            "was_handled": self.was_handled,
+            "affected_children": [c.to_dict() for c in self.affected_children],
+        }
+
+
+@dataclass
+class FailureAnalysis:
+    """Complete failure analysis for a trace."""
+    root_causes: list[FailureNode]
+    total_failed_spans: int
+    blast_radius: int  # number of spans affected by failures
+    handled_count: int  # failures that were caught
+    unhandled_count: int  # failures that propagated
+    resilience_score: float  # 0-1, higher = more resilient
+
+    def to_dict(self) -> dict:
+        return {
+            "root_causes": [r.to_dict() for r in self.root_causes],
+            "total_failed_spans": self.total_failed_spans,
+            "blast_radius": self.blast_radius,
+            "handled_count": self.handled_count,
+            "unhandled_count": self.unhandled_count,
+            "resilience_score": round(self.resilience_score, 2),
+        }
+
+    def to_report(self) -> str:
+        lines = [
+            "# Failure Propagation Analysis",
+            "",
+            f"- **Failed spans:** {self.total_failed_spans}",
+            f"- **Root causes:** {len(self.root_causes)}",
+            f"- **Blast radius:** {self.blast_radius} spans affected",
+            f"- **Handled:** {self.handled_count}, **Unhandled:** {self.unhandled_count}",
+            f"- **Resilience score:** {self.resilience_score:.0%}",
+            "",
+        ]
+        for rc in self.root_causes:
+            icon = "🟡" if rc.was_handled else "🔴"
+            lines.append(f"{icon} **Root cause:** {rc.span_name} ({rc.span_type})")
+            lines.append(f"   Error: {rc.error}")
+            if rc.affected_children:
+                lines.append(f"   Affected: {len(rc.affected_children)} downstream spans")
+        return "\n".join(lines)
+
+
+def analyze_failures(trace: ExecutionTrace) -> FailureAnalysis:
+    """Analyze failure propagation in a trace.
+    
+    Identifies root cause failures, tracks propagation paths,
+    and computes resilience metrics.
+    
+    Args:
+        trace: The execution trace to analyze.
+    
+    Returns:
+        FailureAnalysis with root causes, blast radius, and resilience score.
+    """
+    failed = [s for s in trace.spans if s.status == SpanStatus.FAILED]
+    if not failed:
+        return FailureAnalysis(
+            root_causes=[], total_failed_spans=0, blast_radius=0,
+            handled_count=0, unhandled_count=0, resilience_score=1.0,
+        )
+    
+    # Build parent map
+    parent_map: dict[str, str] = {}
+    children_map: dict[str, list[str]] = {}
+    span_map: dict[str, Span] = {}
+    
+    for s in trace.spans:
+        span_map[s.span_id] = s
+        if s.parent_span_id:
+            parent_map[s.span_id] = s.parent_span_id
+            children_map.setdefault(s.parent_span_id, []).append(s.span_id)
+    
+    failed_ids = {s.span_id for s in failed}
+    
+    # Find root causes: failed spans whose parent did NOT fail,
+    # or failed spans with no parent
+    root_cause_spans = []
+    for s in failed:
+        parent_id = parent_map.get(s.span_id)
+        if parent_id is None or parent_id not in failed_ids:
+            root_cause_spans.append(s)
+    
+    # For each root cause, find affected downstream spans
+    def count_affected(span_id: str) -> list[str]:
+        affected = []
+        for child_id in children_map.get(span_id, []):
+            if child_id in failed_ids:
+                affected.append(child_id)
+                affected.extend(count_affected(child_id))
+        return affected
+    
+    root_causes = []
+    total_affected = set()
+    
+    for rc_span in root_cause_spans:
+        affected = count_affected(rc_span.span_id)
+        total_affected.update(affected)
+        total_affected.add(rc_span.span_id)
+        
+        # Determine if failure was handled:
+        # - Tool failure where parent agent succeeded = handled (agent caught the error)
+        # - Agent failure = unhandled (the agent itself failed, even if orchestrator continued)
+        was_handled = False
+        if rc_span.failure_handled:
+            was_handled = True
+        elif rc_span.span_type == SpanType.TOOL:
+            # Tool failed — check if parent agent still succeeded
+            parent_id = parent_map.get(rc_span.span_id)
+            if parent_id and parent_id in span_map:
+                parent_span = span_map[parent_id]
+                if parent_span.status == SpanStatus.COMPLETED:
+                    was_handled = True
+        # Agent failures are unhandled by default — the agent couldn't cope
+        
+        node = FailureNode(
+            span_id=rc_span.span_id,
+            span_name=rc_span.name,
+            span_type=rc_span.span_type.value,
+            error=rc_span.error or "unknown error",
+            is_root_cause=True,
+            was_handled=was_handled,
+            affected_children=[
+                FailureNode(
+                    span_id=aid, span_name=span_map[aid].name,
+                    span_type=span_map[aid].span_type.value,
+                    error=span_map[aid].error or "",
+                ) for aid in affected if aid in span_map
+            ],
+        )
+        root_causes.append(node)
+    
+    handled = sum(1 for rc in root_causes if rc.was_handled)
+    unhandled = len(root_causes) - handled
+    
+    # Resilience score: ratio of handled failures to total root causes
+    resilience = handled / max(len(root_causes), 1)
+    
+    return FailureAnalysis(
+        root_causes=root_causes,
+        total_failed_spans=len(failed),
+        blast_radius=len(total_affected),
+        handled_count=handled,
+        unhandled_count=unhandled,
+        resilience_score=resilience,
+    )
+
+
+@dataclass
+class HandoffInfo:
+    """Information about a handoff between agents."""
+    from_agent: str
+    to_agent: str
+    context_keys: list[str]
+    context_size_bytes: int
+    duration_ms: Optional[float] = None
+
+    def to_dict(self) -> dict:
+        return {
+            "from": self.from_agent,
+            "to": self.to_agent,
+            "context_keys": self.context_keys,
+            "context_size_bytes": self.context_size_bytes,
+            "duration_ms": self.duration_ms,
+        }
+
+
+@dataclass
+class FlowAnalysis:
+    """Analysis of multi-agent execution flow."""
+    agent_count: int
+    tool_count: int
+    handoffs: list[HandoffInfo]
+    critical_path: list[str]  # span names on the longest path
+    critical_path_duration_ms: float
+    parallel_groups: list[list[str]]  # groups of agents that ran in parallel
+
+    def to_dict(self) -> dict:
+        return {
+            "agent_count": self.agent_count,
+            "tool_count": self.tool_count,
+            "handoffs": [h.to_dict() for h in self.handoffs],
+            "critical_path": self.critical_path,
+            "critical_path_duration_ms": round(self.critical_path_duration_ms, 1),
+            "parallel_groups": self.parallel_groups,
+        }
+
+
+def analyze_flow(trace: ExecutionTrace) -> FlowAnalysis:
+    """Analyze the execution flow of a multi-agent trace.
+    
+    Identifies:
+    - Handoffs between agents (sequential agent pairs under same parent)
+    - Critical path (longest execution chain)
+    - Parallel execution groups
+    """
+    span_map = {s.span_id: s for s in trace.spans}
+    children_map: dict[str, list[Span]] = {}
+    
+    for s in trace.spans:
+        if s.parent_span_id:
+            children_map.setdefault(s.parent_span_id, []).append(s)
+    
+    # Detect handoffs: sequential agent spans under same parent
+    handoffs = []
+    for parent_id, children in children_map.items():
+        agent_children = [c for c in children if c.span_type == SpanType.AGENT]
+        if len(agent_children) >= 2:
+            # Sort by start time
+            sorted_agents = sorted(agent_children, key=lambda s: s.started_at or "")
+            for i in range(len(sorted_agents) - 1):
+                from_agent = sorted_agents[i]
+                to_agent = sorted_agents[i + 1]
+                
+                # Estimate context passed
+                import json
+                ctx_bytes = len(json.dumps(from_agent.output_data or {}, default=str).encode())
+                ctx_keys = list((from_agent.output_data or {}).keys()) if isinstance(from_agent.output_data, dict) else []
+                
+                handoffs.append(HandoffInfo(
+                    from_agent=from_agent.name,
+                    to_agent=to_agent.name,
+                    context_keys=ctx_keys,
+                    context_size_bytes=ctx_bytes,
+                ))
+    
+    # Critical path: find the longest chain from root to leaf
+    def find_longest_path(span_id: str) -> tuple[list[str], float]:
+        span = span_map.get(span_id)
+        if not span:
+            return [], 0
+        
+        children = children_map.get(span_id, [])
+        if not children:
+            return [span.name], span.duration_ms or 0
+        
+        best_path = []
+        best_duration = 0
+        for child in children:
+            child_path, child_dur = find_longest_path(child.span_id)
+            if child_dur > best_duration:
+                best_path = child_path
+                best_duration = child_dur
+        
+        return [span.name] + best_path, (span.duration_ms or 0)
+    
+    # Find roots
+    roots = [s for s in trace.spans if s.parent_span_id is None or s.parent_span_id not in span_map]
+    
+    critical_path = []
+    critical_duration = 0
+    for root in roots:
+        path, dur = find_longest_path(root.span_id)
+        if dur > critical_duration:
+            critical_path = path
+            critical_duration = dur
+    
+    # Detect parallel groups
+    parallel_groups = []
+    for parent_id, children in children_map.items():
+        agent_children = [c for c in children if c.span_type == SpanType.AGENT]
+        if len(agent_children) >= 2:
+            # Check if any overlap in time
+            # Simplified: if they share same parent, consider them a group
+            parallel_groups.append([c.name for c in agent_children])
+    
+    return FlowAnalysis(
+        agent_count=len(trace.agent_spans),
+        tool_count=len(trace.tool_spans),
+        handoffs=handoffs,
+        critical_path=critical_path,
+        critical_path_duration_ms=critical_duration,
+        parallel_groups=parallel_groups,
+    )

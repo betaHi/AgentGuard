@@ -200,6 +200,58 @@ def cmd_eval(args):
         sys.exit(1)
 
 
+def cmd_analyze(args):
+    """Analyze failure propagation and flow in a trace."""
+    path = Path(args.file)
+    if not path.exists():
+        print(f"{C.RED}Error: File not found: {args.file}{C.RESET}", file=sys.stderr)
+        sys.exit(1)
+    
+    data = json.loads(path.read_text(encoding="utf-8"))
+    trace = ExecutionTrace.from_dict(data)
+    
+    from agentguard.analysis import analyze_failures, analyze_flow
+    
+    # Failure analysis
+    failures = analyze_failures(trace)
+    print(f"\n{C.BOLD}  🔍 Failure Propagation Analysis{C.RESET}")
+    print(f"  {'─' * 50}")
+    print(f"  {C.DIM}Failed spans:{C.RESET}     {failures.total_failed_spans}")
+    print(f"  {C.DIM}Root causes:{C.RESET}      {len(failures.root_causes)}")
+    print(f"  {C.DIM}Blast radius:{C.RESET}     {failures.blast_radius} spans")
+    print(f"  {C.DIM}Handled:{C.RESET}          {failures.handled_count}")
+    print(f"  {C.DIM}Unhandled:{C.RESET}        {failures.unhandled_count}")
+    
+    score = failures.resilience_score
+    color = C.GREEN if score >= 0.7 else (C.YELLOW if score >= 0.3 else C.RED)
+    print(f"  {C.DIM}Resilience:{C.RESET}       {color}{score:.0%}{C.RESET}")
+    
+    for rc in failures.root_causes:
+        icon = f"{C.YELLOW}🟡{C.RESET}" if rc.was_handled else f"{C.RED}🔴{C.RESET}"
+        handled_str = f"{C.GREEN}(handled){C.RESET}" if rc.was_handled else f"{C.RED}(unhandled){C.RESET}"
+        print(f"\n  {icon} {C.BOLD}{rc.span_name}{C.RESET} [{rc.span_type}] {handled_str}")
+        print(f"     {C.DIM}{rc.error}{C.RESET}")
+        if rc.affected_children:
+            print(f"     {C.DIM}→ {len(rc.affected_children)} downstream spans affected{C.RESET}")
+    
+    # Flow analysis
+    flow = analyze_flow(trace)
+    print(f"\n{C.BOLD}  📊 Flow Analysis{C.RESET}")
+    print(f"  {'─' * 50}")
+    print(f"  {C.DIM}Agents:{C.RESET}           {flow.agent_count}")
+    print(f"  {C.DIM}Tools:{C.RESET}            {flow.tool_count}")
+    print(f"  {C.DIM}Handoffs:{C.RESET}         {len(flow.handoffs)}")
+    print(f"  {C.DIM}Critical path:{C.RESET}    {' → '.join(flow.critical_path)}")
+    
+    for h in flow.handoffs:
+        ctx_str = f"{h.context_size_bytes}B" if h.context_size_bytes else "?"
+        print(f"\n  🔀 {C.BOLD}{h.from_agent}{C.RESET} → {C.BOLD}{h.to_agent}{C.RESET}  ({ctx_str})")
+        if h.context_keys:
+            print(f"     {C.DIM}context: {h.context_keys}{C.RESET}")
+    
+    print()
+
+
 def cmd_report(args):
     """Generate HTML report."""
     from agentguard.web.viewer import generate_timeline_html
@@ -248,6 +300,10 @@ def main():
     p.add_argument("--dir", default=".agentguard/traces", help="Traces directory")
     p.add_argument("--output", default=".agentguard/report.html", help="Output HTML path")
     
+    # analyze
+    p = sub.add_parser("analyze", help="Analyze failure propagation and flow")
+    p.add_argument("file", help="Path to trace JSON file")
+    
     # guard
     p = sub.add_parser("guard", help="Start continuous monitoring")
     p.add_argument("--dir", default=".agentguard/traces", help="Traces directory")
@@ -257,7 +313,7 @@ def main():
     
     args = parser.parse_args()
     
-    cmds = {"show": cmd_show, "list": cmd_list, "eval": cmd_eval, "report": cmd_report, "guard": cmd_guard}
+    cmds = {"show": cmd_show, "list": cmd_list, "eval": cmd_eval, "analyze": cmd_analyze, "report": cmd_report, "guard": cmd_guard}
     if args.command in cmds:
         cmds[args.command](args)
     else:

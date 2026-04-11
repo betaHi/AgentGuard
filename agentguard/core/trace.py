@@ -65,6 +65,16 @@ class Span:
     error: Optional[str] = None
     metadata: dict[str, Any] = field(default_factory=dict)
     children: list[Span] = field(default_factory=list)
+    
+    # Handoff tracking: populated when span_type is HANDOFF
+    handoff_from: Optional[str] = None      # agent_id that initiated the handoff
+    handoff_to: Optional[str] = None        # agent_id that received the handoff
+    context_passed: Optional[dict] = None   # keys/summary of context passed
+    context_size_bytes: Optional[int] = None  # size of context at handoff point
+    
+    # Failure propagation tracking
+    caused_by: Optional[str] = None         # span_id of the root cause failure
+    failure_handled: bool = False           # True if error was caught (try/except)
 
     @property
     def duration_ms(self) -> Optional[float]:

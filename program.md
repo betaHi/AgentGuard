@@ -1,79 +1,96 @@
 # AgentGuard — Development Program
 
-> This file drives the Ralph Loop. The agent reads this, executes, evaluates, and iterates.
-> Humans edit this file to steer direction. The agent edits code.
+> This file drives the Ralph Loop. Humans set direction. Agents write code.
 
-## Project Identity
+## Identity
 
 - **Name:** AgentGuard
-- **One-liner:** Observability for multi-agent orchestration.
+- **Positioning:** Observability for multi-agent orchestration.
+- **One-liner:** See how your agents collaborate, where they fail, and why.
 - **Repo:** https://github.com/betaHi/AgentGuard
 - **License:** MIT
 - **Language:** Python 3.11+
 
-## Design Principles
+## What Matters Most (Priority Order)
 
-1. **Zero/minimal dependencies** — Core uses only stdlib. Optional deps for extras.
-2. **Low intrusion** — Users should NOT need to restructure their code. A decorator or context manager is enough.
-3. **Framework-agnostic** — Works with any agent system. No LangChain/CrewAI lock-in.
-4. **Generic examples** — No project-specific branding in README. Use generic agent names.
-5. **Local-first** — Works without cloud, DB, or Docker.
+### Tier 1 — Core (the product)
+The trace data model and the instrumentation that feeds it. This is what makes AgentGuard unique.
 
-## Sprint Plan
+- **Trace schema** — ExecutionTrace, Span, span types, parent-child relationships
+- **Instrumentation SDK** — decorators, context managers, manual API, distributed propagation
+- **Multi-agent semantics** — handoff events, context flow between agents, failure propagation paths
+- **Trace visualization** — CLI tree, web timeline, flow graph
 
-### Sprint 1: Foundation ✅ DONE
-- Core trace schema (ExecutionTrace, Span)
-- SDK decorators (@record_agent, @record_tool)  
-- TraceRecorder with context propagation
-- CLI: show, list
-- 11 tests passing
+### Tier 2 — Extensions (built on traces)
+Valuable but secondary. These consume trace data — they don't define the product.
 
-### Sprint 2: Evaluation Engine
-- Rule-based assertions (min_count, each_has, recency, no_duplicates, contains, regex, custom)
-- EvaluationResult schema
-- YAML config (agentguard.yaml) for test definitions
-- CLI: `agentguard eval`
-- Agent config versioning
-- Tests for all rule types
+- **Eval rules** — assertions on agent output quality
+- **Replay engine** — baseline comparison and regression detection
+- **Guard mode** — continuous monitoring and alerts
+- **Export** — OTel, JSONL for integration
 
-### Sprint 3: Replay + Regression
-- Fixed-input replay mechanism
-- Version comparison (diff two runs)
-- LLM evaluator (optional, requires API key)
-- Regression detection across multiple runs
-- CLI: `agentguard replay`, `agentguard diff`, `agentguard regression`
-- Regression report (Markdown)
+### Tier 3 — Future
+Not now. Will grow naturally once Tier 1 is deep enough.
 
-### Sprint 4: Guard + Polish
-- Continuous monitoring mode (watch)
-- Alert mechanism (webhook, stdout, file)
-- Context manager API (alternative to decorators for less intrusion)
-- Async support
-- Web UI: multi-agent timeline viewer (simple HTML, no React needed)
-- Comprehensive README with generic examples
-- PyPI-ready packaging
+- Interactive web dashboard
+- LLM-based evaluation
+- Real-time streaming traces
+- GitHub Actions integration
 
-## Development Rules
+## Core Asset Protection
 
-1. Every change must have tests.
-2. Zero external deps for core/sdk/eval. Optional deps clearly marked.
-3. Type hints everywhere.
-4. Docstrings on all public APIs.
-5. Generic examples only — no project-specific branding.
-6. Low intrusion: decorator OR context manager OR manual API. User's choice.
+The most valuable code in this repo is NOT the rule engine. It is:
+
+1. **agentguard/core/trace.py** — the trace schema
+2. **agentguard/sdk/** — low-intrusion instrumentation
+3. **The ability to express cross-agent relationships** — parent-child, handoff, context propagation
+
+These must be kept clean, well-documented, and zero-dependency.
+
+## Current Priority: Deepen Trace Semantics
+
+The next iterations should focus on making the trace richer, not adding more commands.
+
+### Handoff Events
+When agent A passes work to agent B, capture:
+- What context was passed
+- What context was lost
+- Duration of the handoff
+- Whether the receiving agent used the context
+
+### Failure Propagation Analysis
+Given a trace with failures:
+- Which span was the root cause?
+- Did the failure propagate or get caught?
+- What was the blast radius (how many downstream spans affected)?
+
+### Context Flow
+Track how information flows between agents:
+- Context size at each handoff point
+- Context compression/truncation events
+- Whether downstream agents received sufficient context
+
+### Multi-Agent Flow Graph
+Beyond tree view — show the actual flow:
+- Parallel vs sequential execution
+- Agent dependencies
+- Critical path analysis
+
+## Design Rules
+
+1. Zero external deps for core/ and sdk/
+2. All code and docs in English
+3. Type hints and docstrings on public APIs
+4. Every change has tests
+5. Trace depth > feature breadth
 
 ## Progress Log
 
-### 2026-04-11 — Sprint 1 Complete ✅
-- Core schemas, SDK decorators, CLI, 11 tests
-### 2026-04-11 — Multi-Loop architecture designed
-- LOOPS.md, progress files for parallel development
-
-### 2026-04-11 — All Sprints Complete + Iterations
-- Sprint 1: Core schemas, SDK decorators, CLI show/list ✅
-- Sprint 2: 8 rule types, EvaluationResult, config ✅
-- Sprint 3: Comparison, regression detection, context manager API ✅
-- Sprint 4: Guard mode, web viewer, async support ✅
-- Iteration 2: Full CLI (show/list/eval/report/guard), async decorators, distributed traces
-- Iteration 3: PyPI packaging, enhanced web UI, examples
-- 46 tests passing, all English, zero external deps for core
+### 2026-04-11 — Project launch
+- Sprint 1-4 completed (core, eval, replay, guard)
+- 12 iterations via Ralph Loop
+- 74 tests passing
+- 6 integration styles
+- Bug fixes from code review (distributed trace, guard, XSS)
+- README repositioned: observability-first
+- program.md repositioned: trace depth over feature breadth
