@@ -40,6 +40,32 @@ Record  →  Replay  →  Evaluate  →  Guard
 | **Evaluate** | Rule + LLM quality assessment | Define and enforce "good output" |
 | **Guard** | Continuous monitoring with alerts | Catch degradation automatically |
 
+
+## Screenshots
+
+### CLI: Multi-Agent Trace Tree
+
+<p align="center">
+  <img src="docs/screenshots/cli-trace-success.png" alt="AgentGuard CLI - Success Trace" width="680">
+</p>
+
+### CLI: Failure Detection & Error Propagation
+
+<p align="center">
+  <img src="docs/screenshots/cli-trace-failure.png" alt="AgentGuard CLI - Failure Trace" width="680">
+</p>
+
+> `news-collector` gracefully fell back to cache, while `analyst` propagated the failure. AgentGuard makes this visible.
+
+### Web Dashboard
+
+<p align="center">
+  <img src="docs/screenshots/web-report-hero.png" alt="AgentGuard Web Dashboard" width="900">
+</p>
+
+Standalone HTML report — dark theme, collapsible cards, zero JS dependencies. Generate with `agentguard report`.
+
+
 ## Quick Start
 
 ```bash
