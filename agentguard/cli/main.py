@@ -187,12 +187,17 @@ def cmd_eval(args):
         badge = _status_badge("completed" if overall == "pass" else "failed")
         
         print(f"  {_type_icon('agent')} {C.BOLD}{span.name}{C.RESET}  {badge}  ({passed}/{total} rules)")
+        has_failures = False
         for r in results:
+            if r.verdict.value == 'fail':
+                has_failures = True
             icon = f"{C.GREEN}✓{C.RESET}" if r.verdict.value == "pass" else f"{C.RED}✗{C.RESET}"
             print(f"    {icon} {r.name}: {r.verdict.value}")
             if r.detail:
                 print(f"      {C.DIM}{r.detail}{C.RESET}")
     print()
+    if has_failures:
+        sys.exit(1)
 
 
 def cmd_report(args):
