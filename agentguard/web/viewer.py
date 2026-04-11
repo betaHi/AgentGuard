@@ -6,8 +6,14 @@ Zero JS framework dependencies — vanilla HTML/CSS/JS only.
 
 from __future__ import annotations
 
+import html
 import json
 from pathlib import Path
+
+
+def _esc(text: str) -> str:
+    """Escape text for safe HTML insertion."""
+    return html.escape(str(text)) if text else ""
 
 
 def generate_timeline_html(
@@ -155,7 +161,7 @@ def _render_trace_card(trace: dict) -> str:
   <div class="card-hdr">
     <div>
       <span class="arrow">▶</span>
-      <span class="card-title">{trace.get("task", "(unnamed)")}</span>
+      <span class="card-title">{_esc(trace.get("task", "(unnamed)"))}</span>
       <span class="card-meta"> · {trace.get("trigger", "")} · {dur_s} · {len(spans)} spans</span>
     </div>
     <span class="badge {badge_cls}">{badge_txt}</span>
@@ -167,11 +173,11 @@ def _render_trace_card(trace: dict) -> str:
 def _render_span(span: dict, depth: int) -> str:
     icons = {"agent": "🤖", "tool": "🔧", "llm_call": "🧠", "handoff": "🔀"}
     icon = icons.get(span.get("span_type", ""), "●")
-    name = span.get("name", "")
+    name = _esc(span.get("name", ""))
     status = span.get("status", "")
     dur = span.get("duration_ms")
     dur_s = f"{dur:.0f}ms" if dur and dur < 1000 else (f"{dur/1000:.1f}s" if dur else "")
-    ver = span.get("metadata", {}).get("agent_version", "")
+    ver = _esc(span.get("metadata", {}).get("agent_version", ""))
     
     s_badge = f'<span class="badge badge-pass">✓</span>' if status == "completed" else (f'<span class="badge badge-fail">✗</span>' if status == "failed" else "")
     ver_html = f'<span class="span-ver">({ver})</span>' if ver else ""

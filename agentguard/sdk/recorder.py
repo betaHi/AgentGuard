@@ -65,7 +65,8 @@ class TraceRecorder:
 
         # Write trace file
         self.output_dir.mkdir(parents=True, exist_ok=True)
-        filename = f"{self.trace.trace_id}.json"
+        suffix = getattr(self, "_child_suffix", "")
+        filename = f"{self.trace.trace_id}{suffix}.json"
         filepath = self.output_dir / filename
         filepath.write_text(self.trace.to_json(), encoding="utf-8")
 

@@ -120,23 +120,38 @@ class Guard:
                 data = json.loads(trace_file.read_text(encoding="utf-8"))
                 trace = ExecutionTrace.from_dict(data)
                 
-                # Check for failed spans
-                failed = [s for s in trace.spans if s.status.value == "failed"]
-                if failed:
-                    agent_names = set(s.name for s in failed)
-                    for name in agent_names:
-                        self._consecutive_fails[name] = self._consecutive_fails.get(name, 0) + 1
-                        if self._consecutive_fails[name] >= self.fail_threshold:
+                # Check for failed spans — separate agent and tool failures
+                failed_agents = [s for s in trace.agent_spans if s.status.value == "failed"]
+                failed_tools = [s for s in trace.tool_spans if s.status.value == "failed"]
+                all_failed = failed_agents + failed_tools
+                
+                if all_failed:
+                    # Only track AGENT failures for consecutive failure escalation
+                    for s in failed_agents:
+                        self._consecutive_fails[s.name] = self._consecutive_fails.get(s.name, 0) + 1
+                        if self._consecutive_fails[s.name] >= self.fail_threshold:
                             self._alert(
-                                f"Agent '{name}' has failed {self._consecutive_fails[name]} consecutive times",
+                                f"Agent '{s.name}' has failed {self._consecutive_fails[s.name]} consecutive times",
                                 severity="critical",
-                                metadata={"agent": name, "trace_id": trace.trace_id}
+                                metadata={"agent": s.name, "trace_id": trace.trace_id}
                             )
-                    self._alert(
-                        f"Trace {trace.trace_id} ({trace.task}): {len(failed)} failed spans",
-                        severity="warning",
-                        metadata={"trace_id": trace.trace_id, "failed_spans": [s.name for s in failed]}
-                    )
+                    
+                    # Report tool failures as warnings (not escalated)
+                    if failed_tools:
+                        self._alert(
+                            f"Trace {trace.trace_id} ({trace.task}): {len(failed_tools)} tool failures",
+                            severity="warning",
+                            metadata={"trace_id": trace.trace_id, 
+                                     "failed_tools": [s.name for s in failed_tools]}
+                        )
+                    
+                    if failed_agents:
+                        self._alert(
+                            f"Trace {trace.trace_id} ({trace.task}): {len(failed_agents)} agent failures",
+                            severity="warning",
+                            metadata={"trace_id": trace.trace_id, 
+                                     "failed_agents": [s.name for s in failed_agents]}
+                        )
                 else:
                     # Reset consecutive fail counters for successful agents
                     for s in trace.agent_spans:

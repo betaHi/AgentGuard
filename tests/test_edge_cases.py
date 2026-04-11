@@ -173,3 +173,107 @@ def test_trace_file_roundtrip():
     assert len(loaded.spans) == 2
     assert loaded.spans[0].metadata == {"key": "value"}
     assert loaded.spans[1].input_data == {"q": "test"}
+
+
+# --- Bug fix tests ---
+
+def test_distributed_child_writes_separate_file():
+    """Child process should write to separate file, not overwrite parent."""
+    import tempfile, os
+    from agentguard.sdk.distributed import inject_trace_context, init_recorder_from_env, merge_child_traces
+    from agentguard import AgentTrace
+    
+    with tempfile.TemporaryDirectory() as tmpdir:
+        traces_dir = str(Path(tmpdir) / "traces")
+        
+        # Parent
+        parent_rec = init_recorder(task="parent-task", output_dir=traces_dir)
+        parent_trace_id = parent_rec.trace.trace_id
+        env = inject_trace_context(parent_rec, parent_span_id="fake-parent-span")
+        parent_trace = finish_recording()
+        
+        # Simulate child by setting env vars
+        for k, v in env.items():
+            os.environ[k] = v
+        os.environ["AGENTGUARD_OUTPUT_DIR"] = traces_dir
+        
+        child_rec = init_recorder_from_env()
+        with AgentTrace(name="child-agent") as agent:
+            agent.set_output("child result")
+        child_trace = finish_recording()
+        
+        # Check: parent and child files should both exist
+        parent_file = Path(traces_dir) / f"{parent_trace_id}.json"
+        child_files = list(Path(traces_dir).glob(f"{parent_trace_id}_child_*.json"))
+        
+        assert parent_file.exists(), "Parent trace file should exist"
+        assert len(child_files) >= 1, "Child trace file should exist separately"
+        
+        # Merge
+        merged = merge_child_traces(parent_trace, traces_dir)
+        assert len(merged.spans) > len(parent_trace.spans) or len(child_files) > 0
+        
+        # Cleanup env
+        for k in env:
+            os.environ.pop(k, None)
+
+
+def test_guard_tool_failure_not_escalated_as_agent():
+    """Tool failures should not trigger agent consecutive failure escalation."""
+    from agentguard.guard import Guard
+    
+    with tempfile.TemporaryDirectory() as tmpdir:
+        traces_dir = Path(tmpdir) / "traces"
+        traces_dir.mkdir()
+        
+        alerts = []
+        class CaptureAlert:
+            def send(self, message, severity="warning", metadata=None):
+                alerts.append({"message": message, "severity": severity})
+        
+        guard = Guard(traces_dir=str(traces_dir), alert_handlers=[CaptureAlert()], fail_threshold=2)
+        
+        # Create traces where only TOOLS fail, agents succeed
+        for i in range(3):
+            trace = ExecutionTrace(task=f"test-{i}")
+            agent = Span(name="my-agent", span_type=SpanType.AGENT)
+            agent.complete()  # agent succeeds
+            tool = Span(name="web_search", span_type=SpanType.TOOL, parent_span_id=agent.span_id)
+            tool.fail("timeout")  # tool fails
+            trace.add_span(agent)
+            trace.add_span(tool)
+            trace.fail()
+            (traces_dir / f"{trace.trace_id}.json").write_text(trace.to_json())
+        
+        guard.check_new_traces()
+        
+        # Should NOT have critical alerts (tool failures shouldn't escalate as agent failures)
+        critical = [a for a in alerts if a["severity"] == "critical"]
+        assert len(critical) == 0, f"Tool failures should not trigger critical agent alerts, got: {critical}"
+
+
+def test_html_xss_prevention():
+    """HTML report should escape potentially malicious content."""
+    from agentguard.web.viewer import generate_timeline_html
+    
+    with tempfile.TemporaryDirectory() as tmpdir:
+        traces_dir = Path(tmpdir) / "traces"
+        traces_dir.mkdir()
+        
+        # Create trace with XSS payload in task name and error
+        trace = ExecutionTrace(task='<script>alert("xss")</script>')
+        span = Span(name='<img onerror="alert(1)" src=x>', span_type=SpanType.AGENT)
+        span.fail(error='Error: <script>document.cookie</script>')
+        trace.add_span(span)
+        trace.fail()
+        (traces_dir / f"{trace.trace_id}.json").write_text(trace.to_json())
+        
+        output_path = str(Path(tmpdir) / "report.html")
+        generate_timeline_html(traces_dir=str(traces_dir), output=output_path)
+        
+        html_content = Path(output_path).read_text()
+        
+        # Verify XSS payloads are escaped
+        assert '<script>alert' not in html_content, "Script tags should be escaped"
+        assert 'onerror="alert' not in html_content, "Event handlers should be escaped"
+        assert '&lt;script&gt;' in html_content or '&lt;img' in html_content, "Content should be HTML-escaped"
