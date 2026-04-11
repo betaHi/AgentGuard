@@ -1,0 +1,561 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>AgentGuard Prototype - Orchestration Bus Diagnostics</title>
+  <style>
+    :root {
+      --bg: #0a0e13;
+      --surface: #101720;
+      --surface-2: #151f2b;
+      --surface-3: #1b2635;
+      --border: rgba(194, 214, 255, 0.12);
+      --text: #eaf1fb;
+      --muted: #90a0b7;
+      --cyan: #79dfff;
+      --blue: #57a8ff;
+      --green: #95db60;
+      --amber: #f3b767;
+      --red: #ff7070;
+      --violet: #9b8cff;
+      --shadow: 0 20px 60px rgba(0, 0, 0, 0.35);
+    }
+
+    * { box-sizing: border-box; }
+
+    body {
+      margin: 0;
+      color: var(--text);
+      font-family: "IBM Plex Sans", "Segoe UI", sans-serif;
+      background:
+        radial-gradient(circle at 0% 0%, rgba(87, 168, 255, 0.12), transparent 22%),
+        radial-gradient(circle at 100% 0%, rgba(121, 223, 255, 0.08), transparent 24%),
+        linear-gradient(180deg, #090d12 0%, #0a0e13 100%);
+      min-height: 100vh;
+    }
+
+    .shell {
+      max-width: 1480px;
+      margin: 0 auto;
+      padding: 26px;
+    }
+
+    .panel {
+      background: linear-gradient(180deg, rgba(21, 31, 43, 0.96), rgba(16, 23, 32, 0.98));
+      border: 1px solid var(--border);
+      border-radius: 22px;
+      box-shadow: var(--shadow);
+    }
+
+    .hero {
+      display: grid;
+      grid-template-columns: 1.2fr 0.8fr;
+      gap: 18px;
+      margin-bottom: 18px;
+    }
+
+    .hero-main,
+    .hero-side,
+    .bus-panel,
+    .diagnostics-panel {
+      overflow: hidden;
+    }
+
+    .pad { padding: 22px 24px; }
+
+    .eyebrow {
+      font-size: 11px;
+      text-transform: uppercase;
+      letter-spacing: 0.16em;
+      color: var(--cyan);
+      margin-bottom: 10px;
+    }
+
+    h1 {
+      margin: 0;
+      font-family: "IBM Plex Mono", monospace;
+      font-size: 34px;
+      line-height: 1.05;
+      letter-spacing: -0.05em;
+    }
+
+    .sub {
+      margin-top: 12px;
+      max-width: 760px;
+      color: var(--muted);
+      font-size: 15px;
+      line-height: 1.65;
+    }
+
+    .mini-grid {
+      margin-top: 18px;
+      display: grid;
+      grid-template-columns: repeat(4, 1fr);
+      gap: 10px;
+    }
+
+    .mini {
+      padding: 14px;
+      border-radius: 16px;
+      background: rgba(255,255,255,0.04);
+      border: 1px solid rgba(255,255,255,0.06);
+    }
+
+    .mini .k {
+      font-size: 10px;
+      text-transform: uppercase;
+      letter-spacing: 0.12em;
+      color: var(--muted);
+    }
+
+    .mini .v {
+      margin-top: 8px;
+      font-family: "IBM Plex Mono", monospace;
+      font-size: 24px;
+    }
+
+    .hero-side {
+      display: grid;
+      gap: 18px;
+      grid-template-rows: 1fr 1fr;
+    }
+
+    .alert-strip {
+      display: grid;
+      gap: 10px;
+      margin-top: 14px;
+    }
+
+    .alert {
+      padding: 12px 14px;
+      border-radius: 16px;
+      background: rgba(255,255,255,0.04);
+      border: 1px solid rgba(255,255,255,0.06);
+      font-size: 13px;
+      line-height: 1.45;
+    }
+
+    .alert.fail { border-color: rgba(255,112,112,0.25); background: rgba(255,112,112,0.08); }
+    .alert.warn { border-color: rgba(243,183,103,0.24); background: rgba(243,183,103,0.08); }
+    .alert.info { border-color: rgba(87,168,255,0.24); background: rgba(87,168,255,0.07); }
+
+    .section-title {
+      font-size: 12px;
+      text-transform: uppercase;
+      letter-spacing: 0.14em;
+      color: var(--muted);
+    }
+
+    .main-grid {
+      display: grid;
+      grid-template-columns: 1.25fr 0.75fr;
+      gap: 18px;
+    }
+
+    .bus-header {
+      display: flex;
+      justify-content: space-between;
+      gap: 16px;
+      align-items: end;
+      margin-bottom: 18px;
+    }
+
+    .trace-name {
+      font-family: "IBM Plex Mono", monospace;
+      font-size: 24px;
+      margin-top: 8px;
+    }
+
+    .trace-meta {
+      color: var(--muted);
+      font-size: 13px;
+      margin-top: 8px;
+    }
+
+    .legend {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 10px;
+      color: var(--muted);
+      font-size: 11px;
+    }
+
+    .dot {
+      width: 10px;
+      height: 10px;
+      border-radius: 999px;
+      display: inline-block;
+      margin-right: 6px;
+    }
+
+    .time-ruler {
+      position: relative;
+      margin-left: 168px;
+      margin-right: 76px;
+      display: grid;
+      grid-template-columns: repeat(6, 1fr);
+      margin-bottom: 8px;
+      color: var(--muted);
+      font-size: 10px;
+      font-family: "IBM Plex Mono", monospace;
+    }
+
+    .time-ruler span {
+      position: relative;
+    }
+
+    .time-ruler span::before {
+      content: "";
+      position: absolute;
+      left: 0;
+      top: 16px;
+      width: 1px;
+      height: calc(100% + 380px);
+      background: rgba(255,255,255,0.06);
+    }
+
+    .lane {
+      display: grid;
+      grid-template-columns: 156px 1fr 72px;
+      gap: 12px;
+      align-items: center;
+      padding: 12px 0;
+      border-bottom: 1px dashed rgba(255,255,255,0.06);
+    }
+
+    .lane:last-child { border-bottom: 0; }
+
+    .lane-name {
+      font-family: "IBM Plex Mono", monospace;
+      font-size: 13px;
+    }
+
+    .lane-name small {
+      display: block;
+      margin-top: 4px;
+      font-size: 11px;
+      color: var(--muted);
+      font-family: "IBM Plex Sans", sans-serif;
+    }
+
+    .track {
+      position: relative;
+      height: 26px;
+      border-radius: 999px;
+      background: rgba(255,255,255,0.04);
+      overflow: visible;
+    }
+
+    .block {
+      position: absolute;
+      top: 4px;
+      height: 18px;
+      border-radius: 999px;
+      box-shadow: inset 0 0 0 1px rgba(255,255,255,0.14);
+    }
+
+    .block.agent { background: linear-gradient(90deg, #57a8ff, #79dfff); }
+    .block.tool { background: linear-gradient(90deg, #95db60, #dff58f); }
+    .block.fail { background: linear-gradient(90deg, #ff7070, #ff9f80); }
+    .block.handoff { background: linear-gradient(90deg, #f3b767, #ffd79a); height: 10px; top: 8px; }
+
+    .track-note {
+      position: absolute;
+      top: -18px;
+      font-size: 10px;
+      color: var(--muted);
+      font-family: "IBM Plex Mono", monospace;
+      white-space: nowrap;
+    }
+
+    .duration {
+      font-family: "IBM Plex Mono", monospace;
+      font-size: 12px;
+      color: var(--muted);
+      text-align: right;
+    }
+
+    .diag-grid {
+      display: grid;
+      gap: 12px;
+    }
+
+    .diag-card {
+      padding: 14px;
+      border-radius: 18px;
+      background: rgba(255,255,255,0.04);
+      border: 1px solid rgba(255,255,255,0.06);
+    }
+
+    .diag-card h3 {
+      margin: 0 0 8px;
+      font-size: 11px;
+      text-transform: uppercase;
+      letter-spacing: 0.12em;
+      color: var(--muted);
+    }
+
+    .diag-main {
+      font-family: "IBM Plex Mono", monospace;
+      font-size: 18px;
+      line-height: 1.35;
+    }
+
+    .diag-main.fail { color: #ffb1b1; }
+    .diag-main.warn { color: #ffd68f; }
+    .diag-main.ok { color: #d7f2ae; }
+    .diag-main.info { color: #9fd4ff; }
+
+    .diag-text {
+      margin-top: 8px;
+      color: var(--muted);
+      font-size: 13px;
+      line-height: 1.55;
+    }
+
+    .rank-list {
+      display: grid;
+      gap: 8px;
+      margin-top: 10px;
+    }
+
+    .rank {
+      display: grid;
+      grid-template-columns: 1fr 48px;
+      gap: 10px;
+      align-items: center;
+      font-size: 12px;
+      color: var(--text);
+    }
+
+    .rank-bar {
+      height: 8px;
+      border-radius: 999px;
+      background: rgba(255,255,255,0.05);
+      overflow: hidden;
+      margin-top: 5px;
+    }
+
+    .rank-fill {
+      height: 100%;
+      border-radius: 999px;
+      background: linear-gradient(90deg, #57a8ff, #79dfff);
+    }
+
+    .footer-note {
+      margin-top: 18px;
+      text-align: center;
+      color: var(--muted);
+      font-size: 12px;
+      font-family: "IBM Plex Mono", monospace;
+    }
+
+    @media (max-width: 1180px) {
+      .hero,
+      .main-grid {
+        grid-template-columns: 1fr;
+      }
+      .hero-side {
+        grid-template-rows: auto;
+      }
+    }
+
+    @media (max-width: 760px) {
+      .shell { padding: 16px; }
+      .mini-grid { grid-template-columns: repeat(2, 1fr); }
+      .lane { grid-template-columns: 1fr; }
+      .time-ruler { display: none; }
+      .duration { text-align: left; }
+    }
+  </style>
+</head>
+<body>
+  <div class="shell">
+    <section class="hero">
+      <div class="panel hero-main">
+        <div class="pad">
+          <div class="eyebrow">Prototype / Agent Bus Timeline</div>
+          <h1>The primary view should answer: who ran, when, in parallel with whom, and where the system broke.</h1>
+          <div class="sub">
+            This version makes the orchestration bus the center of gravity. Diagnostics are attached to the timeline instead of replacing it, so the panel can communicate both temporal structure and engineering value.
+          </div>
+          <div class="mini-grid">
+            <div class="mini"><div class="k">Agents</div><div class="v">6</div></div>
+            <div class="mini"><div class="k">Handoffs</div><div class="v">3</div></div>
+            <div class="mini"><div class="k">Critical Path</div><div class="v">4.8s</div></div>
+            <div class="mini"><div class="k">Resilience</div><div class="v">62%</div></div>
+          </div>
+        </div>
+      </div>
+
+      <div class="hero-side">
+        <div class="panel">
+          <div class="pad">
+            <div class="section-title">Why this is valuable</div>
+            <div class="alert-strip">
+              <div class="alert fail"><strong>Root cause isolation:</strong> verifier accepted an invalid payload shape and poisoned the synthesis branch.</div>
+              <div class="alert warn"><strong>Handled vs propagated:</strong> researcher-b recovered through cache fallback, but verifier failure still propagated.</div>
+              <div class="alert info"><strong>Context-flow clue:</strong> handoff into verifier lost `source_confidence` and `dedupe_notes`.</div>
+            </div>
+          </div>
+        </div>
+
+        <div class="panel">
+          <div class="pad">
+            <div class="section-title">What the open-source version should surface</div>
+            <div class="alert-strip">
+              <div class="alert info">Parallel vs sequential agent lanes</div>
+              <div class="alert info">Handoff edges with context payload hints</div>
+              <div class="alert info">Critical path highlight</div>
+              <div class="alert info">Failure propagation overlay</div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <section class="main-grid">
+      <div class="panel bus-panel">
+        <div class="pad">
+          <div class="bus-header">
+            <div>
+              <div class="section-title">Hero Trace</div>
+              <div class="trace-name">Global Research Briefing</div>
+              <div class="trace-meta">manual · 6 agents · 14 tools · 3 handoffs · 1 handled failure · 1 propagated failure</div>
+            </div>
+            <div class="legend">
+              <span><span class="dot" style="background:#57a8ff"></span>agent</span>
+              <span><span class="dot" style="background:#95db60"></span>tool</span>
+              <span><span class="dot" style="background:#f3b767"></span>handoff</span>
+              <span><span class="dot" style="background:#ff7070"></span>failure</span>
+            </div>
+          </div>
+
+          <div class="time-ruler">
+            <span>0ms</span>
+            <span>1s</span>
+            <span>2s</span>
+            <span>3s</span>
+            <span>4s</span>
+            <span>5s</span>
+          </div>
+
+          <div class="lane">
+            <div class="lane-name">planner<small>decomposition</small></div>
+            <div class="track">
+              <div class="block agent" style="left:2%; width:14%;"></div>
+              <div class="track-note" style="left:2%;">kickoff</div>
+            </div>
+            <div class="duration">620ms</div>
+          </div>
+
+          <div class="lane">
+            <div class="lane-name">researcher-a<small>parallel branch A</small></div>
+            <div class="track">
+              <div class="block agent" style="left:18%; width:18%;"></div>
+              <div class="block tool" style="left:22%; width:7%;"></div>
+              <div class="block tool" style="left:31%; width:4%;"></div>
+            </div>
+            <div class="duration">910ms</div>
+          </div>
+
+          <div class="lane">
+            <div class="lane-name">researcher-b<small>parallel branch B</small></div>
+            <div class="track">
+              <div class="block agent" style="left:18%; width:23%;"></div>
+              <div class="block fail" style="left:22%; width:5%;"></div>
+              <div class="block tool" style="left:29%; width:6%;"></div>
+              <div class="block handoff" style="left:40%; width:3%;"></div>
+              <div class="track-note" style="left:29%;">fallback</div>
+            </div>
+            <div class="duration">1.4s</div>
+          </div>
+
+          <div class="lane">
+            <div class="lane-name">verifier<small>root cause</small></div>
+            <div class="track">
+              <div class="block fail" style="left:44%; width:14%;"></div>
+              <div class="track-note" style="left:44%;">schema mismatch</div>
+            </div>
+            <div class="duration">710ms</div>
+          </div>
+
+          <div class="lane">
+            <div class="lane-name">synthesizer<small>critical path bottleneck</small></div>
+            <div class="track">
+              <div class="block agent" style="left:58%; width:28%;"></div>
+              <div class="block tool" style="left:67%; width:8%;"></div>
+              <div class="track-note" style="left:58%;">dominates end-to-end latency</div>
+            </div>
+            <div class="duration">2.1s</div>
+          </div>
+
+          <div class="lane">
+            <div class="lane-name">publisher<small>downstream impact</small></div>
+            <div class="track">
+              <div class="block fail" style="left:88%; width:8%;"></div>
+              <div class="track-note" style="left:88%;">propagated failure</div>
+            </div>
+            <div class="duration">280ms</div>
+          </div>
+        </div>
+      </div>
+
+      <div class="panel diagnostics-panel">
+        <div class="pad">
+          <div class="section-title">Diagnostic Expression</div>
+          <div class="diag-grid" style="margin-top: 14px;">
+            <div class="diag-card">
+              <h3>Root Cause</h3>
+              <div class="diag-main fail">verifier / schema mismatch</div>
+              <div class="diag-text">This should be the first thing the user sees, not a badge buried inside a card. Root cause needs to feel like a headline.</div>
+            </div>
+
+            <div class="diag-card">
+              <h3>Failure Propagation</h3>
+              <div class="diag-main warn">verifier → synthesizer → publisher</div>
+              <div class="diag-text">Propagation should be visible as a path, not just as a count. Open-source value comes from showing where the system absorbed failure versus where it passed it on.</div>
+            </div>
+
+            <div class="diag-card">
+              <h3>Handoff Quality</h3>
+              <div class="diag-main info">researcher-b → verifier</div>
+              <div class="diag-text">Show context size, lost keys, and maybe a confidence delta. This is where AgentGuard can differentiate from generic LLM tracing tools.</div>
+            </div>
+
+            <div class="diag-card">
+              <h3>Bottleneck Ranking</h3>
+              <div class="rank-list">
+                <div class="rank">
+                  <div>
+                    synthesizer
+                    <div class="rank-bar"><div class="rank-fill" style="width:100%"></div></div>
+                  </div>
+                  <div>41%</div>
+                </div>
+                <div class="rank">
+                  <div>
+                    researcher-b
+                    <div class="rank-bar"><div class="rank-fill" style="width:67%"></div></div>
+                  </div>
+                  <div>27%</div>
+                </div>
+                <div class="rank">
+                  <div>
+                    verifier
+                    <div class="rank-bar"><div class="rank-fill" style="width:34%"></div></div>
+                  </div>
+                  <div>14%</div>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <div class="footer-note">Prototype only · bus timeline first, diagnostics second · intended to validate how open-source value should be visible in the UI</div>
+  </div>
+</body>
+</html>
