@@ -1,1 +1,102 @@
-"""Multi-agent context propagation utilities."""
+"""Context manager API — low-intrusion alternative to decorators.
+
+Usage:
+    with AgentTrace(name="my-agent", version="v1") as trace:
+        with trace.tool("web_search") as tool:
+            results = do_search(query)
+            tool.set_output(results)
+        trace.set_output({"results": results})
+"""
+
+from __future__ import annotations
+
+from typing import Any, Optional
+from agentguard.core.trace import Span, SpanType
+from agentguard.sdk.recorder import get_recorder
+
+
+class ToolContext:
+    """Context manager for recording a tool call."""
+    
+    def __init__(self, name: str, input_data: Any = None, metadata: Optional[dict] = None):
+        self.name = name
+        self._input = input_data
+        self._metadata = metadata or {}
+        self._span: Optional[Span] = None
+    
+    def __enter__(self) -> ToolContext:
+        recorder = get_recorder()
+        self._span = Span(
+            span_type=SpanType.TOOL,
+            name=self.name,
+            parent_span_id=recorder.current_span_id,
+            input_data=self._input,
+            metadata=self._metadata,
+        )
+        recorder.push_span(self._span)
+        return self
+    
+    def __exit__(self, exc_type, exc_val, exc_tb):
+        recorder = get_recorder()
+        if self._span:
+            if exc_type:
+                self._span.fail(f"{exc_type.__name__}: {exc_val}")
+            else:
+                self._span.complete()
+            recorder.pop_span(self._span)
+        return False
+    
+    def set_output(self, output: Any) -> None:
+        if self._span:
+            self._span.output_data = output
+
+
+class AgentTrace:
+    """Context manager for recording an agent execution.
+    
+    Low-intrusion alternative to @record_agent decorator.
+    
+    Example:
+        recorder = init_recorder(task="my task")
+        with AgentTrace(name="researcher", version="v1") as agent:
+            with agent.tool("search", input_data={"q": "AI"}) as t:
+                results = search("AI")
+                t.set_output(results)
+            agent.set_output({"results": results})
+        trace = finish_recording()
+    """
+    
+    def __init__(self, name: str, version: str = "latest", metadata: Optional[dict] = None):
+        self.name = name
+        self.version = version
+        self._metadata = {"agent_version": version, **(metadata or {})}
+        self._span: Optional[Span] = None
+    
+    def __enter__(self) -> AgentTrace:
+        recorder = get_recorder()
+        self._span = Span(
+            span_type=SpanType.AGENT,
+            name=self.name,
+            parent_span_id=recorder.current_span_id,
+            metadata=self._metadata,
+        )
+        recorder.push_span(self._span)
+        return self
+    
+    def __exit__(self, exc_type, exc_val, exc_tb):
+        recorder = get_recorder()
+        if self._span:
+            if exc_type:
+                self._span.fail(f"{exc_type.__name__}: {exc_val}")
+            else:
+                self._span.complete()
+            recorder.pop_span(self._span)
+        return False
+    
+    def set_output(self, output: Any) -> None:
+        if self._span:
+            self._span.output_data = output
+    
+    def tool(self, name: str, input_data: Any = None, metadata: Optional[dict] = None) -> ToolContext:
+        """Create a tool context within this agent."""
+        return ToolContext(name=name, input_data=input_data, metadata=metadata)
