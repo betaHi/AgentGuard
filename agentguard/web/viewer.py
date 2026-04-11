@@ -236,7 +236,7 @@ def _render_span(span: dict, depth: int, trace_dur: float, handoff_pairs: set) -
         if c.get("span_type") == "agent" and i + 1 < len(children) and children[i + 1].get("span_type") == "agent":
             fr = c.get("name", "")
             to = children[i + 1].get("name", "")
-            if (fr, to) in handoff_pairs or True:  # show all sequential agent transitions
+            if (fr, to) in handoff_pairs:  # only show analysis-confirmed handoffs
                 ctx_info = ""
                 # Try to get context info from the handoff analysis
                 children_parts.append(f'<div class="handoff" style="padding-left:{(depth+1)*18}px">🔀 {_esc(fr)} → {_esc(to)}</div>')

@@ -27,21 +27,21 @@ Existing tools (Langfuse, Phoenix, etc.) show you what happens inside a single L
 
 ## Screenshots
 
-### Orchestration Timeline
+### Orchestration Timeline (Target UI)
 
 <p align="center">
   <img src="docs/screenshots/prototype-hero.png" alt="AgentGuard — Gantt-style orchestration timeline" width="1100">
 </p>
 
-> Gantt-style timeline: 7 agents, 10 tools, 4 handoffs with context sizes. Bottleneck (🐢 analyst 50%), fallback (⚡ vector_search → keyword_search), and unhandled failure (💥 notifier) all visible at a glance.
+> Target design: Gantt-style timeline with sidebar agent health, handoff context sizes, bottleneck annotation, and failure propagation. See `docs/prototype.html` for the interactive version.
 
-### Orchestration Diagnostics
+### Orchestration Diagnostics (Target UI)
 
 <p align="center">
   <img src="docs/screenshots/prototype-diagnostics.png" alt="AgentGuard — Failure propagation, bottleneck, handoff flow, critical path" width="900">
 </p>
 
-> Four diagnostic panels: failure propagation (handled vs unhandled), bottleneck analysis with agent rankings, handoff flow with context sizes, and critical path identification.
+> Target design: four diagnostic panels powered by `agentguard/analysis.py`. The current `agentguard report` generates a simpler version; the full panel is the next UI milestone.
 
 ### CLI Trace & Analysis
 

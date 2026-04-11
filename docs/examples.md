@@ -50,12 +50,15 @@ planner ──[handoff: plan]──► code-searcher ──[handoff: context]─
 
 **What this demonstrates:**
 
-- **6 explicit handoffs** with context size tracking (0.3KB → 1.2KB → 0.8KB...)
-- **Graceful fallback:** vector_search fails → keyword_search takes over, researcher still succeeds
-- **Unhandled failure:** notifier crashes (Slack rate limit), coordinator catches it but notification is lost
-- **Bottleneck:** code-generator and code-reviewer are LLM-heavy (slow)
+- **Up to 6 explicit handoffs** with context size tracking
+- **Graceful fallback:** vector_search may fail → keyword_search takes over
+- **Unhandled failure:** notifier always fails (Slack rate limit), coordinator catches it
+- **Bottleneck:** LLM calls in code-generator and analyst are the slow spans
 - **Conditional flow:** deployer only runs if review approved AND tests passed
-- **Resilience score:** ~50% (1 handled failure + 1 unhandled)
+- **Resilience varies:** depends on which tools fail in each run (some randomness)
+
+Note: The demo includes controlled randomness to show different outcomes across runs.
+Run multiple times to see both "deployed" and "needs_fixes" paths.
 
 **Run it:**
 
@@ -77,15 +80,15 @@ agentguard report
 
 **File:** [`examples/demo.py`](../examples/demo.py)
 
-**Scenario:** A coordinator dispatches a news collector and an analyst to research a topic.
+**Scenario:** A coordinator runs a news collector then an analyst sequentially.
 
-**Agents:** coordinator → news-collector + analyst
+**Agents:** coordinator → news-collector → analyst (sequential)
 
 **What this demonstrates:**
-- Simple multi-agent orchestration
-- Parallel agent execution under a coordinator
+- Simple multi-agent orchestration (sequential execution)
 - Basic tool calls (web_search, github_api, summarize)
 - Getting started with AgentGuard in < 30 lines
+- Note: agents run sequentially under the coordinator, not in parallel
 
 ---
 
@@ -109,10 +112,10 @@ agentguard report
 **Scenario:** Agents launched as separate processes (subprocess, multiprocessing).
 
 **What this demonstrates:**
-- `inject_trace_context()` in parent process
-- `init_recorder_from_env()` in child process
-- Cross-process trace correlation
-- `merge_child_traces()` to combine results
+- `inject_trace_context()` to propagate trace context via env vars
+- `init_recorder_from_env()` to join parent trace in child process
+- API for cross-process trace correlation
+- Note: the demo simulates subprocess behavior inline; for true subprocess usage, pass env vars to `subprocess.run()`
 
 ---
 
