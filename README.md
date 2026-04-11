@@ -209,6 +209,28 @@ engine.save_baseline("test-1", input_data={...}, output_data={...}, rules=[...])
 result = engine.compare("test-1", candidate_output=new_output)
 ```
 
+### Self-Reflection & Evolution
+
+```python
+from agentguard.evolve import EvolutionEngine
+
+engine = EvolutionEngine()
+engine.learn(trace)  # extract lessons, accumulate knowledge
+
+# After multiple runs:
+suggestions = engine.suggest()
+# → "notifier has 5 unhandled failures — add retry mechanism" (95% confidence)
+
+trends = engine.detect_trends()
+# → "researcher is a persistent bottleneck (seen 8 times)"
+```
+
+```bash
+agentguard evolve --learn --suggest
+```
+
+Knowledge accumulates across runs in `.agentguard/knowledge/`. Repeated patterns increase confidence. Inspired by [A-MEM](https://github.com/agiresearch/A-mem) (Zettelkasten-style agentic memory).
+
 ### Continuous Monitoring
 
 ```python
