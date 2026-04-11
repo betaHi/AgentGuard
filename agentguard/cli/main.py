@@ -200,6 +200,38 @@ def cmd_eval(args):
         sys.exit(1)
 
 
+def cmd_validate(args):
+    """Validate trace integrity."""
+    from agentguard.validate import validate_trace
+    
+    path = Path(args.file)
+    if not path.exists():
+        print(f"{C.RED}Error: {args.file} not found{C.RESET}", file=sys.stderr)
+        sys.exit(1)
+    
+    data = json.loads(path.read_text(encoding="utf-8"))
+    trace = ExecutionTrace.from_dict(data)
+    result = validate_trace(trace)
+    
+    print(f"\n{C.BOLD}  🔍 Trace Validation{C.RESET}")
+    line = "─" * 50
+    print(f"  {line}")
+    
+    if result.valid:
+        print(f"  {C.GREEN}✓ Valid{C.RESET} ({len(result.warnings)} warnings)")
+    else:
+        print(f"  {C.RED}✗ Invalid{C.RESET} ({len(result.errors)} errors, {len(result.warnings)} warnings)")
+    
+    for issue in result.issues:
+        icon = f"{C.RED}✗{C.RESET}" if issue.severity == "error" else f"{C.YELLOW}⚠{C.RESET}"
+        span_info = f" [{issue.span_id}]" if issue.span_id else ""
+        print(f"    {icon}{span_info} {issue.message}")
+    
+    print()
+    if not result.valid:
+        sys.exit(1)
+
+
 def cmd_diff(args):
     """Compare two traces side by side."""
     from agentguard.diff import diff_traces
@@ -347,6 +379,10 @@ def main():
     p.add_argument("--dir", default=".agentguard/traces", help="Traces directory")
     p.add_argument("--output", default=".agentguard/report.html", help="Output HTML path")
     
+    # validate
+    p = sub.add_parser("validate", help="Validate trace integrity")
+    p.add_argument("file", help="Path to trace JSON file")
+    
     # diff
     p = sub.add_parser("diff", help="Compare two traces")
     p.add_argument("trace_a", help="First trace file")
@@ -365,7 +401,7 @@ def main():
     
     args = parser.parse_args()
     
-    cmds = {"show": cmd_show, "list": cmd_list, "eval": cmd_eval, "diff": cmd_diff, "analyze": cmd_analyze, "report": cmd_report, "guard": cmd_guard}
+    cmds = {"show": cmd_show, "list": cmd_list, "eval": cmd_eval, "validate": cmd_validate, "diff": cmd_diff, "analyze": cmd_analyze, "report": cmd_report, "guard": cmd_guard}
     if args.command in cmds:
         cmds[args.command](args)
     else:
