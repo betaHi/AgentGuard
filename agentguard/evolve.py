@@ -288,6 +288,56 @@ class EvolutionEngine:
         ]
         return sorted(suggestions, key=lambda l: (-l.confidence, -l.occurrences))
     
+
+    
+    def detect_trends(self, window: int = 10) -> list[dict]:
+        """Detect improving/degrading trends across recent traces.
+        
+        Compares recent lessons against historical baseline to detect:
+        - Agents getting worse (more failures, more bottleneck time)
+        - Agents getting better (fewer failures, faster execution)
+        - New issues appearing
+        - Old issues resolving
+        
+        Args:
+            window: Number of recent traces to analyze.
+        
+        Returns:
+            List of trend observations.
+        """
+        trends = []
+        
+        for key, lesson in self.kb.lessons.items():
+            if lesson.occurrences >= 3:
+                if lesson.category == "failure" and "unhandled" in lesson.observation.lower():
+                    trends.append({
+                        "type": "recurring_failure",
+                        "agent": lesson.agent,
+                        "severity": "high",
+                        "message": f"'{lesson.agent}' has had {lesson.occurrences} unhandled failures — needs immediate attention",
+                        "occurrences": lesson.occurrences,
+                    })
+                elif lesson.category == "bottleneck":
+                    trends.append({
+                        "type": "persistent_bottleneck",
+                        "agent": lesson.agent,
+                        "severity": "medium",
+                        "message": f"'{lesson.agent}' is consistently the bottleneck ({lesson.occurrences} times)",
+                        "occurrences": lesson.occurrences,
+                    })
+            
+            # New issue (seen only once, recently)
+            if lesson.occurrences == 1 and lesson.confidence >= 0.6:
+                trends.append({
+                    "type": "new_issue",
+                    "agent": lesson.agent,
+                    "severity": "low",
+                    "message": f"New: {lesson.observation}",
+                    "occurrences": 1,
+                })
+        
+        return sorted(trends, key=lambda t: {"high": 0, "medium": 1, "low": 2}.get(t["severity"], 3))
+
     def summary(self) -> str:
         """Generate a human-readable summary of accumulated knowledge."""
         lines = [

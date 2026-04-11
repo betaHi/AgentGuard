@@ -118,3 +118,18 @@ def test_reflection_report():
         report = reflection.to_report()
         assert "Reflection Report" in report
         assert "fragile" in report
+
+
+def test_detect_trends():
+    """detect_trends identifies recurring issues."""
+    with tempfile.TemporaryDirectory() as tmpdir:
+        engine = EvolutionEngine(knowledge_dir=f"{tmpdir}/kb")
+        
+        # Learn from same failure 5 times
+        for _ in range(5):
+            engine.learn(_make_trace_with_failure())
+        
+        trends = engine.detect_trends()
+        assert len(trends) >= 1
+        recurring = [t for t in trends if t["type"] == "recurring_failure"]
+        assert len(recurring) >= 1
