@@ -1,22 +1,11 @@
-# Eval Loop Progress
+# Eval Loop Progress — Sprint 2-3 Complete ✅
 
-## Status: Not Started
-
-### Dependencies
-- [x] core/trace.py — ExecutionTrace and Span schemas (available)
-
-### Next (Sprint 2)
-- [ ] Rule-based assertion engine (rules.py)
-  - min_count: check minimum number of items
-  - each_has: check all items have required fields
-  - recency: check dates within N days
-  - no_duplicates: check unique values
-  - contains_keywords: check keyword presence
-- [ ] EvaluationResult schema
-- [ ] Test suite for all rule types
-- [ ] Integration with CLI: `agentguard eval`
-
-### Design Decisions
-- Rules defined in YAML config (agentguard.yaml)
-- Each rule returns: name, type, result (pass/fail), actual value, detail
-- LLM evaluation deferred to Sprint 3
+### Completed
+- [x] 8 rule types: min_count, max_count, each_has, recency, no_duplicates, contains, regex, range
+- [x] EvaluationResult schema with Markdown report
+- [x] Path resolver for nested data
+- [x] evaluate_rules() batch evaluator
+- [x] compare_traces() — trace-level diff
+- [x] compare_evals() — evaluation-level diff with regression detection
+- [x] ComparisonResult with deploy recommendation
+- [x] Regression report generation

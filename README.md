@@ -4,11 +4,11 @@
 
 **Record, Replay, Evaluate, and Guard your AI Agents.**
 
-*Multi-agent orchestration observability & reliability — the missing engineering layer.*
+*The missing engineering layer between "agent works in dev" and "agent works in production."*
 
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
 [![Python 3.11+](https://img.shields.io/badge/python-3.11+-blue.svg)](https://www.python.org/downloads/)
-[![Tests](https://img.shields.io/badge/tests-11%20passed-brightgreen.svg)]()
+[![Tests](https://img.shields.io/badge/tests-41%20passed-brightgreen.svg)]()
 
 </div>
 
@@ -18,14 +18,14 @@
 
 Building an agent is easy. Running one reliably in production is hard.
 
-There are dozens of frameworks to *build* agents. But what happens after?
+There are dozens of frameworks to *build* agents. But once deployed:
 
-- Your agent silently degrades — and you don't know until a human notices
-- You change a prompt and can't tell if it made things better or worse
-- Multiple agents collaborate but you can't see what each one actually did
-- There's no CI/CD for agents — no tests, no regression detection, no version control
+- **Silent degradation** — your agent gets worse and no one notices until a user complains
+- **No version control** — you change a prompt and can't tell if things improved or regressed  
+- **Multi-agent black box** — agents collaborate but you can't see who did what
+- **No CI/CD** — no tests, no regression detection, no quality gates
 
-**AgentGuard fills this gap.**
+AgentGuard gives you engineering tools for agents that are already running.
 
 ## What It Does
 
@@ -33,77 +33,12 @@ There are dozens of frameworks to *build* agents. But what happens after?
 Record  →  Replay  →  Evaluate  →  Guard
 ```
 
-| Verb | What | Why |
-|------|------|-----|
+| | What | Why |
+|---|---|---|
 | **Record** | Capture multi-agent execution traces | See what actually happened |
 | **Replay** | Re-run with fixed inputs, compare versions | Know if changes helped or hurt |
-| **Evaluate** | Rule + LLM quality assessment | Define what "good" looks like |
-| **Guard** | Continuous monitoring & regression alerts | Catch degradation before users do |
-
-## Demo
-
-### ✅ Multi-Agent Success Trace
-
-```
-════════════════════════════════════════════════════════════
-  🛡️  AgentGuard Trace Report
-════════════════════════════════════════════════════════════
-
-  Trace ID:    7d3b7fe1-71d1-41
-  Task:        AI Agent Daily Report
-  Trigger:     cron
-  Status:       ✓ PASS
-  Duration:    1.2s
-  Agents:      3
-  Tool calls:  5
-  Total spans: 8
-
-  Execution Timeline
-  ──────────────────────────────────────────────────
-  🤖 基围小小虾 🦐 (v1.0)   ✓ PASS   1.2s
-  ├── 🤖 北极虾 ❄️ (v1.3)   ✓ PASS   547ms
-  │   ├── 🔧 web_search   ✓ PASS   115ms
-  │   ├── 🔧 github_trending   ✓ PASS   152ms
-  │   └── 🔧 summarize   ✓ PASS   281ms
-  └── 🤖 皮皮虾 👊 (v2.0)   ✓ PASS   632ms
-      ├── 🔧 web_search   ✓ PASS   272ms
-      └── 🔧 summarize   ✓ PASS   360ms
-
-════════════════════════════════════════════════════════════
-```
-
-### ❌ Failure Detection & Error Propagation
-
-```
-════════════════════════════════════════════════════════════
-  🛡️  AgentGuard Trace Report
-════════════════════════════════════════════════════════════
-
-  Trace ID:    251d1a2e-ad6e-49
-  Task:        AI Daily Report (with failures)
-  Trigger:     cron
-  Status:       ✗ FAIL
-  Duration:    251ms
-  Agents:      3
-  Tool calls:  3
-  Total spans: 6
-
-  Execution Timeline
-  ──────────────────────────────────────────────────
-  🤖 基围小小虾 🦐 (v1.0)   ✓ PASS   250ms
-  ├── 🤖 北极虾 ❄️ (v1.3)   ✓ PASS   150ms
-  │   ├── 🔧 web_search   ✗ FAIL   100ms
-  │   │      ⚠ ConnectionError: Search API timeout after 10s
-  │   └── 🔧 cache_lookup   ✓ PASS   50ms
-  └── 🤖 皮皮虾 👊 (v2.0)   ✗ FAIL   100ms
-         ⚠ ConnectionError: Search API timeout after 10s
-      └── 🔧 web_search   ✗ FAIL   100ms
-             ⚠ ConnectionError: Search API timeout after 10s
-
-════════════════════════════════════════════════════════════
-```
-
-> Notice: 北极虾 gracefully fell back to cache, while 皮皮虾 propagated the failure upward. AgentGuard makes this visible.
+| **Evaluate** | Rule + LLM quality assessment | Define and enforce "good output" |
+| **Guard** | Continuous monitoring with alerts | Catch degradation automatically |
 
 ## Quick Start
 
@@ -111,77 +46,225 @@ Record  →  Replay  →  Evaluate  →  Guard
 pip install agentguard
 ```
 
-### Record
+### Option 1: Decorators (2 lines of code)
 
 ```python
 from agentguard import record_agent, record_tool
 from agentguard.sdk.recorder import init_recorder, finish_recording
 
-# Initialize a recording session
-recorder = init_recorder(task="Daily Report", trigger="cron")
-
-@record_agent(name="news-collector", version="v1.3")
-def collect_news(topic: str) -> list[dict]:
-    results = search_web(topic)
-    return summarize(results)
-
 @record_tool(name="web_search")
-def search_web(query: str) -> list[str]:
-    # your search logic
-    ...
+def search(query: str) -> list[str]:
+    return call_search_api(query)
 
-# Run your agents
-collect_news("AI developments")
+@record_agent(name="researcher", version="v1.3")
+def research(topic: str) -> dict:
+    results = search(topic)
+    return {"results": results, "count": len(results)}
 
-# Save the trace
+# Record a session
+init_recorder(task="Research Report", trigger="cron")
+research("AI agents")
 trace = finish_recording()
-# → .agentguard/traces/<trace_id>.json
+# → saved to .agentguard/traces/<id>.json
+```
+
+### Option 2: Context Managers (zero decoration needed)
+
+```python
+from agentguard import AgentTrace
+from agentguard.sdk.recorder import init_recorder, finish_recording
+
+init_recorder(task="Research Report")
+
+with AgentTrace(name="researcher", version="v1.3") as agent:
+    with agent.tool("web_search") as t:
+        results = search(query)
+        t.set_output(results)
+    agent.set_output({"results": results})
+
+trace = finish_recording()
 ```
 
 ### View Traces
 
 ```bash
-# Show a specific trace
-python -m agentguard.cli.main show .agentguard/traces/<trace_id>.json
-
-# List all traces
-python -m agentguard.cli.main list
+python -m agentguard.cli.main show .agentguard/traces/<id>.json
 ```
 
-## Key Design Decisions
+```
+════════════════════════════════════════════════════════════
+  🛡️  AgentGuard Trace Report
+════════════════════════════════════════════════════════════
 
-- **Framework-agnostic** — Works with any agent (LangChain, CrewAI, custom, etc.)
-- **Zero dependencies** — Core SDK uses only Python stdlib
-- **Local-first** — No cloud, no database, no Docker required
-- **OTel-compatible** — Follows OpenTelemetry GenAI semantic conventions
-- **Not another framework** — We don't build agents. We make sure yours keep working.
+  Trace ID:    7f3cb929-ab53-41
+  Task:        AI Agent Research Report
+  Trigger:     manual
+  Status:       ✓ PASS
+  Duration:    1.0s
+  Agents:      3
+  Tool calls:  5
+  Total spans: 8
 
-## How This Project Is Built
+  Execution Timeline
+  ──────────────────────────────────────────────────
+  🤖 coordinator (v1.0)   ✓ PASS   1.0s
+  ├── 🤖 news-collector (v1.3)   ✓ PASS   551ms
+  │   ├── 🔧 web_search   ✓ PASS   159ms
+  │   ├── 🔧 github_api   ✓ PASS   141ms
+  │   └── 🔧 summarize   ✓ PASS   251ms
+  └── 🤖 analyst (v2.0)   ✓ PASS   474ms
+      ├── 🔧 web_search   ✓ PASS   137ms
+      └── 🔧 summarize   ✓ PASS   337ms
 
-AgentGuard is developed using the [Ralph Loop](https://ghuntley.com/ralph/) methodology:
+════════════════════════════════════════════════════════════
+```
 
-> A simple loop that repeatedly lets an AI agent execute → evaluate → improve, turning predictable failures into progress.
+### Evaluate
 
-Combined with [Karpathy's autoresearch](https://github.com/karpathy/autoresearch) principles — the agent modifies code, humans edit [`program.md`](program.md).
+Define quality rules in YAML:
+
+```yaml
+# agentguard.yaml
+agents:
+  - name: news-collector
+    version: v1.3
+    tests:
+      - name: output-quality
+        assertions:
+          - type: min_count
+            target: articles
+            value: 5
+          - type: each_has
+            target: articles
+            fields: [title, url, date]
+          - type: recency
+            target: articles.date
+            within_days: 2
+          - type: no_duplicates
+            target: articles.url
+```
+
+Or evaluate programmatically:
+
+```python
+from agentguard.eval.rules import evaluate_rules
+
+output = {"articles": [...]}
+rules = [
+    {"type": "min_count", "target": "articles", "value": 5},
+    {"type": "each_has", "target": "articles", "fields": ["title", "url"]},
+]
+results = evaluate_rules(output, rules)
+# → [RuleResult(verdict=PASS), RuleResult(verdict=FAIL, detail="...")]
+```
+
+**Built-in rule types:** `min_count`, `max_count`, `each_has`, `recency`, `no_duplicates`, `contains`, `regex`, `range`
+
+### Compare Versions
+
+```python
+from agentguard.eval.compare import compare_evals
+
+result = compare_evals(baseline_eval, candidate_eval)
+print(result.to_report())
+# → Shows what improved, what regressed, deploy recommendation
+```
+
+### Guard (Continuous Monitoring)
+
+```python
+from agentguard.guard import Guard, StdoutAlert, FileAlert, WebhookAlert
+
+guard = Guard(
+    traces_dir=".agentguard/traces",
+    alert_handlers=[
+        StdoutAlert(),
+        FileAlert(".agentguard/alerts.jsonl"),
+        WebhookAlert("https://hooks.slack.com/..."),
+    ],
+    fail_threshold=3,  # alert after 3 consecutive failures
+)
+
+guard.watch(interval=300)  # check every 5 minutes
+```
+
+### Web Report
+
+```python
+from agentguard.web.viewer import generate_timeline_html
+
+generate_timeline_html()  # → .agentguard/report.html
+```
+
+Opens a standalone HTML page with dark-theme timeline visualization — no JS frameworks, no build step.
+
+## Design Principles
+
+| Principle | Implementation |
+|---|---|
+| **Low intrusion** | Decorator OR context manager OR manual API — your choice |
+| **Framework-agnostic** | Works with LangChain, CrewAI, AutoGen, custom agents, anything |
+| **Zero dependencies** | Core SDK uses only Python stdlib |
+| **Local-first** | No cloud, no database, no Docker. Files on disk. |
+| **OTel-aligned** | Follows OpenTelemetry GenAI semantic conventions |
+
+## Architecture
+
+```
+agentguard/
+├── core/               # Data models (zero deps)
+│   ├── trace.py        # ExecutionTrace, Span
+│   ├── eval_schema.py  # EvaluationResult, RuleResult
+│   └── config.py       # AgentConfig, GuardConfig
+├── sdk/                # Instrumentation (zero deps)
+│   ├── decorators.py   # @record_agent, @record_tool
+│   ├── context.py      # AgentTrace, ToolContext
+│   └── recorder.py     # TraceRecorder
+├── eval/               # Evaluation engine
+│   ├── rules.py        # 8 built-in rule types
+│   └── compare.py      # Version diff & regression
+├── guard.py            # Continuous monitoring + alerts
+├── web/
+│   └── viewer.py       # Standalone HTML report
+└── cli/
+    └── main.py         # CLI interface
+```
 
 ## Positioning
 
-| Tool | Focus | Relationship |
-|------|-------|-------------|
-| **Langfuse** | LLM call-level tracing | AgentGuard sits above — orchestration level |
-| **LangChain / CrewAI** | Building agents | AgentGuard ensures they keep working |
-| **OpenTelemetry** | Observability standard | AgentGuard follows OTel conventions |
+AgentGuard is **not** competing with:
+
+| Tool | Their Focus | Our Relationship |
+|---|---|---|
+| **Langfuse / Phoenix** | LLM call-level tracing | We sit above — orchestration layer |
+| **LangChain / CrewAI** | Building agents | We ensure they keep working |
+| **OpenTelemetry** | Observability standard | We follow OTel conventions |
+
+## Built With
+
+This project is developed using the [Ralph Loop](https://ghuntley.com/ralph/) methodology — an AI agent iteratively builds the SDK, runs tests, and improves. See [`program.md`](program.md).
 
 ## Roadmap
 
-- [x] **Sprint 1:** Core schemas + SDK decorators + CLI trace viewer
-- [ ] **Sprint 2:** Rule-based evaluation engine + config versioning
-- [ ] **Sprint 3:** Replay + LLM evaluator + regression detection
-- [ ] **Sprint 4:** Guard mode + Web UI
+- [x] Core trace schema with multi-agent span trees
+- [x] SDK: decorators + context managers
+- [x] 8 built-in evaluation rules
+- [x] Version comparison & regression detection
+- [x] Guard mode with alerts (stdout, file, webhook)
+- [x] Standalone HTML timeline viewer
+- [x] 41 tests passing
+- [ ] Async agent/tool support
+- [ ] PyPI package publishing
+- [ ] LLM-based evaluation (pairwise compare)
+- [ ] Interactive web dashboard
+- [ ] OTel exporter
+- [ ] GitHub Actions integration
 
 ## Contributing
 
-This project is in early development. Star ⭐ the repo to follow progress.
+This project is in early development. Star ⭐ to follow progress.
+
+Issues and PRs welcome.
 
 ## License
 

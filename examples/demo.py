@@ -1,4 +1,7 @@
-"""Demo: Multi-agent news collection workflow with AgentGuard tracing."""
+"""Demo: Multi-agent research workflow with AgentGuard tracing.
+
+Shows how to instrument a multi-agent system with minimal code changes.
+"""
 
 import time
 import random
@@ -6,73 +9,72 @@ from agentguard import record_agent, record_tool
 from agentguard.sdk.recorder import init_recorder, finish_recording
 
 
+# --- Tools (add @record_tool, that's it) ---
+
 @record_tool(name="web_search")
 def web_search(query: str) -> list[dict]:
-    """Simulate web search."""
+    """Search the web for relevant articles."""
     time.sleep(random.uniform(0.1, 0.3))
     return [
-        {"title": f"Result {i} for '{query}'", "url": f"https://example.com/{i}"}
+        {"title": f"Article about {query}", "url": f"https://example.com/{i}", "date": "2026-04-11"}
         for i in range(random.randint(3, 7))
     ]
 
-
-@record_tool(name="github_trending")
-def github_trending() -> list[dict]:
-    """Simulate GitHub trending check."""
+@record_tool(name="github_api")
+def github_api(query: str) -> list[dict]:
+    """Search GitHub for trending repos."""
     time.sleep(random.uniform(0.1, 0.2))
     return [
-        {"repo": "EvoScientist/EvoScientist", "stars": 2725},
-        {"repo": "karpathy/autoresearch", "stars": 70177},
+        {"repo": "org/project-a", "stars": 12500},
+        {"repo": "org/project-b", "stars": 8300},
     ]
-
 
 @record_tool(name="summarize")
 def summarize(articles: list) -> str:
-    """Simulate LLM summarization."""
+    """Summarize a list of articles using LLM."""
     time.sleep(random.uniform(0.2, 0.4))
-    return f"Summary of {len(articles)} articles"
+    return f"Summary of {len(articles)} items: key findings include..."
 
 
-@record_agent(name="北极虾 ❄️", version="v1.3", metadata={"role": "news-collector"})
-def beiji_news_collector(topic: str) -> dict:
-    """北极虾: Collect AI news from multiple sources."""
-    results = web_search(f"{topic} latest news 2026")
-    trending = github_trending()
-    summary = summarize(results + trending)
-    return {"articles": results, "trending": trending, "summary": summary}
+# --- Agents (add @record_agent, that's it) ---
 
+@record_agent(name="news-collector", version="v1.3", metadata={"role": "research"})
+def collect_news(topic: str) -> dict:
+    """Collect news from multiple sources."""
+    articles = web_search(f"{topic} latest news")
+    trending = github_api(topic)
+    summary = summarize(articles + trending)
+    return {"articles": articles, "trending": trending, "summary": summary}
 
-@record_agent(name="皮皮虾 👊", version="v2.0", metadata={"role": "tech-analyst"})
-def pipi_tech_analyst(topic: str) -> dict:
-    """皮皮虾: Analyze tech trends."""
-    results = web_search(f"{topic} technical analysis")
-    analysis = summarize(results)
-    return {"analysis": analysis, "sources": len(results)}
+@record_agent(name="analyst", version="v2.0", metadata={"role": "analysis"})
+def analyze(topic: str) -> dict:
+    """Analyze trends in a topic area."""
+    data = web_search(f"{topic} trends analysis")
+    return {"analysis": summarize(data), "source_count": len(data)}
 
-
-@record_agent(name="基围小小虾 🦐", version="v1.0", metadata={"role": "orchestrator"})
-def orchestrator(task: str) -> dict:
-    """基围小小虾: Orchestrate multi-agent workflow."""
-    news = beiji_news_collector(task)
-    analysis = pipi_tech_analyst(task)
-    return {
-        "task": task,
-        "news": news,
-        "analysis": analysis,
-        "status": "completed",
-    }
+@record_agent(name="coordinator", version="v1.0", metadata={"role": "orchestrator"})
+def run_research(task: str) -> dict:
+    """Coordinate multiple agents to complete a research task."""
+    news = collect_news(task)
+    analysis = analyze(task)
+    return {"task": task, "news": news, "analysis": analysis}
 
 
 if __name__ == "__main__":
-    # Initialize recording
-    recorder = init_recorder(task="AI Agent Daily Report", trigger="cron")
+    # Start recording
+    recorder = init_recorder(task="AI Agent Research Report", trigger="manual")
     
-    # Run the multi-agent workflow
-    result = orchestrator("AI Agent 可观测性")
+    # Run the workflow
+    result = run_research("AI Agent Observability")
     
-    # Finish and save trace
+    # Save trace
     trace = finish_recording()
-    
     print(f"\n✅ Trace saved: .agentguard/traces/{trace.trace_id}.json")
-    print(f"   Spans: {len(trace.spans)}, Duration: {trace.duration_ms:.0f}ms")
-    print(f"\nView with: python -m agentguard.cli.main show .agentguard/traces/{trace.trace_id}.json")
+    print(f"   Agents: {len(trace.agent_spans)}, Tools: {len(trace.tool_spans)}, Duration: {trace.duration_ms:.0f}ms")
+    print(f"\n📊 View trace:")
+    print(f"   python -m agentguard.cli.main show .agentguard/traces/{trace.trace_id}.json")
+    
+    # Generate web report
+    from agentguard.web.viewer import generate_timeline_html
+    report = generate_timeline_html()
+    print(f"\n🌐 Web report: {report}")

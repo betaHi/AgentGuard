@@ -1,0 +1,27 @@
+
+════════════════════════════════════════════════════════════
+  🛡️  AgentGuard Trace Report
+════════════════════════════════════════════════════════════
+
+  Trace ID:    7f3cb929-ab53-41
+  Task:        AI Agent Research Report
+  Trigger:     manual
+  Status:       ✓ PASS 
+  Duration:    1.0s
+  Agents:      3
+  Tool calls:  5
+  Total spans: 8
+
+  Execution Timeline
+  ──────────────────────────────────────────────────
+  🤖 coordinator (v1.0)   ✓ PASS   1.0s
+  ├── 🤖 news-collector (v1.3)   ✓ PASS   551ms
+  │   ├── 🔧 web_search   ✓ PASS   159ms
+  │   ├── 🔧 github_api   ✓ PASS   141ms
+  │   └── 🔧 summarize   ✓ PASS   251ms
+  └── 🤖 analyst (v2.0)   ✓ PASS   474ms
+      ├── 🔧 web_search   ✓ PASS   137ms
+      └── 🔧 summarize   ✓ PASS   337ms
+
+════════════════════════════════════════════════════════════
+
