@@ -876,14 +876,62 @@ class DecisionAnalysis:
         return "\n".join(lines)
 
 
+def _has_descendant_failure(
+    span_id: str,
+    children_map: dict[str, list[Span]],
+) -> bool:
+    """Recursively check if any descendant span failed."""
+    for child in children_map.get(span_id, []):
+        if child.status == SpanStatus.FAILED:
+            return True
+        if _has_descendant_failure(child.span_id, children_map):
+            return True
+    return False
+
+
+def _decision_span_to_record(
+    ds: Span,
+    trace: ExecutionTrace,
+    children_map: dict[str, list[Span]],
+) -> DecisionRecord:
+    """Convert a decision span into a DecisionRecord with downstream outcome."""
+    chosen = ds.metadata.get("decision.chosen", "")
+    chosen_spans = [
+        s for s in trace.spans
+        if s.span_type == SpanType.AGENT and s.name == chosen
+    ]
+
+    if chosen_spans:
+        agent = chosen_spans[0]
+        led_to_failure = (
+            agent.status == SpanStatus.FAILED
+            or _has_descendant_failure(agent.span_id, children_map)
+        )
+        downstream_status = agent.status.value
+        downstream_dur = agent.duration_ms
+    else:
+        downstream_status = "unknown"
+        downstream_dur = None
+        led_to_failure = False
+
+    return DecisionRecord(
+        coordinator=ds.metadata.get("decision.coordinator", ""),
+        chosen_agent=chosen,
+        alternatives=ds.metadata.get("decision.alternatives", []),
+        rationale=ds.metadata.get("decision.rationale", ""),
+        criteria=ds.metadata.get("decision.criteria", {}),
+        confidence=ds.metadata.get("decision.confidence"),
+        downstream_status=downstream_status,
+        downstream_duration_ms=downstream_dur,
+        led_to_failure=led_to_failure,
+    )
+
+
 def analyze_decisions(trace: ExecutionTrace) -> DecisionAnalysis:
     """Analyze orchestration decisions and their downstream outcomes.
 
     Answers GUARDRAILS Q5: "Which orchestration decision caused downstream
     degradation?"
-
-    Finds all decision spans (handoffs with decision metadata), then checks
-    whether the chosen agent succeeded or failed downstream.
 
     Args:
         trace: The execution trace to analyze.
@@ -891,71 +939,21 @@ def analyze_decisions(trace: ExecutionTrace) -> DecisionAnalysis:
     Returns:
         DecisionAnalysis with per-decision outcomes and quality score.
     """
-    span_map = {s.span_id: s for s in trace.spans}
-
-    # Build children map for downstream outcome tracking
     children_map: dict[str, list[Span]] = {}
     for s in trace.spans:
         if s.parent_span_id:
             children_map.setdefault(s.parent_span_id, []).append(s)
 
-    # Find decision spans: handoffs with decision.type metadata
     decision_spans = [
         s for s in trace.spans
         if s.span_type == SpanType.HANDOFF
         and s.metadata.get("decision.type") == "orchestration"
     ]
 
-    records = []
-    for ds in decision_spans:
-        chosen = ds.metadata.get("decision.chosen", "")
-        coordinator = ds.metadata.get("decision.coordinator", "")
-        alternatives = ds.metadata.get("decision.alternatives", [])
-        rationale = ds.metadata.get("decision.rationale", "")
-        criteria = ds.metadata.get("decision.criteria", {})
-        confidence = ds.metadata.get("decision.confidence")
-
-        # Find the chosen agent's span(s) to determine outcome
-        chosen_spans = [
-            s for s in trace.spans
-            if s.span_type == SpanType.AGENT and s.name == chosen
-        ]
-
-        if chosen_spans:
-            # Use the first matching agent span after the decision
-            agent_span = chosen_spans[0]
-            downstream_status = agent_span.status.value
-            downstream_dur = agent_span.duration_ms
-
-            # Check if any descendant failed (recursive)
-            def _has_failure(span_id: str) -> bool:
-                for child in children_map.get(span_id, []):
-                    if child.status == SpanStatus.FAILED:
-                        return True
-                    if _has_failure(child.span_id):
-                        return True
-                return False
-
-            led_to_failure = (
-                agent_span.status == SpanStatus.FAILED
-                or _has_failure(agent_span.span_id)
-            )
-        else:
-            downstream_status = "unknown"
-            downstream_dur = None
-            led_to_failure = False
-
-        records.append(DecisionRecord(
-            coordinator=coordinator,
-            chosen_agent=chosen,
-            alternatives=alternatives,
-            rationale=rationale,
-            criteria=criteria,
-            confidence=confidence,
-            downstream_status=downstream_status,
-            downstream_duration_ms=downstream_dur,
-            led_to_failure=led_to_failure,
-        ))
+    records = [
+        _decision_span_to_record(ds, trace, children_map)
+        for ds in decision_spans
+    ]
 
     total = len(records)
     failures = sum(1 for r in records if r.led_to_failure)
