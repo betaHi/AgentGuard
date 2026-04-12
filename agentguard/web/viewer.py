@@ -136,7 +136,7 @@ body{{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',system-ui,monospac
 .g-row:hover{{background:rgba(56,139,253,0.06);}}
 .g-lbl{{width:180px;flex-shrink:0;display:flex;align-items:center;gap:5px;font-size:11px;padding-right:6px;overflow:hidden;}}
 .g-lbl .icon{{font-size:12px;}} .g-lbl .nm{{font-weight:500;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;}}
-.g-lbl .vr{{font-size:9px;color:var(--dim);}}
+.g-lbl .vr{{font-size:8px;color:var(--bl);background:var(--bl-bg);padding:1px 5px;border-radius:3px;white-space:nowrap;}}
 .g-bar-area{{flex:1;position:relative;height:18px;}}
 .g-bar{{position:absolute;height:12px;top:3px;border-radius:3px;min-width:3px;display:flex;align-items:center;justify-content:flex-end;padding:0 3px;font-size:8px;color:rgba(255,255,255,0.7);}}
 .g-bar.ok{{background:linear-gradient(90deg,#238636,#2ea043);}}
@@ -448,7 +448,7 @@ def _render_gantt_rows(span: Span, depth: int, trace_start: str, dur_total: floa
     
     dur_s = f"{dur:.0f}ms" if dur < 1000 else f"{dur/1000:.1f}s"
     ver = _esc(span.metadata.get("agent_version", ""))
-    ver_html = f'<span class="vr">({ver})</span>' if ver else ""
+    ver_html = f'<span class="vr">{ver}</span>' if ver else ""
     
     opacity = "opacity:0.65;" if span.span_type == SpanType.TOOL else ""
     
