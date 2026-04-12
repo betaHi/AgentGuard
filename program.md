@@ -192,3 +192,12 @@ Beyond tree view — show the actual flow:
 - Schema compatibility + migration (compat.py)
 - Statistical analysis (stats.py)
 - Tests: 507 → 523
+
+### 🎯 2026-04-12 — ITERATION 250 MILESTONE
+- 250 iterations | 537 tests | 154 commits | 20.7K LOC | 69 modules
+- Trace manipulation: clone, slice, anonymize, merge (manipulate.py)
+- Dashboard data provider (dashboard.py)
+- Plugin system (plugin.py)
+- Trace templates: 4 pipeline patterns (templates.py)
+- ASCII visualization (ascii_viz.py)
+- Complete multi-agent observability framework
