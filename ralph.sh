@@ -224,15 +224,22 @@ Tests: $TEST_SUMMARY
 Full diff:
 $DIFF_FULL
 
-REQUIRED:
-1. Read REVIEW.md checklist completely
-2. Check alignment with GUARDRAILS.md 5 Questions  
-3. Check alignment with docs/current-state-review-zh.md priorities
-4. Verify production quality (not demo quality)
+REQUIRED STEPS (do ALL):
+1. Read $(pwd)/REVIEW.md checklist — walk through every item
+2. Read $(pwd)/GUARDRAILS.md — verify change serves at least one of the 5 Questions
+3. Read $(pwd)/docs/current-state-review-zh.md — check against known issues and priorities
+4. Verify production quality (error handling, types, edge cases)
 5. State confidence level: HIGH/MEDIUM/LOW
 
-Reply: ACCEPT: [reason] | Confidence: [level]
-or: REJECT: [issue + doc reference]. Fix: [action]" \
+YOUR REPLY MUST INCLUDE:
+- Which of the 5 GUARDRAILS Questions this change serves (Q1-Q5, or 'infra/docs')
+- Whether it aligns with current-state-review priorities (cite specific section)
+- Specific evidence for ACCEPT/REJECT (not just 'looks good')
+
+Format:
+ACCEPT: [reason] | GUARDRAILS: [Q1-Q5 or infra] | Review: [section ref] | Confidence: [level]
+or:
+REJECT: [issue + doc reference]. Fix: [action] | Confidence: [level]" \
         --timeout 120 \
         --json 2>&1 | grep -v "Config warnings\|plugins\|Registered")
     
