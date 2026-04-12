@@ -249,3 +249,16 @@ Beyond tree view — show the actual flow:
 - Mermaid output tests
 - Trace compression module
 - Tests: 612 → 623
+
+### 2026-04-12 — Iterations 305-310: Deep testing
+- Async SDK tests (decorators, context managers, errors)
+- CLI integration tests (11 commands end-to-end)
+- Distributed trace tests (inject/extract context)
+- Scoring edge cases (8 tests)
+- Builder advanced tests (deep nesting, handoff chains)
+- Error classification module + viewer panel
+- Trace compression module
+- Markdown export module
+- JSON view panel in viewer
+- Print-friendly + responsive CSS
+- Tests: 623 → 641
