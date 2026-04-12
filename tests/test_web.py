@@ -140,3 +140,68 @@ def test_web_xss_prevention():
         assert '<script>alert' not in html
         assert '<img onerror' not in html
         assert '&lt;script&gt;' in html
+
+
+class TestViewerParallel:
+    """Test that viewer correctly renders parallel traces."""
+    
+    def test_parallel_trace_renders(self):
+        """Parallel trace should produce valid HTML with parallel indicators."""
+        from agentguard.builder import TraceBuilder
+        from agentguard.web.viewer import trace_to_html_string
+        
+        trace = (TraceBuilder("parallel viewer test")
+            .agent("orchestrator", duration_ms=10000)
+                .agent("worker_a", duration_ms=3000).end()
+                .agent("worker_b", duration_ms=3000).end()
+                .agent("worker_c", duration_ms=3000).end()
+            .end()
+            .build())
+        
+        html = trace_to_html_string(trace)
+        assert "worker_a" in html
+        assert "worker_b" in html
+        assert "worker_c" in html
+        assert "AgentGuard" in html
+    
+    def test_failed_trace_renders(self):
+        """Failed trace should show error indicators."""
+        from agentguard.builder import TraceBuilder
+        from agentguard.web.viewer import trace_to_html_string
+        
+        trace = (TraceBuilder("fail viewer test")
+            .agent("bad_agent", duration_ms=1000, status="failed", error="API timeout")
+            .end()
+            .build())
+        
+        html = trace_to_html_string(trace)
+        assert "FAIL" in html
+        assert "bad_agent" in html
+
+    def test_handoff_renders(self):
+        """Handoffs should be visible in HTML."""
+        from agentguard.builder import TraceBuilder
+        from agentguard.web.viewer import trace_to_html_string
+        
+        trace = (TraceBuilder("handoff viewer test")
+            .agent("sender", duration_ms=2000).end()
+            .handoff("sender", "receiver", context_size=1500)
+            .agent("receiver", duration_ms=3000).end()
+            .build())
+        
+        html = trace_to_html_string(trace)
+        assert "sender" in html
+        assert "receiver" in html
+
+    def test_score_badge_renders(self):
+        """Score badge should be in the HTML."""
+        from agentguard.builder import TraceBuilder
+        from agentguard.web.viewer import trace_to_html_string
+        
+        trace = (TraceBuilder("score test")
+            .agent("a", duration_ms=1000).end()
+            .build())
+        
+        html = trace_to_html_string(trace)
+        assert "score-" in html  # score-a, score-b, etc.
+        assert "/100" in html
