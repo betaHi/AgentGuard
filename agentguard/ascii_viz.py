@@ -255,3 +255,107 @@ def _count_changes(
         elif a or b:
             count += 1
     return count
+
+
+def agent_drill_down(
+    trace: ExecutionTrace,
+    agent_name: str,
+    bar_width: int = 30,
+) -> str:
+    """Expand an agent to show individual tool/child timings.
+
+    Answers the 'why is this agent slow?' follow-up to bottleneck
+    analysis by breaking down time spent in each child span.
+
+    Args:
+        trace: The execution trace.
+        agent_name: Name of the agent to drill into.
+        bar_width: Width of the timing bar.
+
+    Returns:
+        Multi-line string with tool-level timing breakdown.
+        Returns error message if agent not found.
+    """
+    agent_span = _find_agent_span(trace, agent_name)
+    if agent_span is None:
+        return f"Agent '{agent_name}' not found in trace."
+
+    children = _get_sorted_children(trace, agent_span.span_id)
+    agent_dur = agent_span.duration_ms or 0
+
+    lines = _build_drill_header(agent_span, agent_dur, len(children))
+    lines.extend(_build_child_rows(children, agent_dur, bar_width))
+    lines.extend(_build_self_time(children, agent_dur, bar_width))
+    return "\n".join(lines)
+
+
+def _find_agent_span(
+    trace: ExecutionTrace, agent_name: str
+) -> Optional[Span]:
+    """Find the first agent span matching the name."""
+    for s in trace.spans:
+        if s.name == agent_name and s.span_type.value == "agent":
+            return s
+    return None
+
+
+def _get_sorted_children(
+    trace: ExecutionTrace, parent_id: str
+) -> list[Span]:
+    """Get child spans sorted by duration descending."""
+    children = [
+        s for s in trace.spans if s.parent_span_id == parent_id
+    ]
+    children.sort(key=lambda s: -(s.duration_ms or 0))
+    return children
+
+
+def _build_drill_header(
+    agent_span: Span, agent_dur: float, child_count: int
+) -> list[str]:
+    """Build the header section of the drill-down view."""
+    status = agent_span.status.value if agent_span.status else "unknown"
+    icon = _status_icon(status)
+    return [
+        f"# Drill-down: {agent_span.name}",
+        f"  Status: {icon} {status} | Duration: {agent_dur:.0f}ms | "
+        f"Children: {child_count}",
+        "",
+        f"  {'Span':<20} {'Type':<10} {'Duration':>10} {'%':>6}  Bar",
+        f"  {'─'*20} {'─'*10} {'─'*10} {'─'*6}  {'─'*30}",
+    ]
+
+
+def _build_child_rows(
+    children: list[Span], parent_dur: float, bar_width: int
+) -> list[str]:
+    """Build rows for each child span with timing bars."""
+    lines = []
+    for child in children:
+        dur = child.duration_ms or 0
+        pct = (dur / parent_dur * 100) if parent_dur > 0 else 0
+        bar_len = int(pct / 100 * bar_width)
+        icon = _status_icon(child.status.value if child.status else "?")
+        span_type = child.span_type.value if child.span_type else "?"
+        bar_char = "▓" if child.status and child.status.value == "failed" else "█"
+        bar = bar_char * max(bar_len, 1)
+        name = child.name[:20]
+        lines.append(
+            f"  {icon} {name:<18} {span_type:<10} {dur:>8.0f}ms {pct:>5.1f}%  {bar}"
+        )
+    return lines
+
+
+def _build_self_time(
+    children: list[Span], parent_dur: float, bar_width: int
+) -> list[str]:
+    """Build the self-time row (time not in children)."""
+    child_dur = sum(c.duration_ms or 0 for c in children)
+    self_dur = max(parent_dur - child_dur, 0)
+    self_pct = (self_dur / parent_dur * 100) if parent_dur > 0 else 0
+    bar_len = int(self_pct / 100 * bar_width)
+    return [
+        f"  {'─'*20} {'─'*10} {'─'*10} {'─'*6}  {'─'*30}",
+        f"  {'(self-time)':<20} {'':10} {self_dur:>8.0f}ms {self_pct:>5.1f}%  "
+        f"{'░' * max(bar_len, 0)}",
+    ]
