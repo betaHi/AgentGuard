@@ -1,20 +1,23 @@
 # AgentGuard Development Instructions
 
-Read program.md for project direction and current priorities.
-Read GUARDRAILS.md for lines that must not be crossed.
-Read REVIEW.md for code review criteria.
+## MANDATORY: Read These First (every time)
+1. GUARDRAILS.md — the 5 Questions and 3 Lines that must not be crossed
+2. docs/current-state-review-zh.md — current known issues and priorities
+3. REVIEW.md — what the reviewer will check (your code must pass all items)
+4. .story-current.md — your current task and evaluator feedback
 
-## Your task
+## Your Task
 
-You are developing AgentGuard, an observability layer for multi-agent orchestration.
+You are developing AgentGuard, a multi-agent orchestration diagnostics tool.
 
 Every iteration:
-1. Read the story spec (.story-current.md) carefully
-2. Read any previous evaluator feedback — address ALL points
-3. Decompose the task into concrete steps before coding
-4. Implement (code + tests)
-5. Run `python -m pytest tests/ -v` — all tests must pass
-6. Commit with a descriptive message
+1. Read .story-current.md — especially Previous Evaluator Feedback
+2. If feedback exists: FIX every issue. Do NOT resubmit unchanged code.
+3. State which GUARDRAILS Q# (Q1-Q5) your task serves
+4. Decompose into concrete steps before coding
+5. Implement (code + tests)
+6. Run `python -m pytest tests/ -v` — all must pass
+7. Commit with descriptive message
 
 ## Rules
 - All code and comments in English
@@ -26,8 +29,8 @@ Every iteration:
 - Production-grade quality, NOT demo quality
 
 ## DO NOT
-- Modify program.md (Planner's job)
-- Modify progress.txt (Planner's job)
+- Modify program.md or progress.txt (Planner-owned)
 - Modify REVIEW.md or GUARDRAILS.md
-- Add modules unless the story explicitly requires it
-- Ignore evaluator feedback — if feedback says "fix X", you MUST fix X
+- Add modules unless story explicitly requires it
+- Ignore evaluator feedback
+- Overstate capabilities in docs/comments
