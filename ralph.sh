@@ -1,14 +1,15 @@
 #!/bin/bash
-# AgentGuard Ralph Loop v6
-#
+# AgentGuard Ralph Loop v7
 # Agent IDs (heihu=generator, luoshi=reviewer) are OpenClaw internal config.
-# Generator: 🐯 generator agent — fresh context per story
-# Evaluator: 🔱 reviewer agent — Code Review specialist, persistent session
-# Evolve: every 5 iterations
-# Recovery: session IDs saved to .ralph-state.json
+#
+# Changes from v6:
+# - Reviewer reads FULL diff (not truncated) + design docs
+# - Self-improvement review every 5 iterations
+# - Skip story after 3 consecutive REJECTs
+# - Confidence levels in review output
+# - Production-grade focus
 #
 # Usage: ./ralph.sh [max-iterations] [max-hours]
-# Resume: ./ralph.sh (reads .ralph-state.json automatically)
 
 set -e
 
@@ -19,34 +20,36 @@ LOG_FILE="$PROJECT_DIR/.ralph-log.txt"
 STATE_FILE="$PROJECT_DIR/.ralph-state.json"
 START_TIME=$(date +%s)
 MAX_SECONDS=$((MAX_HOURS * 3600))
+MAX_REJECTS=3
 
-# ── Resume from state file if exists ──
+# Resume
 ITERATION=0
+REJECT_COUNT=0
+CURRENT_STORY=""
 if [ -f "$STATE_FILE" ]; then
-    SAVED_ITER=$(python3 -c "import json; print(json.load(open('$STATE_FILE')).get('iteration', 0))" 2>/dev/null || echo 0)
-    if [ "$SAVED_ITER" -gt 0 ]; then
-        ITERATION=$SAVED_ITER
-        echo "📂 Resuming from iteration $ITERATION" | tee -a "$LOG_FILE"
-    fi
+    ITERATION=$(python3 -c "import json; print(json.load(open('$STATE_FILE')).get('iteration', 0))" 2>/dev/null || echo 0)
+    REJECT_COUNT=$(python3 -c "import json; print(json.load(open('$STATE_FILE')).get('reject_count', 0))" 2>/dev/null || echo 0)
+    CURRENT_STORY=$(python3 -c "import json; print(json.load(open('$STATE_FILE')).get('current_story', ''))" 2>/dev/null || echo "")
+    [ "$ITERATION" -gt 0 ] && echo "📂 Resuming from iteration $ITERATION (reject_count=$REJECT_COUNT)" | tee -a "$LOG_FILE"
 fi
 
-echo "🛡️ AgentGuard Ralph Loop v6" | tee -a "$LOG_FILE"
-echo "   Generator + Evaluator agents" | tee -a "$LOG_FILE"
-echo "   Max: $MAX_ITERATIONS iter / $MAX_HOURS hours" | tee -a "$LOG_FILE"
+echo "🛡️ AgentGuard Ralph Loop v7 (production-grade)" | tee -a "$LOG_FILE"
+echo "   Generator + Reviewer agents | Self-improvement every 5 iter" | tee -a "$LOG_FILE"
+echo "   Max: $MAX_ITERATIONS iter / $MAX_HOURS hours | Skip after $MAX_REJECTS REJECTs" | tee -a "$LOG_FILE"
 echo "   Started: $(date -u) (iter $ITERATION)" | tee -a "$LOG_FILE"
 echo "" | tee -a "$LOG_FILE"
 
 cd "$PROJECT_DIR"
 
-# ── Save state function ──
 save_state() {
     python3 -c "
 import json
 state = {
     'iteration': $ITERATION,
+    'reject_count': $REJECT_COUNT,
+    'current_story': '''$CURRENT_STORY''',
     'start_time': $START_TIME,
     'pid': $$,
-    'last_story': '''$NEXT_STORY''',
     'timestamp': '$(date -u +%Y-%m-%dT%H:%M:%SZ)'
 }
 with open('$STATE_FILE', 'w') as f:
@@ -71,55 +74,81 @@ while [ $ITERATION -lt $MAX_ITERATIONS ]; do
         break
     fi
     
-    # Save state (for recovery)
+    # Track reject count per story
+    if [ "$NEXT_STORY" != "$CURRENT_STORY" ]; then
+        REJECT_COUNT=0
+        CURRENT_STORY="$NEXT_STORY"
+    fi
+    
+    # Skip after MAX_REJECTS
+    if [ $REJECT_COUNT -ge $MAX_REJECTS ]; then
+        echo "⏭️ Skipping story after $MAX_REJECTS REJECTs: $NEXT_STORY" | tee -a "$LOG_FILE"
+        echo "   Moving to next story. Feedback saved for manual review." | tee -a "$LOG_FILE"
+        ESCAPED=$(echo "$NEXT_STORY" | sed 's/[&/\\.]/\\&/g')
+        sed -i "s/^- \[ \] ${ESCAPED}/- [S] ${ESCAPED} (SKIPPED: ${MAX_REJECTS}x REJECT)/" program.md
+        REJECT_COUNT=0
+        CURRENT_STORY=""
+        git add program.md && git commit -m "⏭️ skip: $NEXT_STORY (${MAX_REJECTS}x REJECT)" 2>/dev/null || true
+        continue
+    fi
+    
     save_state
     
     echo "━━━ Iteration $ITERATION ($((ELAPSED/60))min elapsed) ━━━" | tee -a "$LOG_FILE"
-    echo "📋 Story: $NEXT_STORY" | tee -a "$LOG_FILE"
+    echo "📋 Story: $NEXT_STORY (attempt $((REJECT_COUNT + 1))/$MAX_REJECTS)" | tee -a "$LOG_FILE"
     
-    # Write story spec
+    # Write story spec with full context
     cat > .story-current.md << STORYEOF
 # Current Story
 
 ## Task
 $NEXT_STORY
 
-## Project
-- Dir: $PROJECT_DIR  
-- Venv: source $PROJECT_DIR/.venv/bin/activate
-- Test: cd $PROJECT_DIR && source .venv/bin/activate && python3 -m pytest tests/ -q --tb=short
-- Read CLAUDE.md for project rules
-- Read GUARDRAILS.md for constraints
+## Project Context
+- Run tests: python3 -m pytest tests/ -q --tb=short
+- Read CLAUDE.md for development rules
+- Read GUARDRAILS.md for lines that must not be crossed
+- Read docs/current-state-review-zh.md for known issues and priorities
 
-## Project Goals
-- AgentGuard = multi-agent orchestration diagnostics (NOT generic LLM observability)
-- Must answer: bottleneck? context loss? failure propagation? cost/yield? degradation?
-- Trace depth > feature breadth
-- README/examples/analysis/viewer must tell the same story
+## Quality Bar: PRODUCTION-GRADE
+This is NOT a demo. Every function must handle real failure modes.
+- Error handling for edge cases
+- Type hints on all public APIs
+- Docstrings explaining WHY, not just WHAT
+- Functions ≤ 50 lines
+- Deterministic examples (fixed seeds)
+
+## Task Decomposition
+Before writing code, decompose this story into concrete steps:
+1. What exactly needs to change?
+2. Which files need modification?
+3. What edge cases exist?
+4. What tests are needed?
+5. How does this align with the 5 Questions in GUARDRAILS.md?
 
 ## Previous Evaluator Feedback
-$(cat .evaluator-feedback.txt 2>/dev/null || echo "None")
-
-## Acceptance Criteria
-- Matches story spec exactly (not more, not less)
-- All tests pass
-- Minimal changes
-- Committed with descriptive message
+$(cat .evaluator-feedback.txt 2>/dev/null || echo "None — first attempt")
 
 ## Do NOT
-- Add new modules unless story requires it
-- Modify program.md or progress.txt
-- Overstate capabilities
+- Add unrelated features
+- Modify program.md, REVIEW.md, or GUARDRAILS.md
+- Overstate capabilities in docs
+- Write demo-quality code
+- Import external packages in core/ or sdk/
 STORYEOF
     
-    # ── GENERATOR: generator (fresh context) ──
+    # ── GENERATOR ──
     ITER_START=$(date +%s)
-    echo "🐯 Generator..." | tee -a "$LOG_FILE"
+    echo "🔧 Generator..." | tee -a "$LOG_FILE"
     
     GEN_RESULT=$(openclaw agent \
         --agent heihu  # generator agent ID \
-        --session-id "heihu-$ITERATION-$(date +%s)" \
-        --message "Read $PROJECT_DIR/.story-current.md. Implement, test, commit. Report what changed." \
+        --session-id "gen-$ITERATION-$(date +%s)" \
+        --message "Read $(pwd)/.story-current.md. 
+
+IMPORTANT: Decompose the task into steps FIRST, then implement step by step.
+Quality bar: production-grade (not demo). Check GUARDRAILS.md alignment.
+Implement, test thoroughly, commit. Report: what changed, which files, which edge cases handled." \
         --timeout 300 \
         --json 2>&1 | grep -v "Config warnings\|plugins\|Registered")
     
@@ -130,36 +159,49 @@ try:
     for p in d.get('result',{}).get('payloads',[]): print(p.get('text',''))
 except: print('GEN_ERROR')
 " 2>/dev/null)
-    echo "$GEN_TEXT" | head -15 | tee -a "$LOG_FILE"
+    echo "$GEN_TEXT" | head -20 | tee -a "$LOG_FILE"
     
     # ── TESTS ──
     source "$PROJECT_DIR/.venv/bin/activate"
-    TEST_RESULT=$(python3 -m pytest tests/ -q --tb=no 2>&1 | tail -1)
-    echo "🧪 Tests: $TEST_RESULT" | tee -a "$LOG_FILE"
+    TEST_RESULT=$(python3 -m pytest tests/ -q --tb=short 2>&1 | tail -3)
+    TEST_SUMMARY=$(echo "$TEST_RESULT" | tail -1)
+    echo "🧪 Tests: $TEST_SUMMARY" | tee -a "$LOG_FILE"
     
-    # ── EVALUATOR: reviewer (persistent session — remembers context) ──
-    echo "🔱 Evaluator (reviewer)..." | tee -a "$LOG_FILE"
+    # ── REVIEWER (full diff, design doc alignment) ──
+    echo "🔍 Reviewer..." | tee -a "$LOG_FILE"
     
-    DIFF_SUMMARY=$(git diff HEAD~1 --stat 2>/dev/null | tail -5)
-    DIFF_CONTENT=$(git diff HEAD~1 -- "*.py" 2>/dev/null | head -100)
+    DIFF_STAT=$(git diff HEAD~1 --stat 2>/dev/null)
+    DIFF_FULL=$(git diff HEAD~1 -- "*.py" "*.md" 2>/dev/null | head -300)
     
     EVAL_RESULT=$(openclaw agent \
         --agent luoshi  # reviewer agent ID \
-        --session-id "luoshi-ralph-eval" \
-        --message "You are reviewer 🔱, AgentGuard code reviewer.
-
-FIRST: Read $PROJECT_DIR/REVIEW.md for review criteria and project context.
+        --session-id "rev-$ITERATION-$(date +%s)" \
+        --message "REVIEW for AgentGuard. Read $(pwd)/REVIEW.md first.
 
 Story: '$NEXT_STORY'
-Generator said: $(echo "$GEN_TEXT" | head -5)
-Files changed: $DIFF_SUMMARY  
-Tests: $TEST_RESULT
+Attempt: $((REJECT_COUNT + 1))/$MAX_REJECTS
 
-Code diff:
-$DIFF_CONTENT
+Generator report:
+$(echo "$GEN_TEXT" | head -10)
 
-Apply REVIEW.md checklist. Reply ONLY: ACCEPT: [reason] or REJECT: [issue]. Fix: [action]" \
-        --timeout 90 \
+Files changed:
+$DIFF_STAT
+
+Tests: $TEST_SUMMARY
+
+Full diff:
+$DIFF_FULL
+
+REQUIRED:
+1. Read REVIEW.md checklist completely
+2. Check alignment with GUARDRAILS.md 5 Questions  
+3. Check alignment with docs/current-state-review-zh.md priorities
+4. Verify production quality (not demo quality)
+5. State confidence level: HIGH/MEDIUM/LOW
+
+Reply: ACCEPT: [reason] | Confidence: [level]
+or: REJECT: [issue + doc reference]. Fix: [action]" \
+        --timeout 120 \
         --json 2>&1 | grep -v "Config warnings\|plugins\|Registered")
     
     EVAL_TEXT=$(echo "$EVAL_RESULT" | python3 -c "
@@ -176,49 +218,69 @@ except: print('EVAL_ERROR')
     
     # ── ACCEPT/REJECT ──
     if echo "$EVAL_TEXT" | grep -qi "ACCEPT"; then
-        if echo "$TEST_RESULT" | grep -q "passed"; then
+        if echo "$TEST_SUMMARY" | grep -q "passed"; then
             ESCAPED=$(echo "$NEXT_STORY" | sed 's/[&/\\.]/\\&/g')
             sed -i "s/^- \[ \] ${ESCAPED}/- [x] ${ESCAPED}/" program.md
             echo "   ✅ ACCEPTED" | tee -a "$LOG_FILE"
             rm -f .evaluator-feedback.txt
-            git add program.md && git commit -m "✅ story done: $NEXT_STORY" 2>/dev/null || true
+            REJECT_COUNT=0
+            git add -A && git commit -m "✅ done: $NEXT_STORY" 2>/dev/null || true
         fi
     else
-        echo "   ❌ REJECTED" | tee -a "$LOG_FILE"
+        REJECT_COUNT=$((REJECT_COUNT + 1))
+        echo "   ❌ REJECTED ($REJECT_COUNT/$MAX_REJECTS)" | tee -a "$LOG_FILE"
         echo "$EVAL_TEXT" > .evaluator-feedback.txt
     fi
     
-    # ── EVOLVE: every 5 iterations ──
+    # ── SELF-IMPROVEMENT: every 5 iterations ──
     if [ $((ITERATION % 5)) -eq 0 ]; then
-        echo "🧬 Evolve: learning from recent traces..." | tee -a "$LOG_FILE"
-        python3 -c "
-from agentguard.evolve import EvolutionEngine
-from agentguard.store import TraceStore
-store = TraceStore()
-traces = store.query(limit=5)
-if traces:
-    engine = EvolutionEngine()
-    for t in traces:
-        engine.learn(t)
-    print(f'   Learned from {len(traces)} traces, {len(engine.kb.lessons)} lessons total')
-" 2>/dev/null | tee -a "$LOG_FILE"
+        echo "🔄 Self-improvement review..." | tee -a "$LOG_FILE"
+        
+        RECENT_LOG=$(tail -50 "$LOG_FILE")
+        
+        IMPROVE_RESULT=$(openclaw agent \
+            --session-id "self-improve-$ITERATION" \
+            --message "You are reviewing the last 5 iterations of the AgentGuard development loop.
+
+Recent log:
+$RECENT_LOG
+
+Questions to answer:
+1. What patterns are causing REJECTs? How to fix the root cause?
+2. Are stories well-decomposed or too vague?
+3. Is code quality trending up or down?
+4. Are we drifting from GUARDRAILS.md direction?
+5. What should change in the next 5 iterations?
+
+Be specific and actionable. No generic advice." \
+            --timeout 90 \
+            --json 2>&1 | grep -v "Config warnings\|plugins\|Registered")
+        
+        IMPROVE_TEXT=$(echo "$IMPROVE_RESULT" | python3 -c "
+import sys,json
+try:
+    d=json.load(sys.stdin)
+    for p in d.get('result',{}).get('payloads',[]): print(p.get('text',''))
+except: print('IMPROVE_ERROR')
+" 2>/dev/null)
+        echo "   Improvement notes:" | tee -a "$LOG_FILE"
+        echo "$IMPROVE_TEXT" | head -15 | tee -a "$LOG_FILE"
     fi
     
     # Log + push
-    echo "[$(date -u +%Y-%m-%dT%H:%M:%SZ)] Iter $ITERATION (${ITER_DURATION}s): $NEXT_STORY — $TEST_RESULT — $EVAL_TEXT" >> progress.txt
-    git push 2>/dev/null || true
+    echo "[$(date -u +%Y-%m-%dT%H:%M:%SZ)] Iter $ITERATION (${ITER_DURATION}s): $NEXT_STORY — $TEST_SUMMARY — $(echo "$EVAL_TEXT" | head -1)" >> progress.txt
+    git add -A && git push 2>/dev/null || true
     save_state
     
     echo "" | tee -a "$LOG_FILE"
     sleep 2
 done
 
-# ── Summary ──
+# Summary
 TOTAL=$(( $(date +%s) - START_TIME ))
 echo "━━━ Done ━━━" | tee -a "$LOG_FILE"
 echo "Iterations: $ITERATION | Time: $((TOTAL/60))min" | tee -a "$LOG_FILE"
 echo "Tests: $(source $PROJECT_DIR/.venv/bin/activate && python3 -m pytest tests/ -q --tb=no 2>&1 | tail -1)" | tee -a "$LOG_FILE"
 echo "Commits: $(git log --oneline | wc -l)" | tee -a "$LOG_FILE"
 
-# Clean state file on completion
 rm -f "$STATE_FILE"
