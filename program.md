@@ -38,7 +38,7 @@
 - [x] Add async context propagation for asyncio.create_task
 
 ### P2: Docs/README consistency (current-state-review §2.3, §2.4)
-- [S] Merge getting-started.md + quickstart.md into one clear onboarding doc (SKIPPED: 3x REJECT)
+- [x] Merge getting-started.md + quickstart.md into one clear onboarding doc
 - [ ] Create docs/api-reference.md with all public function signatures + examples
 - [ ] Create docs/configuration.md — agentguard.json schema, CLI flags, env vars
 - [ ] Audit README claims against actual stable implementation — remove overstatements
