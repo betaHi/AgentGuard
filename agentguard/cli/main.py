@@ -200,6 +200,38 @@ def cmd_eval(args):
         sys.exit(1)
 
 
+def cmd_search(args):
+    """Search spans across all traces."""
+    from agentguard.query import TraceStore
+    
+    store = TraceStore(args.dir)
+    traces = store.load_all()
+    
+    matches = []
+    for t in traces:
+        for s in t.spans:
+            if args.name and args.name.lower() not in s.name.lower():
+                continue
+            if args.type and s.span_type.value != args.type:
+                continue
+            if args.failed and s.status.value != "failed":
+                continue
+            matches.append((t, s))
+    
+    print(f"\n{C.BOLD}  🔍 Span Search Results ({len(matches)} matches){C.RESET}")
+    line = "─" * 50
+    print(f"  {line}")
+    
+    for t, s in matches[:20]:
+        badge = _status_badge(s.status.value)
+        dur = _fmt_duration(s.duration_ms)
+        print(f"  {_type_icon(s.span_type.value)} {C.BOLD}{s.name}{C.RESET} {badge} {C.CYAN}{dur}{C.RESET}")
+        print(f"    {C.DIM}trace: {t.task} ({t.trace_id}){C.RESET}")
+        if s.error:
+            print(f"    {C.RED}⚠ {s.error[:60]}{C.RESET}")
+    print()
+
+
 def cmd_merge(args):
     """Merge distributed child traces into parent."""
     from agentguard.sdk.distributed import merge_child_traces
@@ -398,6 +430,13 @@ def main():
     p.add_argument("--dir", default=".agentguard/traces", help="Traces directory")
     p.add_argument("--output", default=".agentguard/report.html", help="Output HTML path")
     
+    # search
+    p = sub.add_parser("search", help="Search spans across traces")
+    p.add_argument("--name", help="Filter by span name")
+    p.add_argument("--type", choices=["agent","tool","llm_call","handoff"], help="Filter by type")
+    p.add_argument("--failed", action="store_true", help="Only failed spans")
+    p.add_argument("--dir", default=".agentguard/traces")
+    
     # merge
     p = sub.add_parser("merge", help="Merge distributed child traces")
     p.add_argument("file", help="Parent trace file")
@@ -425,7 +464,7 @@ def main():
     
     args = parser.parse_args()
     
-    cmds = {"show": cmd_show, "list": cmd_list, "eval": cmd_eval, "merge": cmd_merge, "validate": cmd_validate, "diff": cmd_diff, "analyze": cmd_analyze, "evolve": cmd_evolve, "report": cmd_report, "guard": cmd_guard}
+    cmds = {"show": cmd_show, "list": cmd_list, "search": cmd_search, "eval": cmd_eval, "merge": cmd_merge, "validate": cmd_validate, "diff": cmd_diff, "analyze": cmd_analyze, "evolve": cmd_evolve, "report": cmd_report, "guard": cmd_guard}
     if args.command in cmds:
         cmds[args.command](args)
     else:
