@@ -252,12 +252,14 @@ export_jsonl(trace, "output.jsonl")    # for log aggregation
 ```bash
 agentguard show <trace.json>                      # display trace tree
 agentguard list [--dir DIR]                       # list traces
+agentguard search [--name X] [--type agent|tool]  # search spans across traces
 agentguard eval <trace.json> [--config cfg.json]  # evaluate against rules
+agentguard merge <parent.json>                    # merge distributed child traces
 agentguard validate <trace.json>                  # check trace integrity
 agentguard diff <trace_a> <trace_b>               # compare two traces
-agentguard analyze <trace.json>                   # failure + bottleneck + flow + context
+agentguard analyze <trace.json>                   # failure + bottleneck + flow + timing + cost
 agentguard evolve --learn --suggest               # self-reflection + knowledge
-agentguard report [--dir DIR]                     # generate HTML panel
+agentguard report [--dir DIR]                     # generate HTML orchestration panel
 agentguard guard [--dir DIR] [--interval 60]      # continuous monitoring
 ```
 
