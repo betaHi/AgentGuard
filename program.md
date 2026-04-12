@@ -49,8 +49,8 @@
 
 ### P4: Integration & examples
 - [x] Integration test: full record → analyze → export_otel → import → compare roundtrip
-- [S] Add example: multi-model pipeline (GPT-4 + Claude + local model, cost comparison) (SKIPPED: 3x REJECT)
-- [ ] Improve error_recovery example: add timeout pattern + partial result handling
+- [x] Add example: multi-model pipeline (GPT-4 + Claude + local model, cost comparison)
+- [x] Improve error_recovery example: add timeout pattern + partial result handling
 
 ## Progress Log
 

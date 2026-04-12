@@ -5,6 +5,8 @@ Demonstrates how AgentGuard captures different failure handling patterns:
 2. Circuit breaker — agent catches tool failure and falls back
 3. Graceful degradation — pipeline continues despite partial failure
 4. Failure propagation — unhandled failure bubbles up
+5. Timeout with partial results — returns what it has before timeout
+6. Partial result aggregation — collects from multiple sources despite failures
 """
 
 import time
@@ -91,6 +93,70 @@ def critical_agent() -> dict:
     return critical_service()
 
 
+# ── Pattern 5: Timeout with partial results ──
+@record_tool(name="slow_search")
+def slow_search(query: str, timeout_ms: float = 100) -> dict:
+    """Simulates a search that may exceed timeout."""
+    duration = random.uniform(0.05, 0.2)
+    time.sleep(min(duration, timeout_ms / 1000))
+    if duration > timeout_ms / 1000:
+        raise TimeoutError(f"Search exceeded {timeout_ms}ms timeout")
+    return {"results": [f"result-{i}" for i in range(3)], "query": query}
+
+@record_agent(name="timeout_searcher", version="v1.0")
+def timeout_searcher(query: str) -> dict:
+    """Returns partial results on timeout instead of failing completely."""
+    partial_results = []
+    queries = [f"{query} part-{i}" for i in range(3)]
+    for q in queries:
+        try:
+            result = slow_search(q, timeout_ms=100)
+            partial_results.extend(result["results"])
+        except TimeoutError:
+            partial_results.append(f"[timeout: {q}]")
+    return {
+        "results": partial_results,
+        "complete": not any("[timeout:" in r for r in partial_results),
+        "total_queries": len(queries),
+    }
+
+
+# ── Pattern 6: Partial result aggregation ──
+@record_tool(name="source_a")
+def source_a() -> dict:
+    time.sleep(0.03)
+    return {"items": ["a1", "a2"], "source": "A"}
+
+@record_tool(name="source_b")
+def source_b() -> dict:
+    time.sleep(0.03)
+    raise ConnectionError("Source B is unreachable")
+
+@record_tool(name="source_c")
+def source_c() -> dict:
+    time.sleep(0.03)
+    return {"items": ["c1"], "source": "C"}
+
+@record_agent(name="aggregator", version="v1.0")
+def aggregator() -> dict:
+    """Collects from multiple sources, continues despite partial failure."""
+    sources = [source_a, source_b, source_c]
+    collected = []
+    failed_sources = []
+    for src in sources:
+        try:
+            result = src()
+            collected.extend(result["items"])
+        except Exception as e:
+            failed_sources.append(f"{src.__name__}: {e}")
+    return {
+        "items": collected,
+        "total": len(collected),
+        "failed_sources": failed_sources,
+        "completeness": len(collected) / max(len(sources) * 2, 1),
+    }
+
+
 def main():
     print("🛡️ Error Recovery Patterns Demo")
     print("=" * 50)
@@ -125,6 +191,22 @@ def main():
     
     trace = finish_recording()
     
+    record_handoff("enricher", "timeout_searcher", context=result3)
+
+    # Pattern 5: Timeout with partial results
+    print("\n⏱️  Pattern 5: Timeout with partial results")
+    result5 = timeout_searcher("AI agents")
+    print(f"   Complete: {result5['complete']}, Results: {len(result5['results'])}")
+
+    record_handoff("timeout_searcher", "aggregator", context=result5)
+
+    # Pattern 6: Partial result aggregation
+    print("\n📦 Pattern 6: Partial result aggregation")
+    result6 = aggregator()
+    print(f"   Items: {result6['total']}, Failed: {len(result6['failed_sources'])}")
+    for fail in result6["failed_sources"]:
+        print(f"   ⚠ {fail}")
+
     # Analysis
     print("\n" + "=" * 50)
     print("📊 Analysis")
