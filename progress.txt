@@ -374,3 +374,4 @@ REJECT: 15th identical diff. Logged to memory. Orchestrator needs a circuit brea
 [2026-04-12T14:43:20Z] Iter 3 (0s): Span duration anomaly detection: flag spans 3x slower than historical baseline — NO CHANGES
 [2026-04-12T14:48:09Z] Iter 7 (0s): Viewer: context flow waterfall chart (context size at each handoff as bar) — NO CHANGES
 [2026-04-12T14:52:13Z] Iter 1 (173s): Integration test: full record → analyze → export_otel → import → compare roundtrip — 786 passed in 13.60s — Only test file modified. All 8 tests pass. No planner files touched.
+[2026-04-12T14:56:22Z] Iter 3 (0s): Add example: multi-model pipeline (GPT-4 + Claude + local model, cost comparison) — NO CHANGES
