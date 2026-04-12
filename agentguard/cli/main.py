@@ -615,6 +615,13 @@ def cmd_compare(args):
 
 
 
+def cmd_version(args):
+    """Show AgentGuard version."""
+    from agentguard import __version__
+    print(f"AgentGuard {__version__}")
+
+
+
 def cmd_report(args):
     """Generate HTML report."""
     from agentguard.web.viewer import generate_timeline_html
@@ -657,6 +664,9 @@ def main():
     p = sub.add_parser("eval", help="Evaluate a trace against rules")
     p.add_argument("file", help="Path to trace JSON file")
     p.add_argument("--config", help="Path to config file (agentguard.json)")
+    
+    # version
+    sub.add_parser("version", help="Show version")
     
     # report
     p = sub.add_parser("report", help="Generate HTML report")
@@ -784,7 +794,7 @@ def main():
     
     args = parser.parse_args()
     
-    cmds = {"show": cmd_show, "list": cmd_list, "search": cmd_search, "eval": cmd_eval, "merge": cmd_merge, "validate": cmd_validate, "diff": cmd_diff, "analyze": cmd_analyze, "evolve": cmd_evolve, "propagation": cmd_propagation, "flowgraph": cmd_flowgraph, "context-flow": cmd_context_flow, "span-diff": cmd_span_diff, "sla": cmd_sla, "dependencies": cmd_dependencies, "benchmark": cmd_benchmark, "generate": cmd_generate, "summarize": cmd_summarize, "tree": cmd_tree, "compare": cmd_compare, "timeline": cmd_timeline, "metrics": cmd_metrics, "schema": cmd_schema, "score": cmd_score, "aggregate": cmd_aggregate, "annotate": cmd_annotate, "correlate": cmd_correlate, "report": cmd_report, "guard": cmd_guard}
+    cmds = {"show": cmd_show, "list": cmd_list, "search": cmd_search, "eval": cmd_eval, "merge": cmd_merge, "validate": cmd_validate, "diff": cmd_diff, "analyze": cmd_analyze, "propagation": cmd_propagation, "flowgraph": cmd_flowgraph, "context-flow": cmd_context_flow, "span-diff": cmd_span_diff, "sla": cmd_sla, "dependencies": cmd_dependencies, "benchmark": cmd_benchmark, "generate": cmd_generate, "summarize": cmd_summarize, "tree": cmd_tree, "compare": cmd_compare, "timeline": cmd_timeline, "metrics": cmd_metrics, "schema": cmd_schema, "score": cmd_score, "aggregate": cmd_aggregate, "annotate": cmd_annotate, "correlate": cmd_correlate, "version": cmd_version, "report": cmd_report, "guard": cmd_guard}
     if args.command in cmds:
         cmds[args.command](args)
     else:
