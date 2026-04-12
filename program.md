@@ -211,3 +211,12 @@ Beyond tree view — show the actual flow:
 - 29+ CLI commands
 - Plugin system, templates, benchmarks, dashboard
 - Full exports from top-level import
+
+### 2026-04-12 — Iterations 260-270: Deep focus per 大大虾 feedback
+- Parallel pipeline example (parallel_pipeline.py): 3 concurrent researchers, circuit breaker
+- Parallel coding example (parallel_coding.py): concurrent review/security/testing
+- Thread safety tests: 20 concurrent agents stress test
+- Viewer enhanced: parallel detection, purple highlight, score badge
+- Production usage example: complete instrument→analyze→monitor workflow
+- README updated with parallel examples
+- Tests: 544 → 555
