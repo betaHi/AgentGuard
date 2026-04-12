@@ -622,3 +622,89 @@ def test_coding_pipeline_full_cycle():
         assert result.returncode == 0, f"Pipeline failed: {result.stderr}"
         assert "Result:" in result.stdout
         assert "Self-Reflection" in result.stdout
+
+
+# ──────────────────────────────────────────────────────
+# Test 17: Full cycle — record → analyze → evolve → web → all in one
+# ──────────────────────────────────────────────────────
+
+def test_e2e_full_cycle():
+    """Complete cycle: instrument → record → analyze → learn → web → query."""
+    
+    @record_tool(name="api")
+    def api(q):
+        return {"data": q}
+    
+    @record_tool(name="broken_api")
+    def broken():
+        raise RuntimeError("500")
+    
+    @record_agent(name="worker-a", version="v2")
+    def worker_a(task):
+        return api(task)
+    
+    @record_agent(name="worker-b", version="v1")
+    def worker_b(task):
+        try: return broken()
+        except: return {"fallback": True}
+    
+    @record_agent(name="boss", version="v3")
+    def boss(task):
+        a = worker_a(task)
+        record_handoff("worker-a", "worker-b", context=a, summary="pass results")
+        b = worker_b(task)
+        return {"a": a, "b": b}
+    
+    with tempfile.TemporaryDirectory() as tmpdir:
+        traces_dir = f"{tmpdir}/traces"
+        kb_dir = f"{tmpdir}/kb"
+        
+        # Record
+        init_recorder(task="Full Cycle", trigger="test", output_dir=traces_dir)
+        result = boss("do stuff")
+        trace = finish_recording()
+        
+        assert result["b"]["fallback"] is True  # fallback worked
+        
+        # Analyze
+        from agentguard.analysis import analyze_failures, analyze_flow, analyze_bottleneck, analyze_context_flow
+        f = analyze_failures(trace)
+        fl = analyze_flow(trace)
+        bn = analyze_bottleneck(trace)
+        ctx = analyze_context_flow(trace)
+        
+        assert f.handled_count >= 1
+        assert fl.agent_count == 3
+        assert bn.bottleneck_span != ""
+        
+        # Evolve
+        from agentguard.evolve import EvolutionEngine
+        engine = EvolutionEngine(knowledge_dir=kb_dir)
+        reflection = engine.learn(trace)
+        assert len(reflection.lessons) >= 1
+        
+        # Web
+        from agentguard.web.viewer import generate_timeline_html
+        html_path = generate_timeline_html(traces_dir, f"{tmpdir}/report.html")
+        html = Path(html_path).read_text()
+        assert "boss" in html
+        assert "worker-a" in html
+        assert "Orchestration" in html
+        
+        # Query
+        from agentguard.query import TraceStore
+        store = TraceStore(traces_dir)
+        all_traces = store.load_all()
+        assert len(all_traces) == 1
+        
+        # Validate
+        from agentguard.validate import validate_trace
+        v = validate_trace(trace)
+        assert v.valid
+        
+        # Export
+        from agentguard.export import export_otel_spans, trace_statistics
+        otel = export_otel_spans(trace)
+        assert len(otel) >= 3
+        stats = trace_statistics(trace)
+        assert stats["agent_count"] == 3
