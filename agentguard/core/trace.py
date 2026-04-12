@@ -15,7 +15,14 @@ from typing import Any, Optional
 
 
 class SpanStatus(str, Enum):
-    """Status of a span execution."""
+    """Status of a span execution.
+
+    Values:
+        RUNNING: Span is currently executing.
+        COMPLETED: Span finished successfully.
+        FAILED: Span encountered an unrecoverable error.
+        TIMEOUT: Span exceeded its time limit.
+    """
     RUNNING = "running"
     COMPLETED = "completed"
     FAILED = "failed"
@@ -23,7 +30,14 @@ class SpanStatus(str, Enum):
 
 
 class SpanType(str, Enum):
-    """Type of span in the trace."""
+    """Type of span in the trace.
+
+    Values:
+        AGENT: An autonomous agent performing a task.
+        TOOL: A tool invocation (search, API call, etc.).
+        LLM_CALL: A direct LLM API call.
+        HANDOFF: A context transfer between agents.
+    """
     AGENT = "agent"
     TOOL = "tool"
     LLM_CALL = "llm_call"
@@ -95,7 +109,11 @@ class Span:
 
     @property
     def duration_ms(self) -> Optional[float]:
-        """Calculate duration in milliseconds."""
+        """Calculate duration in milliseconds.
+
+        Returns:
+            Duration in ms, or None if the span has not ended yet.
+        """
         if self.ended_at and self.started_at:
             start = datetime.fromisoformat(self.started_at)
             end = datetime.fromisoformat(self.ended_at)
@@ -103,20 +121,40 @@ class Span:
         return None
 
     def complete(self, output: Any = None) -> None:
-        """Mark this span as completed."""
+        """Mark this span as completed.
+
+        Sets status to COMPLETED, records the end timestamp, and
+        optionally stores the output data.
+
+        Args:
+            output: Result data to store. Must be JSON-serializable.
+        """
         self.status = SpanStatus.COMPLETED
         self.ended_at = datetime.now(timezone.utc).isoformat()
         if output is not None:
             self.output_data = output
 
     def fail(self, error: str) -> None:
-        """Mark this span as failed."""
+        """Mark this span as failed.
+
+        Sets status to FAILED and records the end timestamp.
+
+        Args:
+            error: Human-readable error message describing the failure.
+        """
         self.status = SpanStatus.FAILED
         self.ended_at = datetime.now(timezone.utc).isoformat()
         self.error = error
 
     def to_dict(self) -> dict:
-        """Serialize to dictionary (excludes empty children for cleanliness)."""
+        """Serialize to a plain dictionary.
+
+        Enum fields are converted to their string values. Empty children
+        lists are omitted for cleaner output.
+
+        Returns:
+            Dict suitable for JSON serialization.
+        """
         d = asdict(self)
         d["span_type"] = self.span_type.value
         d["status"] = self.status.value
@@ -154,23 +192,42 @@ class ExecutionTrace:
     metadata: dict[str, Any] = field(default_factory=dict)
 
     def add_span(self, span: Span) -> None:
-        """Add a span to this trace."""
+        """Add a span to this trace.
+
+        The span's trace_id is automatically set to this trace's ID.
+
+        Args:
+            span: The Span to add.
+        """
         span.trace_id = self.trace_id
         self.spans.append(span)
 
     def complete(self) -> None:
-        """Mark this trace as completed."""
+        """Mark this trace as completed.
+
+        Sets status to COMPLETED and records the end timestamp.
+        """
         self.status = SpanStatus.COMPLETED
         self.ended_at = datetime.now(timezone.utc).isoformat()
 
     def fail(self, error: str = "") -> None:
-        """Mark this trace as failed."""
+        """Mark this trace as failed.
+
+        Sets status to FAILED and records the end timestamp.
+
+        Args:
+            error: Optional error message describing the failure cause.
+        """
         self.status = SpanStatus.FAILED
         self.ended_at = datetime.now(timezone.utc).isoformat()
 
     @property
     def duration_ms(self) -> Optional[float]:
-        """Total trace duration in milliseconds."""
+        """Total trace duration in milliseconds.
+
+        Returns:
+            Duration in ms, or None if the trace has not ended yet.
+        """
         if self.ended_at and self.started_at:
             start = datetime.fromisoformat(self.started_at)
             end = datetime.fromisoformat(self.ended_at)
@@ -179,16 +236,35 @@ class ExecutionTrace:
 
     @property
     def agent_spans(self) -> list[Span]:
-        """Get all agent-type spans."""
+        """Get all agent-type spans.
+
+        Returns:
+            List of spans where span_type is SpanType.AGENT.
+        """
         return [s for s in self.spans if s.span_type == SpanType.AGENT]
 
     @property
     def tool_spans(self) -> list[Span]:
-        """Get all tool-type spans."""
+        """Get all tool-type spans.
+
+        Returns:
+            List of spans where span_type is SpanType.TOOL.
+        """
         return [s for s in self.spans if s.span_type == SpanType.TOOL]
 
     def build_tree(self) -> list[Span]:
-        """Assemble spans into a tree structure based on parent_span_id."""
+        """Assemble spans into a tree structure based on parent_span_id.
+
+        Populates each span's ``children`` list by matching parent_span_id
+        references. Spans without a valid parent become root nodes.
+
+        Returns:
+            List of root-level spans, each with children populated recursively.
+
+        Note:
+            This mutates the spans' ``children`` fields in place. Call once
+            per trace; repeated calls reset children first.
+        """
         span_map = {s.span_id: s for s in self.spans}
         roots = []
         for span in self.spans:
@@ -201,7 +277,11 @@ class ExecutionTrace:
         return roots
 
     def to_dict(self) -> dict:
-        """Serialize to dictionary."""
+        """Serialize the entire trace to a plain dictionary.
+
+        Returns:
+            Dict with trace metadata and all spans, suitable for JSON output.
+        """
         return {
             "trace_id": self.trace_id,
             "task": self.task,
@@ -215,12 +295,26 @@ class ExecutionTrace:
         }
 
     def to_json(self, indent: int = 2) -> str:
-        """Serialize to JSON string."""
+        """Serialize the trace to a JSON string.
+
+        Args:
+            indent: Number of spaces for JSON indentation.
+
+        Returns:
+            Pretty-printed JSON string.
+        """
         return json.dumps(self.to_dict(), indent=indent, ensure_ascii=False)
 
     @classmethod
     def from_dict(cls, data: dict) -> ExecutionTrace:
-        """Deserialize from dictionary."""
+        """Deserialize an ExecutionTrace from a plain dictionary.
+
+        Args:
+            data: Dict as produced by ``to_dict()``, typically loaded from JSON.
+
+        Returns:
+            Reconstructed ExecutionTrace with all spans.
+        """
         trace = cls(
             trace_id=data["trace_id"],
             task=data.get("task", ""),
@@ -264,5 +358,12 @@ class ExecutionTrace:
 
     @classmethod
     def from_json(cls, json_str: str) -> ExecutionTrace:
-        """Deserialize from JSON string."""
+        """Deserialize an ExecutionTrace from a JSON string.
+
+        Args:
+            json_str: JSON string as produced by ``to_json()``.
+
+        Returns:
+            Reconstructed ExecutionTrace with all spans.
+        """
         return cls.from_dict(json.loads(json_str))
