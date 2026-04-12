@@ -418,7 +418,7 @@ class ContextFlowPoint:
     size_received_bytes: int = 0
     keys_lost: list[str] = field(default_factory=list)
     size_delta_bytes: int = 0
-    anomaly: str = ""  # "loss", "bloat", "ok"
+    anomaly: str = ""  # "loss", "bloat", "compression", "ok"
 
     def to_dict(self) -> dict:
         return {
@@ -526,6 +526,8 @@ def analyze_context_flow(trace: ExecutionTrace) -> ContextFlowReport:
                     anomaly = "loss"
                 elif delta > s_size * 2 and s_size > 0:
                     anomaly = "bloat"
+                elif delta < -s_size * 0.5 and s_size > 100:
+                    anomaly = "compression"  # significant shrinkage may indicate info loss
                 
                 points.append(ContextFlowPoint(
                     from_agent=sender.name, to_agent=receiver.name,
