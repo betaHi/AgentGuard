@@ -52,3 +52,56 @@ Status: ok
 Status: ok
 
 🧪 Evaluator verifying...
+   Tests: 706 passed in 12.34s
+   Iteration took: 15s
+
+━━━ Iteration 4/100 (2min elapsed, 35831s remaining) ━━━
+📋 Story: Stabilize coding_pipeline output so diagnostics match documentation every run
+🐯 Dispatching to 黑虎虾...
+🐯 这个 story 刚完成了！Commit `a9e09e2`，706 tests pass ✅。等 Planner 更新 `.story-current.md` 到下一个任务。
+Status: ok
+
+🧪 Evaluator verifying...
+   Tests: 706 passed in 12.77s
+   Iteration took: 124s
+
+✅ All stories complete!
+./ralph.sh: line 135: syntax error near unexpected token `('
+s and variable outcomes. I need to align the docs to match the stable output.
+Now let me also check if the `random.uniform` calls for sleep times and the `random.random()` for failures produce consistent behavior. The seed is already set, but let me verify the randomness claims in the code comments:
+The `vector_search` has `random.random() < 0.6` but with seed 42 it always produces the same result. The comment says "intermittent" which is misleading given the seed. And `llm_review_code` has low-probability issues that never trigger with seed 42. Let me fix the comments to be accurate:
+Now verify docs look right:
+Good. Run tests:
+🐯 完成！
+
+**Story:** Stabilize coding_pipeline output so diagnostics match documentation every run
+
+**问题：** `coding_pipeline.py` 已经用了 `random.seed(42)` 保证确定性输出，但代码注释和 `docs/examples.md` 还声称输出有随机性（"intermittent failure"、"resilience varies"、"run multiple times to see different outcomes"）。
+
+**改了什么：**
+1. `examples/coding_pipeline.py` — 修正 vector_search 的注释，从 "intermittent failure" 改为说明固定 seed 下的确定性行为
+2. `docs/examples.md` — 更新文档：6 handoffs（不是 "up to 6"）、consistent 50% resilience（不是 "varies"）、每次都是 "deployed" 结果
+
+**验证：** 跑了 5 次，输出完全一致（25 spans, 6 handoffs, 50% resilience, bottleneck llm_generate_code 31%）
+**测试：** 706 passed ✅
+**Commit:** `a9e09e2`
+Status: ok
+
+🧪 Evaluator verifying...
+   Tests: 706 passed in 12.52s
+   Iteration took: 117s
+   ✅ Story marked as done in program.md
+[main 34fe2f2] mark story done: Stabilize coding_pipeline output so diagnostics match documentation every run
+ 1 file changed, 1 insertion(+), 1 deletion(-)
+
+✅ All stories complete!
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━
+🛡️ Ralph Loop Complete
+   Iterations: 2
+   Total time: 2min (0h 2min)
+   Started: Sun Apr 12 06:25:37 UTC 2026
+   Ended: Sun Apr 12 06:27:50 UTC 2026
+   Tests: 706 passed in 12.60s
+   Commits: 223
+━━━━━━━━━━━━━━━━━━━━━━━━━━
