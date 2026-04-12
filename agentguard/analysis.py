@@ -17,7 +17,7 @@ from typing import Any, Optional
 
 from agentguard.core.trace import ExecutionTrace, Span, SpanType, SpanStatus
 
-__all__ = ['FailureNode', 'FailureAnalysis', 'analyze_failures', 'HandoffInfo', 'FlowAnalysis', 'analyze_flow', 'BottleneckReport', 'analyze_bottleneck', 'ContextFlowPoint', 'ContextFlowReport', 'analyze_context_flow', 'analyze_retries', 'analyze_cost', 'analyze_cost_yield', 'CostYieldEntry', 'CostYieldReport', 'analyze_timing']
+__all__ = ['FailureNode', 'FailureAnalysis', 'analyze_failures', 'HandoffInfo', 'FlowAnalysis', 'analyze_flow', 'BottleneckReport', 'analyze_bottleneck', 'ContextFlowPoint', 'ContextFlowReport', 'analyze_context_flow', 'analyze_retries', 'analyze_cost', 'analyze_cost_yield', 'CostYieldEntry', 'CostYieldReport', 'DecisionRecord', 'DecisionAnalysis', 'analyze_decisions', 'analyze_timing']
 
 
 @dataclass
@@ -812,6 +812,161 @@ def analyze_cost_yield(trace: ExecutionTrace) -> CostYieldReport:
         best_ratio_agent=best_ratio,
     )
 
+
+
+@dataclass
+class DecisionRecord:
+    """A single orchestration decision and its downstream outcome."""
+    coordinator: str
+    chosen_agent: str
+    alternatives: list[str]
+    rationale: str
+    criteria: dict
+    confidence: Optional[float]
+    downstream_status: str  # "completed", "failed", etc.
+    downstream_duration_ms: Optional[float]
+    led_to_failure: bool  # True if chosen agent (or its children) failed
+
+    def to_dict(self) -> dict[str, Any]:
+        return {
+            "coordinator": self.coordinator,
+            "chosen": self.chosen_agent,
+            "alternatives": self.alternatives,
+            "rationale": self.rationale,
+            "criteria": self.criteria,
+            "confidence": self.confidence,
+            "downstream_status": self.downstream_status,
+            "downstream_duration_ms": self.downstream_duration_ms,
+            "led_to_failure": self.led_to_failure,
+        }
+
+
+@dataclass
+class DecisionAnalysis:
+    """Analysis of all orchestration decisions in a trace."""
+    decisions: list[DecisionRecord]
+    total_decisions: int
+    decisions_leading_to_failure: int
+    decision_quality_score: float  # 0-1: fraction of decisions with good outcomes
+
+    def to_dict(self) -> dict[str, Any]:
+        return {
+            "total_decisions": self.total_decisions,
+            "decisions_leading_to_failure": self.decisions_leading_to_failure,
+            "decision_quality_score": round(self.decision_quality_score, 2),
+            "decisions": [d.to_dict() for d in self.decisions],
+        }
+
+    def to_report(self) -> str:
+        lines = [
+            "# Orchestration Decision Analysis", "",
+            f"Total decisions: {self.total_decisions}",
+            f"Led to failure: {self.decisions_leading_to_failure}",
+            f"Decision quality: {self.decision_quality_score:.0%}", "",
+        ]
+        for d in self.decisions:
+            icon = "\u2717" if d.led_to_failure else "\u2713"
+            alts = ", ".join(d.alternatives) if d.alternatives else "none"
+            lines.append(f"{icon} **{d.coordinator}** chose **{d.chosen_agent}** over [{alts}]")
+            if d.rationale:
+                lines.append(f"  Rationale: {d.rationale}")
+            lines.append(f"  Outcome: {d.downstream_status}"
+                         f"{f' ({d.downstream_duration_ms:.0f}ms)' if d.downstream_duration_ms else ''}")
+            lines.append("")
+        return "\n".join(lines)
+
+
+def analyze_decisions(trace: ExecutionTrace) -> DecisionAnalysis:
+    """Analyze orchestration decisions and their downstream outcomes.
+
+    Answers GUARDRAILS Q5: "Which orchestration decision caused downstream
+    degradation?"
+
+    Finds all decision spans (handoffs with decision metadata), then checks
+    whether the chosen agent succeeded or failed downstream.
+
+    Args:
+        trace: The execution trace to analyze.
+
+    Returns:
+        DecisionAnalysis with per-decision outcomes and quality score.
+    """
+    span_map = {s.span_id: s for s in trace.spans}
+
+    # Build children map for downstream outcome tracking
+    children_map: dict[str, list[Span]] = {}
+    for s in trace.spans:
+        if s.parent_span_id:
+            children_map.setdefault(s.parent_span_id, []).append(s)
+
+    # Find decision spans: handoffs with decision.type metadata
+    decision_spans = [
+        s for s in trace.spans
+        if s.span_type == SpanType.HANDOFF
+        and s.metadata.get("decision.type") == "orchestration"
+    ]
+
+    records = []
+    for ds in decision_spans:
+        chosen = ds.metadata.get("decision.chosen", "")
+        coordinator = ds.metadata.get("decision.coordinator", "")
+        alternatives = ds.metadata.get("decision.alternatives", [])
+        rationale = ds.metadata.get("decision.rationale", "")
+        criteria = ds.metadata.get("decision.criteria", {})
+        confidence = ds.metadata.get("decision.confidence")
+
+        # Find the chosen agent's span(s) to determine outcome
+        chosen_spans = [
+            s for s in trace.spans
+            if s.span_type == SpanType.AGENT and s.name == chosen
+        ]
+
+        if chosen_spans:
+            # Use the first matching agent span after the decision
+            agent_span = chosen_spans[0]
+            downstream_status = agent_span.status.value
+            downstream_dur = agent_span.duration_ms
+
+            # Check if any descendant failed (recursive)
+            def _has_failure(span_id: str) -> bool:
+                for child in children_map.get(span_id, []):
+                    if child.status == SpanStatus.FAILED:
+                        return True
+                    if _has_failure(child.span_id):
+                        return True
+                return False
+
+            led_to_failure = (
+                agent_span.status == SpanStatus.FAILED
+                or _has_failure(agent_span.span_id)
+            )
+        else:
+            downstream_status = "unknown"
+            downstream_dur = None
+            led_to_failure = False
+
+        records.append(DecisionRecord(
+            coordinator=coordinator,
+            chosen_agent=chosen,
+            alternatives=alternatives,
+            rationale=rationale,
+            criteria=criteria,
+            confidence=confidence,
+            downstream_status=downstream_status,
+            downstream_duration_ms=downstream_dur,
+            led_to_failure=led_to_failure,
+        ))
+
+    total = len(records)
+    failures = sum(1 for r in records if r.led_to_failure)
+    quality = 1.0 if total == 0 else (total - failures) / total
+
+    return DecisionAnalysis(
+        decisions=records,
+        total_decisions=total,
+        decisions_leading_to_failure=failures,
+        decision_quality_score=quality,
+    )
 
 def analyze_timing(trace: ExecutionTrace) -> dict:
     """Analyze timing patterns — detect gaps, overlaps, and idle time.

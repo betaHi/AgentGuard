@@ -218,3 +218,87 @@ def mark_context_used(
         "extra_used": extra_used,
         "utilization_ratio": round(utilization, 2),
     }
+
+
+def record_decision(
+    coordinator: str,
+    chosen_agent: str,
+    alternatives: Optional[list[str]] = None,
+    rationale: str = "",
+    criteria: Optional[dict] = None,
+    confidence: Optional[float] = None,
+    metadata: Optional[dict] = None,
+) -> Span:
+    """Record an orchestration decision — why the coordinator chose one agent over others.
+
+    Answers GUARDRAILS Q5: "Which orchestration decision caused downstream degradation?"
+
+    Use this when a coordinator/router makes a routing decision. The decision
+    is recorded as a HANDOFF span with decision metadata, so it appears in
+    the trace timeline and can be correlated with downstream outcomes.
+
+    Args:
+        coordinator: Name of the agent/router making the decision.
+        chosen_agent: Name of the agent that was selected.
+        alternatives: Other agents that were considered but not chosen.
+            Empty list or None means no alternatives were available.
+        rationale: Human-readable explanation of why this agent was chosen.
+            E.g. "Chose code-generator over code-improver because task is greenfield".
+        criteria: Structured selection criteria as key-value pairs.
+            E.g. {"task_type": "greenfield", "complexity": "high", "budget_remaining": 0.5}
+        confidence: How confident the coordinator is in this choice (0.0-1.0).
+            None means confidence was not assessed.
+        metadata: Additional metadata to attach to the span.
+
+    Returns:
+        The decision Span, which can be used to correlate with downstream outcomes.
+
+    Example::
+
+        decision = record_decision(
+            coordinator="router",
+            chosen_agent="fast-model",
+            alternatives=["slow-model", "cheap-model"],
+            rationale="Chose fast-model: latency-sensitive request",
+            criteria={"priority": "speed", "budget_ok": True},
+            confidence=0.85,
+        )
+    """
+    recorder = get_recorder()
+
+    alts = alternatives or []
+    decision_criteria = criteria or {}
+
+    span = Span(
+        span_type=SpanType.HANDOFF,
+        name=f"{coordinator} → {chosen_agent} (decision)",
+        parent_span_id=recorder.current_span_id,
+        input_data={
+            "coordinator": coordinator,
+            "chosen": chosen_agent,
+            "alternatives": alts,
+            "rationale": rationale,
+        },
+        output_data={
+            "decision": chosen_agent,
+            "alternatives_count": len(alts),
+        },
+        metadata={
+            "decision.coordinator": coordinator,
+            "decision.chosen": chosen_agent,
+            "decision.alternatives": alts,
+            "decision.rationale": rationale,
+            "decision.criteria": decision_criteria,
+            "decision.confidence": confidence,
+            "decision.type": "orchestration",
+            **(metadata or {}),
+        },
+        handoff_from=coordinator,
+        handoff_to=chosen_agent,
+    )
+
+    span.complete()
+    recorder.push_span(span)
+    recorder.pop_span(span)
+
+    return span
