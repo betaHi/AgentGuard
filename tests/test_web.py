@@ -250,3 +250,51 @@ class TestViewerDiagnostics:
         
         html = trace_to_html_string(ExecutionTrace(task="empty"))
         assert "AgentGuard" in html
+
+
+class TestViewerAdvanced:
+    """Advanced viewer tests."""
+    
+    def test_large_trace_renders(self):
+        """Trace with many spans should render without crashing."""
+        from agentguard.builder import TraceBuilder
+        from agentguard.web.viewer import trace_to_html_string
+        
+        b = TraceBuilder("large trace")
+        for i in range(50):
+            b = b.agent(f"agent_{i}", duration_ms=100 + i * 10).end()
+        trace = b.build()
+        
+        html = trace_to_html_string(trace)
+        assert len(html) > 1000
+        assert "agent_0" in html
+        assert "agent_49" in html
+
+    def test_handoff_with_context_size(self):
+        """Handoff context sizes should appear in HTML."""
+        from agentguard.builder import TraceBuilder
+        from agentguard.web.viewer import trace_to_html_string
+        
+        trace = (TraceBuilder("handoff ctx test")
+            .agent("a", duration_ms=1000).end()
+            .handoff("a", "b", context_size=12345)
+            .agent("b", duration_ms=1000).end()
+            .build())
+        
+        html = trace_to_html_string(trace)
+        assert "12,345" in html or "12345" in html
+
+    def test_llm_calls_in_sidebar(self):
+        """LLM call summary should appear in sidebar."""
+        from agentguard.builder import TraceBuilder
+        from agentguard.web.viewer import trace_to_html_string
+        
+        trace = (TraceBuilder("llm sidebar test")
+            .agent("a")
+                .llm_call("gpt4", token_count=5000, cost_usd=0.15)
+            .end()
+            .build())
+        
+        html = trace_to_html_string(trace)
+        assert "LLM Calls" in html
+        assert "5,000" in html
