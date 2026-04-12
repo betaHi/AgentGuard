@@ -16,3 +16,16 @@ build/
 .story-current.md
 .evaluator-feedback.txt
 nohup.out
+
+# Internal dev loop (not part of the open-source project)
+ralph.sh
+run-ralph.sh
+LOOPS.md
+.loops/
+progress.txt
+REVIEW.md
+CLAUDE.md
+program.md
+.story-current.md
+.evaluator-feedback.txt
+.ralph-*

@@ -364,12 +364,70 @@ class BottleneckReport:
             own_ms = a.get("own_duration_ms", a["duration_ms"])
             own_pct = a.get("own_pct", a["pct"])
             container = " (container)" if a.get("is_container") else ""
+            cat = a.get("category", "unknown")
+            cat_icon = {"io": "\U0001f310", "cpu": "\u2699", "waiting": "\u23f3", "unknown": "\u2753"}.get(cat, "")
             lines.append(
-                f"{i+1}. **{a['name']}**{container} — "
+                f"{i+1}. **{a['name']}**{container} [{cat_icon} {cat}] — "
                 f"total: {a['duration_ms']:.0f}ms ({a['pct']:.0f}%) · "
                 f"self: {own_ms:.0f}ms ({own_pct:.0f}%)"
             )
         return "\n".join(lines)
+
+
+def _classify_span_category(
+    span: Span,
+    own_duration_ms: float,
+    total_duration_ms: float,
+    children: list[Span],
+) -> str:
+    """Classify a span's bottleneck category based on heuristics.
+
+    Categories:
+    - 'io': Span likely doing I/O (API calls, search, network).
+      Detected by: tool type, or metadata hints (model, api, url, search).
+    - 'cpu': Span doing computation with high self-time.
+      Detected by: high own_time ratio, no IO children.
+    - 'waiting': Span mostly waiting for children to complete.
+      Detected by: low own_time ratio (< 20% of total).
+    - 'unknown': Insufficient data to classify.
+
+    This is a heuristic — accurate classification requires runtime
+    profiling which AgentGuard intentionally avoids (zero-overhead).
+    """
+    if total_duration_ms <= 0:
+        return "unknown"
+
+    own_ratio = own_duration_ms / max(total_duration_ms, 1)
+
+    # Tool spans are typically IO
+    if span.span_type == SpanType.TOOL:
+        return "io"
+
+    # Check metadata hints for IO
+    io_hints = {"model", "api", "url", "search", "fetch", "http", "db", "query"}
+    meta_keys = {k.lower() for k in span.metadata.keys()}
+    meta_vals = {str(v).lower() for v in span.metadata.values() if isinstance(v, str)}
+    if io_hints & (meta_keys | meta_vals):
+        return "io"
+
+    # Check if children are IO-heavy
+    io_children = [
+        c for c in children
+        if c.span_type == SpanType.TOOL
+        or any(h in c.name.lower() for h in ("search", "api", "fetch", "call"))
+    ]
+    if io_children and len(io_children) >= len(children) * 0.5:
+        return "io"
+
+    # Low own-time = mostly waiting for children
+    if children and own_ratio < 0.2:
+        return "waiting"
+
+    # High own-time with no IO children = likely CPU
+    if own_ratio > 0.5:
+        return "cpu"
+
+    return "unknown"
 
 
 def analyze_bottleneck(trace: ExecutionTrace) -> BottleneckReport:
@@ -438,6 +496,9 @@ def analyze_bottleneck(trace: ExecutionTrace) -> BottleneckReport:
             "own_pct": (own_d / max(total_dur, 1)) * 100,
             "status": s.status.value,
             "is_container": s.span_id in parent_ids,
+            "category": _classify_span_category(
+                s, own_d, total_d, children_map.get(s.span_id, [])
+            ),
         })
     # Sort by own duration (real work), not total duration
     agent_rankings.sort(key=lambda x: x["own_duration_ms"], reverse=True)
