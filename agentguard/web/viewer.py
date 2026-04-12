@@ -326,6 +326,43 @@ def _build_sidebar(trace: ExecutionTrace, failures, bn) -> str:
 <div class="ag-bar"><div class="ag-bar-fill" style="width:{max(pct,2):.0f}%;background:{bar_color}"></div></div>
 </div>''')
     
+
+    # Tool span bottleneck cards
+    tools = sorted(trace.tool_spans, key=lambda s: -(s.duration_ms or 0))
+    if tools:
+        # Show top tools by duration (potential bottlenecks)
+        top_tools = tools[:8]
+        cards.append('<div style="margin-top:8px;border-top:1px solid var(--bd);padding-top:8px">')
+        cards.append(f'<h2 style="font-size:10px;text-transform:uppercase;letter-spacing:1px;color:var(--dim);margin-bottom:6px">Tools ({len(trace.tool_spans)})</h2>')
+        for s in top_tools:
+            dur = s.duration_ms or 0
+            pct = (dur / dur_total) * 100
+            dur_s = f"{dur:.0f}ms" if dur < 1000 else f"{dur/1000:.1f}s"
+
+            if s.status == SpanStatus.FAILED:
+                dot_cls = "dot-err"
+                bar_color = "var(--rd)"
+                extra = f'<span style="color:var(--rd)">\u2717 {_esc(s.error or "failed")[:30]}</span>'
+            elif s.name == bn_name:
+                dot_cls = "dot-warn"
+                bar_color = "var(--yl)"
+                extra = f'<span style="color:var(--yl)">\U0001f422 bottleneck ({pct:.0f}%)</span>'
+            elif pct > 20:
+                dot_cls = "dot-warn"
+                bar_color = "var(--yl)"
+                extra = f'<span style="color:var(--yl)">{pct:.0f}% of trace</span>'
+            else:
+                dot_cls = "dot-ok"
+                bar_color = "var(--gn)"
+                extra = '<span>\u2713</span>'
+
+            cards.append(f'''<div class="ag-card">
+<div class="ag-name"><span class="dot {dot_cls}"></span> \U0001f527 {_esc(s.name)}</div>
+<div class="ag-stats"><span>{dur_s}</span>{extra}</div>
+<div class="ag-bar"><div class="ag-bar-fill" style="width:{max(pct,2):.0f}%;background:{bar_color}"></div></div>
+</div>''')
+        cards.append('</div>')
+
         # LLM call summary
     llm_spans = [s for s in trace.spans if s.span_type == SpanType.LLM_CALL]
     if llm_spans:
