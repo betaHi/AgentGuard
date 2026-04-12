@@ -67,7 +67,7 @@ Focus: Make README, examples, analysis, and viewer tell the same story.
 ### Stories — Deep Quality (10h Loop)
 
 - [x] Add comprehensive docstrings to all public APIs in core/trace.py
-- [ ] Add comprehensive docstrings to all public APIs in sdk/decorators.py and sdk/context.py
+- [x] Add comprehensive docstrings to all public APIs in sdk/decorators.py and sdk/context.py
 - [ ] Add comprehensive docstrings to all public APIs in sdk/handoff.py
 - [ ] Add type stubs (py.typed marker + complete type hints) for core/trace.py
 - [ ] Improve viewer Gantt chart: add zoom controls and time axis labels
