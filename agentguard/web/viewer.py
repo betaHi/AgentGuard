@@ -69,6 +69,10 @@ def _build_full_html(traces: list[ExecutionTrace]) -> str:
     
     dur_total = primary.duration_ms or 1
     
+    # Score the trace
+    from agentguard.scoring import score_trace as _score_trace
+    _score = _score_trace(primary)
+    
     # Build sidebar agent cards
     agent_cards = _build_sidebar(primary, failures, bn)
     
@@ -153,6 +157,7 @@ body{{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',system-ui,monospac
 {_esc(primary.task)} · {_esc(primary.trigger)} · {dur_total/1000:.1f}s · {len(primary.spans)} spans
 <span class="badge {status_cls}" style="margin-left:8px">{status_txt}</span>
 {f'<span style="margin-left:8px;color:var(--dim)">{trace_count} traces</span>' if trace_count > 1 else ''}
+<span class="score-badge score-{_score.grade.lower()}">{_score.overall:.0f}/100 ({_score.grade})</span>
 </div></div>
 
 <div class="layout">
