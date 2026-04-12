@@ -24,12 +24,14 @@ class CausalLink:
     to_span_id: str
     to_span_name: str
     relationship: str  # "parent_failure", "dependency_failure", "cascade"
+    confidence: float = 1.0  # 0.0–1.0: certainty this link is causal
     
     def to_dict(self) -> dict:
         return {
             "from_id": self.from_span_id, "from_name": self.from_span_name,
             "to_id": self.to_span_id, "to_name": self.to_span_name,
             "relationship": self.relationship,
+            "confidence": round(self.confidence, 2),
         }
 
 
@@ -44,7 +46,21 @@ class CausalChain:
     depth: int = 0  # how many levels deep the failure propagated
     contained: bool = False  # was it contained by a circuit breaker
     contained_by: Optional[str] = None  # span_id that contained it
-    
+
+    @property
+    def chain_confidence(self) -> float:
+        """Overall chain confidence — product of all link confidences.
+
+        Returns 1.0 for chains with no links (root cause only).
+        Multiply because each weak link reduces total certainty.
+        """
+        if not self.links:
+            return 1.0
+        result = 1.0
+        for link in self.links:
+            result *= link.confidence
+        return result
+
     def to_dict(self) -> dict:
         return {
             "root_span_id": self.root_span_id,
@@ -55,6 +71,7 @@ class CausalChain:
             "depth": self.depth,
             "contained": self.contained,
             "contained_by": self.contained_by,
+            "chain_confidence": round(self.chain_confidence, 3),
         }
 
 
@@ -91,11 +108,13 @@ class PropagationAnalysis:
         for chain in self.causal_chains:
             icon = "🟡" if chain.contained else "🔴"
             lines.append(f"{icon} **{chain.root_span_name}**: {chain.root_error}")
-            lines.append(f"   Depth: {chain.depth}, Affected: {len(chain.affected_span_ids)}")
+            conf_pct = chain.chain_confidence * 100
+            lines.append(f"   Depth: {chain.depth}, Affected: {len(chain.affected_span_ids)}, Chain confidence: {conf_pct:.0f}%")
             if chain.contained:
                 lines.append(f"   🛡️ Contained by: {chain.contained_by}")
             for link in chain.links:
-                lines.append(f"   → {link.from_span_name} ──({link.relationship})──▶ {link.to_span_name}")
+                conf_str = f" [{link.confidence:.0%}]" if link.confidence < 1.0 else ""
+                lines.append(f"   → {link.from_span_name} ──({link.relationship})──▶ {link.to_span_name}{conf_str}")
         
         if self.circuit_breakers:
             lines.append("")
@@ -104,6 +123,58 @@ class PropagationAnalysis:
                 lines.append(f"🛡️ **{cb['name']}** contained {cb['contained_count']} failures")
         
         return "\n".join(lines)
+
+
+def _compute_link_confidence(
+    parent: Span, child: Span, span_map: dict[str, Span]
+) -> float:
+    """Compute causal confidence for a failure propagation link.
+
+    Heuristics (each factor multiplies the base confidence of 1.0):
+    - Same error type/message: high confidence (1.0)
+    - Different error types: lower confidence (0.7)
+    - Timing: child failed shortly after parent → higher confidence
+    - Direct parent-child: higher than siblings (0.9 vs 0.6)
+
+    Why heuristics: without explicit causal annotations, we infer
+    causation from correlation. This is inherently uncertain.
+    """
+    confidence = 1.0
+
+    # Error type similarity
+    p_err = (parent.error or "").split(":")[0].strip()
+    c_err = (child.error or "").split(":")[0].strip()
+    if p_err and c_err:
+        if p_err == c_err:
+            confidence *= 1.0  # same error type = strong signal
+        elif p_err in c_err or c_err in p_err:
+            confidence *= 0.85  # partial match
+        else:
+            confidence *= 0.7  # different errors
+
+    # Relationship type
+    if child.parent_span_id == parent.span_id:
+        confidence *= 0.95  # direct parent → very likely causal
+    else:
+        confidence *= 0.6  # sibling or distant = weaker causation
+
+    # Timing proximity (child should fail after or near parent)
+    if parent.ended_at and child.started_at:
+        try:
+            from datetime import datetime
+            p_end = datetime.fromisoformat(str(parent.ended_at))
+            c_start = datetime.fromisoformat(str(child.started_at))
+            gap_ms = (c_start - p_end).total_seconds() * 1000
+            if gap_ms < 0:
+                # Child started before parent ended — concurrent, weaker
+                confidence *= 0.8
+            elif gap_ms > 5000:
+                # Large gap — less likely causal
+                confidence *= 0.6
+        except (ValueError, TypeError):
+            pass  # can't parse timestamps, skip timing factor
+
+    return min(confidence, 1.0)
 
 
 def analyze_propagation(trace: ExecutionTrace) -> PropagationAnalysis:
@@ -171,12 +242,14 @@ def analyze_propagation(trace: ExecutionTrace) -> PropagationAnalysis:
                 
                 if child.span_id in failed_ids:
                     # Failure propagated to this child
+                    conf = _compute_link_confidence(current, child, span_map)
                     chain.links.append(CausalLink(
                         from_span_id=current_id,
                         from_span_name=current.name,
                         to_span_id=child_id,
                         to_span_name=child.name,
                         relationship="cascade",
+                        confidence=conf,
                     ))
                     chain.affected_span_ids.append(child_id)
                     all_affected.add(child_id)
