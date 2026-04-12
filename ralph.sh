@@ -133,7 +133,14 @@ Before writing code, decompose this story into concrete steps:
 5. What tests are needed?
 
 ## Previous Evaluator Feedback
-$(cat .evaluator-feedback.txt 2>/dev/null || echo "None — first attempt")
+$(if [ -f .evaluator-feedback.txt ]; then
+echo "⚠️ YOUR PREVIOUS ATTEMPT WAS REJECTED. The code is already committed but has issues."
+echo "You MUST modify the existing code to fix these issues. Do NOT just check if it exists."
+echo ""
+cat .evaluator-feedback.txt
+else
+echo "None — first attempt"
+fi)
 
 ## Do NOT
 - Add unrelated features

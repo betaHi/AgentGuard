@@ -46,8 +46,6 @@
 ### P3: Deepen diagnostics
 - [x] Deepen Q5: refactor analyze_decisions to ≤50 lines with extracted helpers, revert progress.txt
 - [S] Handoff: detect context truncation (compare input size vs what arrived at next agent) (SKIPPED: 3x REJECT)
-- [S] Span duration anomaly detection: flag spans 3x slower than historical baseline (SKIPPED: 3x REJECT)
-- [S] Viewer: context flow waterfall chart (context size at each handoff as bar) (SKIPPED: 3x REJECT)
 
 ### P4: Integration & examples
 - [ ] Integration test: full record → analyze → export_otel → import → compare roundtrip
