@@ -1,0 +1,14 @@
+# AgentGuard Progress Log (append-only)
+# Each entry records a lesson learned or key decision.
+# Never delete entries — only append.
+
+[2026-04-11] Project launched with Ralph Loop. 12 iterations, 74 tests.
+[2026-04-11] Code review from 大大虾 found 3 bugs: distributed trace override, guard false positives, XSS.
+[2026-04-12] Session 2: 180 iterations, deepened trace semantics (handoff/propagation/flow/context).
+[2026-04-12] Learned:横向扩展容易，深化难。加了 40 个模块但核心语义没深化。大大虾纠正方向。
+[2026-04-12] Learned: 并行 agent 例子缺失 — 所有例子都是串行的。加了 parallel_pipeline 和 parallel_coding。
+[2026-04-12] Learned: bottleneck 分析把 coordinator 当瓶颈是错的。修正：排除容器节点，按 own work time 排名。
+[2026-04-12] Learned: handled failure 不应该让整个 trace 变 FAILED。修正 recorder.py 的 finish() 逻辑。
+[2026-04-12] Learned: 大大虾的 code review (current-state-review-zh.md) 比 700 个测试更能发现真正的语义问题。
+[2026-04-12] Learned: 我们的 loop 不是 Ralph — 是单对话内手动循环，有 context anxiety 和 self-evaluation bias。
+[2026-04-12] Decision: 采用 OpenClaw sub-agent 模式 — 主 session 做 Planner+Evaluator，sub-agent 做 Generator。

@@ -1,173 +1,168 @@
-# AgentGuard — Multi-Loop Development Architecture
+# AgentGuard Development Loop Architecture
 
-> Solving single-loop context exhaustion + enabling parallel development
+> How this project is built: a multi-agent loop running inside OpenClaw.
 
-## Problem
-
-A single Ralph Loop has three bottlenecks:
-1. **Limited context window** — one session cannot hold the entire project
-2. **Serial inefficiency** — SDK and Eval can be developed in parallel
-3. **Knowledge loss** — next session doesn't know what the previous one did
-
-## Solution: Multi-Loop + Handoff Protocol
-
-### Architecture
+## Architecture
 
 ```
-program.md (human-edited — overall direction)
-    │
-    ├── Loop-1: SDK Loop ──────── sdk-progress.md
-    ├── Loop-2: Eval Loop ─────── eval-progress.md
-    ├── Loop-3: CLI Loop ──────── cli-progress.md
-    └── Loop-4: Docs Loop ─────── docs-progress.md
-    
-    Each Loop:
-    ┌──────────────────────────────────────────┐
-    │  1. Read program.md (direction)           │
-    │  2. Read {module}-progress.md (status)    │
-    │  3. Read relevant code files              │
-    │  4. Execute one sprint                    │
-    │  5. Run tests                             │
-    │  6. Update {module}-progress.md           │
-    │  7. Check context budget                  │
-    │     - Sufficient → continue next round    │
-    │     - Tight → write handoff → new session │
-    └──────────────────────────────────────────┘
+┌─────────────────────────────────────────────┐
+│  OpenClaw (Harness)                         │
+│  ├── Session management                     │
+│  ├── Message routing (Feishu ↔ Claude)      │
+│  ├── Heartbeat / keepalive                  │
+│  └── Sub-agent orchestration                │
+│                                             │
+│  ┌───────────────────────────────────────┐  │
+│  │  Main Session (基围小小虾 🦐)          │  │
+│  │  Role: Planner + Evaluator            │  │
+│  │  ├── Reads program.md (priorities)    │  │
+│  │  ├── Decomposes into stories          │  │
+│  │  ├── Dispatches to sub-agents         │  │
+│  │  ├── Reviews results (evaluator)      │  │
+│  │  └── Updates progress + memory        │  │
+│  └───────────────────────────────────────┘  │
+│          │                                   │
+│          ▼ spawn per story                   │
+│  ┌───────────────────────────────────────┐  │
+│  │  Sub-Agent (Generator)                │  │
+│  │  = Fresh context each time            │  │
+│  │  ├── Reads: story spec + CLAUDE.md    │  │
+│  │  ├── Implements code + tests          │  │
+│  │  ├── Runs pytest                      │  │
+│  │  ├── Commits + pushes                 │  │
+│  │  └── Reports back completion          │  │
+│  └───────────────────────────────────────┘  │
+│                                             │
+│  大大虾 (Human)                              │
+│  ├── Sets direction (program.md)            │
+│  ├── Code review (current-state-review)     │
+│  ├── Course correction via chat             │
+│  └── Final acceptance                       │
+└─────────────────────────────────────────────┘
 ```
 
-### Context Management Strategies
+## Comparison with Known Patterns
 
-#### Strategy 1: Scoped Context
-Each Loop only loads files it needs:
+| Aspect | Ralph (snarktank) | Anthropic 3-Agent | Our Loop |
+|--------|-------------------|-------------------|----------|
+| Harness | bash script | Custom Python | OpenClaw |
+| Generator | Claude Code CLI (fresh per iteration) | Generator agent | Sub-agent (fresh context) |
+| Evaluator | typecheck + pytest | Separate Evaluator agent | Main session + 大大虾 review |
+| Planner | PRD → prd.json | Planner agent | Main session reads program.md |
+| State | git + progress.txt + prd.json | Structured artifacts | git + program.md + memory/*.md |
+| Context reset | New CLI instance per iteration | New agent per phase | New sub-agent per story |
+| Human role | Writes PRD, reviews final | Writes spec | Sets direction, reviews, course corrects |
 
-```
-SDK Loop needs:
-  - program.md (direction)
-  - sdk-progress.md (progress)
-  - agentguard/core/*.py
-  - agentguard/sdk/*.py
-  - tests/test_trace.py, tests/test_decorators.py
+## Key Design Decisions
 
-Eval Loop needs:
-  - program.md
-  - eval-progress.md
-  - agentguard/core/trace.py (read-only)
-  - agentguard/eval/*.py
-  - tests/test_eval.py
-```
+### Why OpenClaw, not raw Claude Code CLI?
+- Already has session persistence + message routing
+- Sub-agent system provides context isolation
+- Heartbeat keeps the loop alive
+- Human can intervene mid-loop via chat
 
-#### Strategy 2: Handoff Protocol
-When context is nearly full, the Loop writes a handoff file for the next session:
+### Why Main Session as Planner+Evaluator?
+- Maintains continuity: understands project history and direction
+- Can evaluate holistically: does this change fit the overall vision?
+- Avoids the "self-praise" problem: evaluates sub-agent output, not own output
 
-```markdown
-# Handoff: SDK Loop Session 3 → Session 4
+### Why Sub-Agents as Generators?
+- Fresh context = no context anxiety
+- Focused scope = better code quality
+- Failure isolation = one bad story doesn't corrupt the whole session
 
-## Completed
-- @record_agent and @record_tool implemented and tested
-- TraceRecorder supports multi-threading
-- JSON serialization/deserialization passing
+## State Files
 
-## Remaining
-- [ ] Context propagation across async calls
-- [ ] Trace export to OTel format
+| File | Purpose | Analogous to |
+|------|---------|-------------|
+| `program.md` | Direction, priorities, progress log | prd.json |
+| `CLAUDE.md` | Instructions for generator agents | prompt.md |
+| `GUARDRAILS.md` | Lines that must not be crossed | — |
+| `memory/*.md` | Daily notes, intermediate state | progress.txt |
+| `docs/*-review-zh.md` | 大大虾's evaluations | — |
+| Git history | All code changes | Same |
 
-## Current State
-- Tests: 15/15 passing
-- No known bugs
+## Failure Modes & Mitigations
 
-## Next Steps
-1. Implement async decorator variants
-2. Add OTel exporter
+### Context Anxiety
+**Problem**: Agent starts wrapping up prematurely as context fills.
+**Mitigation**: Context reset via sub-agents. Main session compresses memory at 50%.
 
-## Key Design Decisions (DO NOT CHANGE)
-- Spans stored as flat list + parent_span_id, not nested
-- trace_id = uuid4()[:16]
-```
+### Self-Evaluation Bias
+**Problem**: Generator agent rates own work too highly (Anthropic finding).
+**Mitigation**: Main session evaluates sub-agent output. 大大虾 provides external review.
 
-#### Strategy 3: Progress Files
-Each module has a persistent progress file — the "memory" between Loops:
+### Lateral Drift
+**Problem**: Agent keeps adding modules instead of deepening (happened to us).
+**Mitigation**: program.md enforces "Trace depth > feature breadth". 大大虾 course corrects.
 
-```
-.loops/
-├── sdk-progress.md
-├── eval-progress.md
-├── cli-progress.md
-├── docs-progress.md
-└── handoffs/
-    ├── sdk-session-3-to-4.md
-    └── eval-session-1-to-2.md
-```
+### State Loss Between Sessions
+**Problem**: New session loses all context from previous work.
+**Mitigation**: program.md progress log + memory files + git history as structured handoff.
 
-#### Strategy 4: Context Budget Check
-Estimate context usage at the start of each Loop:
+## Lessons Learned
 
-```
-Rule of thumb:
-- Each .py file ≈ 100-300 tokens
-- program.md ≈ 500 tokens
-- progress.md ≈ 200 tokens
-- Test output ≈ 200 tokens
-
-If a Loop operates on 5 .py files:
-  5 × 200 + 500 + 200 + 200 = ~2000 tokens input
-  After 3-5 conversation turns, consider handing off
-```
-
-### Parallel Loop Definitions
-
-#### Loop 1: SDK Loop
-```
-Scope: agentguard/core/ + agentguard/sdk/
-Input: program.md, sdk-progress.md
-Output: code + tests + sdk-progress.md
-Sprint cycle: 1-2 features
-```
-
-#### Loop 2: Eval Loop
-```
-Scope: agentguard/eval/
-Input: program.md, eval-progress.md, core/trace.py (read-only)
-Output: code + tests + eval-progress.md
-Depends on: SDK Loop completing core schemas
-Sprint cycle: 1 evaluator
-```
-
-#### Loop 3: CLI Loop
-```
-Scope: agentguard/cli/
-Input: program.md, cli-progress.md, core/ + sdk/ + eval/ (read-only)
-Output: CLI code + cli-progress.md
-Depends on: SDK Loop + Eval Loop
-Sprint cycle: 1-2 commands
-```
-
-#### Loop 4: Docs Loop
-```
-Scope: README.md, docs/, examples/
-Input: program.md, docs-progress.md, all code (read-only)
-Output: docs + examples + docs-progress.md
-Independent — can run anytime
-```
-
-### Cross-Loop Communication Rules
-
-1. **File-only communication** — no shared memory, no shared context
-2. **progress.md is the single source of state** — each Loop writes its own, reads others'
-3. **Code is shared output** — code written by one Loop can be read by another
-4. **No cross-boundary edits** — SDK Loop doesn't modify eval/ code, and vice versa
-5. **Decouple via interfaces** — Eval Loop depends on core/trace.py schema, not SDK implementation
-
-### Dogfooding
-
-AgentGuard's multi-loop development process is itself a multi-agent collaboration scenario.
-
-We can use AgentGuard to record and observe its own development Loops:
-- Loop 1 = Agent "SDK-Dev"
-- Loop 2 = Agent "Eval-Dev"  
-- Their execution, handoffs, and dependencies can be traced with AgentGuard itself.
-
-**Using the tool you're building to observe the process of building that tool.** Meta-dogfooding.
+1. **Compaction < Context Reset**: Summarizing old context helps, but a fresh agent with a structured handoff is better (matches Anthropic's finding).
+2. **Binary story completion matters**: "Is this done? yes/no" prevents drift. Our early iterations lacked this.
+3. **Human review is the strongest evaluator**: 大大虾's code reviews caught semantic issues (trace status, bottleneck logic) that automated tests missed.
+4. **Direction documents > conversation history**: program.md and review docs carry more signal than 300 turns of chat.
 
 ---
 
-_This architecture is a living document. Update as we learn._
+## Improvement Plan (from Ralph + Anthropic analysis)
+
+### ✅ Already in place
+- Git as persistence layer
+- program.md as direction document
+- Human review as external evaluator
+- CLAUDE.md as generator instructions
+
+### 🔧 Need to implement
+
+#### 1. Structured story tracking (from Ralph)
+Replace prose progress log with structured checklist:
+```markdown
+## Current Stories
+- [x] Fix trace status for handled failures
+- [x] Fix bottleneck to exclude coordinators
+- [ ] Align docs/examples.md with real behavior
+- [ ] Make viewer handoff only show recorded handoffs
+```
+Each story = one sub-agent dispatch. Binary: done or not done.
+
+#### 2. Append-only progress log (from Ralph)
+Add `progress.txt` that is never overwritten, only appended:
+```
+[2026-04-12 05:44] Learned: bottleneck analysis must exclude container spans
+[2026-04-12 05:50] Learned: handled failures should not mark trace as FAILED
+```
+
+#### 3. Explicit evaluation criteria (from Anthropic)
+Define criteria that the evaluator (main session) checks:
+- Does the change have tests? (pytest passes)
+- Does it match the story spec exactly?
+- Does it avoid introducing new modules? (unless story says so)
+- Does it align with GUARDRAILS.md?
+- Would 大大虾's review pass it?
+
+#### 4. Structured handoff format (from Anthropic)
+When passing work between sessions or sub-agents:
+```json
+{
+  "completed_stories": ["fix-trace-status", "fix-bottleneck"],
+  "current_story": "align-docs-examples",
+  "blocked_on": null,
+  "key_decisions": ["handled failures don't affect trace status"],
+  "known_issues": ["viewer still shows inferred handoffs"],
+  "test_count": 704,
+  "commit_count": 210
+}
+```
+
+#### 5. Sub-agent per story (context reset)
+Instead of doing everything in main session:
+- Main session = read program.md, pick next story, spawn sub-agent
+- Sub-agent = fresh context, focused on ONE story, commit when done
+- Main session = evaluate result, update checklist, pick next
+
+This eliminates context anxiety and self-evaluation bias.
