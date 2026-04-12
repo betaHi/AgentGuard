@@ -70,6 +70,37 @@ coding-pipeline (coordinator)
 8 agents, 11 tools, 6 handoffs, real failures, real fallbacks.
 This is the kind of pipeline behind Cursor, Copilot Workspace, and Claude Code.
 
+### Example: Parallel Research Pipeline (`examples/parallel_pipeline.py`)
+
+```
+research-pipeline (coordinator)
+├── [PARALLEL] web_researcher        — searches web (3 results)
+├── [PARALLEL] academic_researcher   — searches arxiv (2 papers)
+├── [PARALLEL] social_researcher     — searches social (may fail)
+│
+├── [SEQUENTIAL] merger              — combines all results
+├── [SEQUENTIAL] analyst             — LLM analysis
+└── [SEQUENTIAL] writer              — writes report
+```
+
+3 researchers run **concurrently** (real threads, real timing overlap), then results merge sequentially.
+Social researcher gracefully degrades on API failures (circuit breaker pattern).
+
+### Example: Parallel Code Review (`examples/parallel_coding.py`)
+
+```
+coding-pipeline (coordinator)
+├── planner          → code-generator
+├── [PARALLEL] code-reviewer      — LLM quality review
+├── [PARALLEL] security-scanner   — vulnerability scan
+├── [PARALLEL] test-runner        — pytest execution
+│
+├── fixer            — fixes issues from all 3
+└── deployer         — creates PR
+```
+
+Review, security scan, and tests run **in parallel** after code generation.
+
 ## Core: The Trace
 
 Everything in AgentGuard is built on one data model — the **multi-agent execution trace**.
