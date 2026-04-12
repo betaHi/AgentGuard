@@ -435,3 +435,16 @@ def _build_diagnostics(failures, bn, flow, ctx, retries=None, cost=None) -> str:
 </div>
 
 </div></div>'''
+
+
+def generate_report_from_trace(trace: ExecutionTrace, output: str = ".agentguard/report.html") -> str:
+    """Generate HTML report from a single trace object (no file I/O needed)."""
+    out_path = Path(output)
+    out_path.parent.mkdir(parents=True, exist_ok=True)
+    out_path.write_text(_build_full_html([trace]), encoding="utf-8")
+    return str(out_path)
+
+
+def trace_to_html_string(trace: ExecutionTrace) -> str:
+    """Generate HTML string from a trace (for embedding/serving)."""
+    return _build_full_html([trace])
