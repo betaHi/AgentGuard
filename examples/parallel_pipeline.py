@@ -22,7 +22,6 @@ This demonstrates:
 """
 
 import time
-import threading
 import random
 import sys
 import os
@@ -30,7 +29,7 @@ import os
 random.seed(42)
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
-from agentguard import record_agent, record_tool, record_handoff, mark_context_used
+from agentguard import TraceThread, record_agent, record_tool, record_handoff, mark_context_used
 from agentguard.sdk.recorder import init_recorder, finish_recording, get_recorder
 from agentguard.analysis import analyze_failures, analyze_flow, analyze_bottleneck
 from agentguard.flowgraph import build_flow_graph
@@ -142,6 +141,79 @@ def write_report(analysis_data: dict, sources: list) -> str:
     return llm_write(analysis_data["analysis"], sources)
 
 
+@record_agent(name="parallel-coordinator", version="v1.0")
+def orchestrate_pipeline(topic: str) -> dict:
+    """Coordinate the full parallel research workflow under one root span."""
+    # ── Phase 1: PARALLEL research ──
+    # Run 3 researchers concurrently using trace-aware threads
+    results = {}
+    errors = {}
+
+    def run_researcher(name, fn, *args):
+        try:
+            results[name] = fn(*args)
+        except Exception as e:
+            errors[name] = str(e)
+            results[name] = {"source": name, "results": [], "error": str(e)}
+
+    threads = [
+        TraceThread(target=run_researcher, args=("web", web_researcher, topic)),
+        TraceThread(target=run_researcher, args=("academic", academic_researcher, topic)),
+        TraceThread(target=run_researcher, args=("social", social_researcher, topic)),
+    ]
+
+    print("\n📡 Phase 1: Parallel Research")
+    for t in threads:
+        t.start()
+    for t in threads:
+        t.join()
+
+    web_data = results.get("web", {})
+    academic_data = results.get("academic", {})
+    social_data = results.get("social", {})
+
+    print(f"   Web: {web_data.get('count', 0)} results")
+    print(f"   Academic: {academic_data.get('count', 0)} results")
+    print(f"   Social: {social_data.get('count', 0)} results")
+    if errors:
+        print(f"   ⚠ Errors: {errors}")
+
+    # ── Handoffs: all researchers → merger ──
+    h1 = record_handoff("web_researcher", "merger", context=web_data, summary=f"{web_data.get('count', 0)} web results")
+    h2 = record_handoff("academic_researcher", "merger", context=academic_data, summary=f"{academic_data.get('count', 0)} papers")
+    h3 = record_handoff("social_researcher", "merger", context=social_data, summary=f"{social_data.get('count', 0)} social posts")
+
+    # Track what merger actually uses
+    mark_context_used(h1, used_keys=["results", "summary"])
+    mark_context_used(h2, used_keys=["results", "summary"])
+    mark_context_used(h3, used_keys=["results", "summary"])
+
+    # ── Phase 2: Sequential processing ──
+    print("\n🔄 Phase 2: Merge & Analyze")
+    merged = merge_results(web_data, academic_data, social_data)
+    print(f"   Merged: {merged['total_results']} total results")
+
+    h4 = record_handoff("merger", "analyst", context=merged, summary=f"{merged['total_results']} merged results")
+    mark_context_used(h4, used_keys=["summaries", "total_results"])
+
+    analysis = analyze(merged)
+    print(f"   Analysis: {analysis['analysis']['insights']}")
+
+    h5 = record_handoff("analyst", "writer", context=analysis, summary="Analysis with insights")
+    mark_context_used(h5, used_keys=["analysis"])
+
+    # ── Phase 3: Write report ──
+    print("\n✍️ Phase 3: Write Report")
+    report = write_report(analysis, merged["results"])
+    print(f"   Report: {len(report)} chars")
+
+    return {
+        "report": report,
+        "merged": merged,
+        "analysis": analysis,
+    }
+
+
 # ──────────────────────────────────────────
 # Pipeline
 # ──────────────────────────────────────────
@@ -153,69 +225,7 @@ def run_pipeline(topic: str = "Multi-agent AI systems"):
     print("=" * 60)
     
     recorder = init_recorder(task=f"Parallel Research: {topic}")
-    
-    # ── Phase 1: PARALLEL research ──
-    # Run 3 researchers concurrently using threads
-    results = {}
-    errors = {}
-    
-    def run_researcher(name, fn, *args):
-        try:
-            results[name] = fn(*args)
-        except Exception as e:
-            errors[name] = str(e)
-            results[name] = {"source": name, "results": [], "error": str(e)}
-    
-    threads = [
-        threading.Thread(target=run_researcher, args=("web", web_researcher, topic)),
-        threading.Thread(target=run_researcher, args=("academic", academic_researcher, topic)),
-        threading.Thread(target=run_researcher, args=("social", social_researcher, topic)),
-    ]
-    
-    print("\n📡 Phase 1: Parallel Research")
-    for t in threads:
-        t.start()
-    for t in threads:
-        t.join()
-    
-    web_data = results.get("web", {})
-    academic_data = results.get("academic", {})
-    social_data = results.get("social", {})
-    
-    print(f"   Web: {web_data.get('count', 0)} results")
-    print(f"   Academic: {academic_data.get('count', 0)} results")
-    print(f"   Social: {social_data.get('count', 0)} results")
-    if errors:
-        print(f"   ⚠ Errors: {errors}")
-    
-    # ── Handoffs: all researchers → merger ──
-    h1 = record_handoff("web_researcher", "merger", context=web_data, summary=f"{web_data.get('count', 0)} web results")
-    h2 = record_handoff("academic_researcher", "merger", context=academic_data, summary=f"{academic_data.get('count', 0)} papers")
-    h3 = record_handoff("social_researcher", "merger", context=social_data, summary=f"{social_data.get('count', 0)} social posts")
-    
-    # Track what merger actually uses
-    mark_context_used(h1, used_keys=["results", "summary"])
-    mark_context_used(h2, used_keys=["results", "summary"])
-    mark_context_used(h3, used_keys=["results", "summary"])
-    
-    # ── Phase 2: Sequential processing ──
-    print("\n🔄 Phase 2: Merge & Analyze")
-    merged = merge_results(web_data, academic_data, social_data)
-    print(f"   Merged: {merged['total_results']} total results")
-    
-    h4 = record_handoff("merger", "analyst", context=merged, summary=f"{merged['total_results']} merged results")
-    mark_context_used(h4, used_keys=["summaries", "total_results"])
-    
-    analysis = analyze(merged)
-    print(f"   Analysis: {analysis['analysis']['insights']}")
-    
-    h5 = record_handoff("analyst", "writer", context=analysis, summary="Analysis with insights")
-    mark_context_used(h5, used_keys=["analysis"])
-    
-    # ── Phase 3: Write report ──
-    print("\n✍️ Phase 3: Write Report")
-    report = write_report(analysis, merged["results"])
-    print(f"   Report: {len(report)} chars")
+    result = orchestrate_pipeline(topic)
     
     # ── Finish and analyze ──
     trace = finish_recording()

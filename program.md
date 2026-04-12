@@ -35,3 +35,7 @@
 - [ ] Add integration test: record → analyze → export → import → compare roundtrip
 - [ ] Improve error_recovery example: add timeout + partial result patterns
 - [ ] Add example: multi-model pipeline (GPT-4 + Claude + local, cost comparison)
+
+## Progress Log
+
+- 2026-04-12: Added threaded trace-context propagation helpers so parallel examples can preserve coordinator → child topology in recorded traces.

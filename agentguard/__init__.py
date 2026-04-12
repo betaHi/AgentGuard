@@ -32,6 +32,7 @@ from agentguard.sdk.decorators import record_agent, record_tool
 from agentguard.sdk.async_decorators import record_agent_async, record_tool_async
 from agentguard.sdk.context import AgentTrace, ToolContext, AsyncAgentTrace, AsyncToolContext
 from agentguard.sdk.handoff import record_handoff, mark_context_used, detect_context_loss
+from agentguard.sdk.threading import TraceThread
 from agentguard.propagation import analyze_propagation, hypothetical_failure
 from agentguard.flowgraph import build_flow_graph
 from agentguard.context_flow import analyze_context_flow_deep
@@ -63,6 +64,7 @@ __all__ = [
     "record_agent_async", "record_tool_async",
     "AgentTrace", "ToolContext",
     "AsyncAgentTrace", "AsyncToolContext",
+    "TraceThread",
     "record_handoff", "mark_context_used", "detect_context_loss",
     "analyze_propagation", "hypothetical_failure",
     "build_flow_graph",

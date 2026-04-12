@@ -15,14 +15,13 @@ The review, security scan, and tests run in PARALLEL after code generation.
 
 import time
 import random
-import threading
 import sys
 import os
 
 random.seed(42)
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
-from agentguard import record_agent, record_tool, record_handoff, mark_context_used
+from agentguard import TraceThread, record_agent, record_tool, record_handoff, mark_context_used
 from agentguard.sdk.recorder import init_recorder, finish_recording
 from agentguard.scoring import score_trace
 from agentguard.ascii_viz import gantt_chart, status_summary
@@ -96,49 +95,57 @@ def deploy(changes):
     return git_pr(changes)
 
 
+@record_agent(name="parallel-coding-coordinator", version="v1.0")
+def orchestrate_parallel_coding(task: str) -> dict:
+    """Coordinate the full parallel coding workflow under one root span."""
+    # Phase 1: Plan
+    plan_result = plan(task)
+    h1 = record_handoff("planner", "code-generator", context=plan_result, summary="Implementation plan")
+
+    # Phase 2: Generate code
+    code_result = generate(plan_result)
+
+    # Phase 3: PARALLEL — review + security + tests
+    results = {}
+
+    def run_parallel(name, fn, *args):
+        results[name] = fn(*args)
+
+    print("⚡ Running review, security scan, and tests in parallel...")
+    threads = [
+        TraceThread(target=run_parallel, args=("review", review, code_result)),
+        TraceThread(target=run_parallel, args=("security", security_scan, code_result)),
+        TraceThread(target=run_parallel, args=("tests", run_tests, code_result)),
+    ]
+    for t in threads:
+        t.start()
+    for t in threads:
+        t.join()
+
+    review_result = results["review"]
+    security_result = results["security"]
+    test_result = results["tests"]
+
+    # Handoffs from all 3 → fixer
+    for src, data in [("code-reviewer", review_result), ("security-scanner", security_result), ("test-runner", test_result)]:
+        h = record_handoff(src, "fixer", context=data, summary=f"Results from {src}")
+        mark_context_used(h, used_keys=list(data.keys()) if isinstance(data, dict) else [])
+
+    # Phase 4: Fix
+    fixed = fix_issues(review_result, security_result, test_result)
+    record_handoff("fixer", "deployer", context=fixed)
+
+    # Phase 5: Deploy
+    pr = deploy(fixed)
+    return {"pr": pr, "fixed": fixed}
+
+
 def main():
     print("🖥️ Parallel Coding Pipeline")
     print("=" * 50)
     
     recorder = init_recorder(task="Implement /api/agents/{id}/traces endpoint")
-    
-    # Phase 1: Plan
-    plan_result = plan("Add traces endpoint with pagination")
-    h1 = record_handoff("planner", "code-generator", context=plan_result, summary="Implementation plan")
-    
-    # Phase 2: Generate code
-    code_result = generate(plan_result)
-    
-    # Phase 3: PARALLEL — review + security + tests
-    results = {}
-    
-    def run_parallel(name, fn, *args):
-        results[name] = fn(*args)
-    
-    print("⚡ Running review, security scan, and tests in parallel...")
-    threads = [
-        threading.Thread(target=run_parallel, args=("review", review, code_result)),
-        threading.Thread(target=run_parallel, args=("security", security_scan, code_result)),
-        threading.Thread(target=run_parallel, args=("tests", run_tests, code_result)),
-    ]
-    for t in threads: t.start()
-    for t in threads: t.join()
-    
-    review_result = results["review"]
-    security_result = results["security"]
-    test_result = results["tests"]
-    
-    # Handoffs from all 3 → fixer
-    for src, data in [("code-reviewer", review_result), ("security-scanner", security_result), ("test-runner", test_result)]:
-        h = record_handoff(src, "fixer", context=data, summary=f"Results from {src}")
-        mark_context_used(h, used_keys=list(data.keys()) if isinstance(data, dict) else [])
-    
-    # Phase 4: Fix
-    fixed = fix_issues(review_result, security_result, test_result)
-    record_handoff("fixer", "deployer", context=fixed)
-    
-    # Phase 5: Deploy
-    pr = deploy(fixed)
+    result = orchestrate_parallel_coding("Add traces endpoint with pagination")
     
     trace = finish_recording()
     

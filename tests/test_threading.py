@@ -3,7 +3,7 @@
 import pytest
 import threading
 import time
-from agentguard import record_agent, record_tool, record_handoff
+from agentguard import TraceThread, record_agent, record_tool, record_handoff
 from agentguard.sdk.recorder import init_recorder, finish_recording, get_recorder
 from agentguard.core.trace import SpanType, SpanStatus
 
@@ -122,3 +122,36 @@ class TestThreadSafety:
         
         trace = finish_recording()
         assert len(trace.spans) >= 20
+
+    def test_trace_thread_preserves_parent_child_topology(self):
+        """Child threads should inherit the coordinator span as parent."""
+        init_recorder(task="thread_topology_test")
+
+        @record_agent(name="worker")
+        def worker(label):
+            time.sleep(0.01)
+            return {"label": label}
+
+        @record_agent(name="coordinator")
+        def coordinator():
+            threads = [
+                TraceThread(target=worker, args=("a",)),
+                TraceThread(target=worker, args=("b",)),
+                TraceThread(target=worker, args=("c",)),
+            ]
+            for thread in threads:
+                thread.start()
+            for thread in threads:
+                thread.join()
+
+        coordinator()
+        trace = finish_recording()
+
+        roots = [span for span in trace.spans if span.parent_span_id is None]
+        assert len(roots) == 1
+        assert roots[0].name == "coordinator"
+
+        workers = [span for span in trace.spans if span.name == "worker"]
+        assert len(workers) == 3
+        assert all(span.parent_span_id == roots[0].span_id for span in workers)
+
