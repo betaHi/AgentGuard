@@ -38,6 +38,10 @@ from agentguard.context_flow import analyze_context_flow_deep
 from agentguard.correlation import analyze_correlations, fingerprint_span
 from agentguard.propagation import analyze_handoff_chains, compute_context_integrity
 from agentguard.diff import diff_flow_graphs, diff_context_flow
+from agentguard.scoring import score_trace
+from agentguard.aggregate import aggregate_traces
+from agentguard.annotations import auto_annotate, AnnotationStore
+from agentguard.filter import filter_spans, filter_traces, sample_traces
 
 __all__ = [
     "record_agent", "record_tool",
@@ -51,4 +55,7 @@ __all__ = [
     "analyze_correlations", "fingerprint_span",
     "analyze_handoff_chains", "compute_context_integrity",
     "diff_flow_graphs", "diff_context_flow",
+    "score_trace", "aggregate_traces",
+    "auto_annotate", "AnnotationStore",
+    "filter_spans", "filter_traces", "sample_traces",
 ]

@@ -417,6 +417,72 @@ def cmd_context_flow(args):
     print(result.to_report())
 
 
+def cmd_score(args):
+    """Score a trace on quality dimensions."""
+    from agentguard.core.trace import ExecutionTrace
+    from agentguard.scoring import score_trace
+    
+    trace = ExecutionTrace.from_json(open(args.file).read())
+    expected = args.expected_ms if hasattr(args, 'expected_ms') and args.expected_ms else None
+    score = score_trace(trace, expected_duration_ms=expected)
+    print(score.to_report())
+
+
+def cmd_aggregate(args):
+    """Aggregate analysis across multiple traces."""
+    import os, json
+    from agentguard.core.trace import ExecutionTrace
+    from agentguard.aggregate import aggregate_traces
+    
+    traces_dir = args.dir
+    traces = []
+    if os.path.isdir(traces_dir):
+        for f in sorted(os.listdir(traces_dir)):
+            if f.endswith(".json"):
+                try:
+                    data = json.loads(open(os.path.join(traces_dir, f)).read())
+                    traces.append(ExecutionTrace.from_dict(data))
+                except Exception:
+                    pass
+    
+    if not traces:
+        print("No traces found.")
+        return
+    
+    result = aggregate_traces(traces)
+    print(result.to_report())
+
+
+def cmd_annotate(args):
+    """Auto-annotate a trace."""
+    from agentguard.core.trace import ExecutionTrace
+    from agentguard.annotations import auto_annotate
+    
+    trace = ExecutionTrace.from_json(open(args.file).read())
+    store = auto_annotate(trace)
+    summary = store.summary()
+    
+    print(f"Annotations: {summary['total']}")
+    print(f"  By severity: {summary['by_severity']}")
+    print(f"  By category: {summary['by_category']}")
+    
+    for span_id, anns in store.to_dict().items():
+        for ann in anns:
+            icon = {"info": "ℹ️", "warning": "⚠️", "error": "🔴", "critical": "💀"}.get(ann["severity"], "📎")
+            print(f"  {icon} [{ann['category']}] {ann['message']}")
+
+
+def cmd_correlate(args):
+    """Analyze span correlations."""
+    from agentguard.core.trace import ExecutionTrace
+    from agentguard.correlation import analyze_correlations
+    
+    trace = ExecutionTrace.from_json(open(args.file).read())
+    result = analyze_correlations(trace)
+    print(result.to_report())
+
+
+
 def cmd_report(args):
     """Generate HTML report."""
     from agentguard.web.viewer import generate_timeline_html
@@ -503,6 +569,23 @@ def main():
     p = sub.add_parser("context-flow", help="Analyze context flow through pipeline")
     p.add_argument("file", help="Path to trace JSON file")
     
+    # score
+    p = sub.add_parser("score", help="Score a trace on quality dimensions")
+    p.add_argument("file", help="Path to trace JSON file")
+    p.add_argument("--expected-ms", type=float, help="Expected duration in ms")
+    
+    # aggregate
+    p = sub.add_parser("aggregate", help="Aggregate analysis across traces")
+    p.add_argument("--dir", default=".agentguard/traces", help="Traces directory")
+    
+    # annotate
+    p = sub.add_parser("annotate", help="Auto-annotate a trace")
+    p.add_argument("file", help="Path to trace JSON file")
+    
+    # correlate
+    p = sub.add_parser("correlate", help="Analyze span correlations")
+    p.add_argument("file", help="Path to trace JSON file")
+    
     # guard
     p = sub.add_parser("guard", help="Start continuous monitoring")
     p.add_argument("--dir", default=".agentguard/traces", help="Traces directory")
@@ -512,7 +595,7 @@ def main():
     
     args = parser.parse_args()
     
-    cmds = {"show": cmd_show, "list": cmd_list, "search": cmd_search, "eval": cmd_eval, "merge": cmd_merge, "validate": cmd_validate, "diff": cmd_diff, "analyze": cmd_analyze, "evolve": cmd_evolve, "propagation": cmd_propagation, "flowgraph": cmd_flowgraph, "context-flow": cmd_context_flow, "report": cmd_report, "guard": cmd_guard}
+    cmds = {"show": cmd_show, "list": cmd_list, "search": cmd_search, "eval": cmd_eval, "merge": cmd_merge, "validate": cmd_validate, "diff": cmd_diff, "analyze": cmd_analyze, "evolve": cmd_evolve, "propagation": cmd_propagation, "flowgraph": cmd_flowgraph, "context-flow": cmd_context_flow, "score": cmd_score, "aggregate": cmd_aggregate, "annotate": cmd_annotate, "correlate": cmd_correlate, "report": cmd_report, "guard": cmd_guard}
     if args.command in cmds:
         cmds[args.command](args)
     else:
