@@ -86,6 +86,17 @@ def _build_full_html(traces: list[ExecutionTrace]) -> str:
     
     # Trace selector (if multiple traces)
     trace_count = len(traces)
+    
+    # Build trace list for selector (if multiple traces)
+    trace_list_html = ""
+    if trace_count > 1:
+        items = []
+        for i, t in enumerate(traces[:20]):
+            st = "✅" if t.status.value == "completed" else "❌"
+            dur = f"{t.duration_ms:.0f}ms" if t.duration_ms else "?"
+            active = "font-weight:700;color:var(--br);" if i == 0 else ""
+            items.append(f'<div style="padding:4px 0;font-size:10px;{active}">{st} {t.task or t.trace_id[:12]} · {dur}</div>')
+        trace_list_html = f'<div style="margin-top:12px;border-top:1px solid var(--bd);padding-top:8px"><h2 style="font-size:10px;text-transform:uppercase;letter-spacing:1px;color:var(--dim);margin-bottom:6px">Recent Traces ({trace_count})</h2>{"".join(items)}</div>'
     status_txt = "PASS" if primary.status == SpanStatus.COMPLETED else "FAIL"
     status_cls = "b-pass" if primary.status == SpanStatus.COMPLETED else "b-fail"
     
@@ -161,7 +172,7 @@ body{{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',system-ui,monospac
 </div></div>
 
 <div class="layout">
-<div class="sidebar">{agent_cards}</div>
+<div class="sidebar">{agent_cards}{trace_list_html}</div>
 <div class="main">
 <h2>Execution Timeline</h2>
 {timeline}
