@@ -17,6 +17,7 @@ from typing import Any
 
 from agentguard.core.trace import ExecutionTrace, Span, SpanType, SpanStatus
 from agentguard.analysis import analyze_failures, analyze_flow, analyze_bottleneck, analyze_context_flow, analyze_retries, analyze_cost
+from agentguard.errors import analyze_errors
 
 def _try_evolve(trace):
     """Try to get evolution suggestions if knowledge exists."""
@@ -82,7 +83,8 @@ def _build_full_html(traces: list[ExecutionTrace]) -> str:
     # Build diagnostics grid
     retries = analyze_retries(primary)
     cost = analyze_cost(primary)
-    diagnostics = _build_diagnostics(failures, bn, flow, ctx, retries, cost)
+    error_report = analyze_errors(primary)
+    diagnostics = _build_diagnostics(failures, bn, flow, ctx, retries, cost, error_report)
     
     # Trace selector (if multiple traces)
     trace_count = len(traces)
@@ -452,7 +454,7 @@ def _build_suggestions_panel(trace) -> str:
         items.append(f'<div class="item">{icon} <b>{_esc(s.agent)}</b> ({s.confidence:.0%}): {_esc(s.suggestion[:60])}</div>')
     return f'<div class="d-box" style="grid-column:1/-1"><h4>🧠 Learned Suggestions</h4><div class="items">{chr(10).join(items)}</div></div>'
 
-def _build_diagnostics(failures, bn, flow, ctx, retries=None, cost=None) -> str:
+def _build_diagnostics(failures, bn, flow, ctx, retries=None, cost=None, error_report=None) -> str:
     # Failure panel
     fail_items = []
     for rc in failures.root_causes:
@@ -533,6 +535,13 @@ def _build_diagnostics(failures, bn, flow, ctx, retries=None, cost=None) -> str:
 <h4>🔄 Retries</h4>
 <div class="val">{retries["retry_count"]} retries</div>
 <div class="det">{retries["total_wasted_attempts"]} wasted attempts</div>
+</div>
+
+<div class="d-box">
+<h4>🐛 Error Classification</h4>
+<div class="val">{error_report.total_errors if error_report else 0} errors</div>
+<div class="det">{error_report.retryable_count if error_report else 0} retryable</div>
+<div class="items">{"".join(f'<div class="item"><span style="color:var(--dim)">{_esc(cat)}: {count}</span></div>' for cat, count in (error_report.by_category if error_report else {{}}).items())}</div>
 </div>
 
 </div></div>'''
