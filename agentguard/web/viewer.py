@@ -181,7 +181,11 @@ body{{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',system-ui,monospac
 <h2>Execution Timeline</h2>
 {timeline}
 {diagnostics}
-<div class="ft">AgentGuard · Orchestration Observability</div>
+<details style="margin-top:14px;border:1px solid var(--bd);border-radius:6px;padding:8px;">
+<summary style="cursor:pointer;font-size:10px;color:var(--dim);padding:4px;">📋 Raw Trace JSON</summary>
+<pre style="background:var(--bg);border:1px solid var(--bd);border-radius:4px;padding:8px;font-size:9px;color:var(--dim);overflow-x:auto;max-height:300px;margin-top:8px;">{_esc(primary.to_json(indent=2)[:5000])}</pre>
+</details>
+<div class="ft">AgentGuard · Orchestration Observability · {len(primary.spans)} spans · {primary.trace_id}</div>
 </div></div>
 
 <script>
