@@ -220,3 +220,13 @@ Beyond tree view — show the actual flow:
 - Production usage example: complete instrument→analyze→monitor workflow
 - README updated with parallel examples
 - Tests: 544 → 555
+
+### 2026-04-12 — Iterations 270-275: Deep focus continues  
+- OTel trace importer (importer.py): import from OpenTelemetry JSON
+- Viewer: interactive JS, parallel highlighting, score badge
+- Viewer: convenience APIs (generate_report_from_trace, trace_to_html_string)
+- Parallel examples: research + coding pipelines with real thread overlap
+- Thread safety stress tests (20 concurrent agents)
+- Production usage example (complete workflow)
+- Viewer rendering tests (parallel, failed, handoff, score)
+- Tests: 555 → 567
