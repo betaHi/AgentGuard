@@ -122,3 +122,12 @@ Beyond tree view — show the actual flow:
 - Timeline: chronological event stream (timeline.py)
 - 4 new CLI commands: score, aggregate, annotate, correlate
 - Tests: 209 → 286
+
+### 2026-04-12 — Iterations 161-170: Tooling + developer experience
+- JSON Schema validation (schema.py)
+- Metrics collector with duration percentiles + Prometheus export (metrics.py)
+- Fluent trace builder API for testing (builder.py)
+- File-based trace store with query + prune (store.py)
+- 3 more CLI commands: timeline, metrics, schema (21 total)
+- Full analysis example using all modules
+- Tests: 286 → 322
