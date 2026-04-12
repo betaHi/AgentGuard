@@ -170,7 +170,7 @@ YOUR OUTPUT MUST INCLUDE:
 - Task decomposition: concrete steps before coding
 - What changed, which edge cases handled" \
         --timeout 300 \
-        --json 2>&1 | grep -v "Config warnings\|plugins\|Registered")
+        --json 2>&1 | grep -v "Config warnings\|plugins\|Registered\|\[openclaw\]")
     
     GEN_TEXT=$(echo "$GEN_RESULT" | python3 -c "
 import sys,json
@@ -255,7 +255,7 @@ ACCEPT: [reason] | GUARDRAILS: [Q1-Q5 or infra] | Review: [section ref] | Confid
 or:
 REJECT: [issue + doc reference]. Fix: [action] | Confidence: [level]" \
         --timeout 120 \
-        --json 2>&1 | grep -v "Config warnings\|plugins\|Registered")
+        --json 2>&1 | grep -v "Config warnings\|plugins\|Registered\|\[openclaw\]")
     
     EVAL_TEXT=$(echo "$EVAL_RESULT" | python3 -c "
 import sys,json
@@ -307,7 +307,7 @@ Questions to answer:
 
 Be specific and actionable. No generic advice." \
             --timeout 90 \
-            --json 2>&1 | grep -v "Config warnings\|plugins\|Registered")
+            --json 2>&1 | grep -v "Config warnings\|plugins\|Registered\|\[openclaw\]")
         
         IMPROVE_TEXT=$(echo "$IMPROVE_RESULT" | python3 -c "
 import sys,json
