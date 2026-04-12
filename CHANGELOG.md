@@ -27,6 +27,10 @@ All notable changes to AgentGuard will be documented in this file.
 - **CLI**: 9 commands (added validate, diff, analyze, evolve)
 - **Deterministic demo**: `random.seed(42)` for reproducible screenshots
 - 16 integration tests covering full user workflows
+- Duration percentiles (p50/p95/p99) in trace statistics
+- Context compression detection (shrinkage > 50%)
+- `python -m agentguard` module entry point
+- PEP 561 py.typed marker
 
 ### Changed
 - Web viewer now consumes `analysis.py` (single source of truth)
