@@ -34,7 +34,7 @@
 - [x] Viewer: verify every analysis finding is correctly rendered (no phantom handoffs)
 
 ### P1: SDK ergonomics for parallel (current-state-review §2.2)
-- [ ] Add TracingExecutor (ThreadPoolExecutor wrapper that propagates trace context)
+- [x] Add TracingExecutor (ThreadPoolExecutor wrapper that propagates trace context)
 - [ ] Add async context propagation for asyncio.create_task
 
 ### P2: Docs/README consistency (current-state-review §2.3, §2.4)
