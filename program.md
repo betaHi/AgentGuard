@@ -48,7 +48,7 @@
 - [S] Handoff: detect context truncation (compare input size vs what arrived at next agent) (SKIPPED: 3x REJECT)
 
 ### P4: Integration & examples
-- [ ] Integration test: full record → analyze → export_otel → import → compare roundtrip
+- [x] Integration test: full record → analyze → export_otel → import → compare roundtrip
 - [ ] Add example: multi-model pipeline (GPT-4 + Claude + local model, cost comparison)
 - [ ] Improve error_recovery example: add timeout pattern + partial result handling
 
