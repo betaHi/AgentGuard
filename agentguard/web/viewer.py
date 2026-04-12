@@ -227,6 +227,27 @@ def _build_sidebar(trace: ExecutionTrace, failures, bn) -> str:
 
 
 def _build_gantt(trace: ExecutionTrace, flow, dur_total: float) -> str:
+    # Detect parallel groups for visual highlighting
+    from datetime import datetime as _dt
+    parallel_span_ids = set()
+    timed_agents = []
+    for s in trace.spans:
+        if s.span_type in (SpanType.AGENT, SpanType.TOOL):
+            try:
+                start = _dt.fromisoformat(s.started_at) if s.started_at else None
+                end = _dt.fromisoformat(s.ended_at) if s.ended_at else None
+                if start and end:
+                    timed_agents.append((s, start, end))
+            except: pass
+    
+    # Find overlapping spans (parallel execution)
+    for i, (a, a_s, a_e) in enumerate(timed_agents):
+        for j, (b, b_s, b_e) in enumerate(timed_agents[i+1:], i+1):
+            if a_s < b_e and b_s < a_e:  # overlap
+                if a.parent_span_id == b.parent_span_id:  # same parent
+                    parallel_span_ids.add(a.span_id)
+                    parallel_span_ids.add(b.span_id)
+    
     # Time axis
     steps = 6
     step_ms = dur_total / steps
@@ -250,13 +271,13 @@ def _build_gantt(trace: ExecutionTrace, flow, dur_total: float) -> str:
     
     rows = []
     for root in roots:
-        rows.extend(_render_gantt_rows(root, 0, trace_start, dur_total, children_map, span_map, handoff_pairs))
+        rows.extend(_render_gantt_rows(root, 0, trace_start, dur_total, children_map, span_map, handoff_pairs, parallel_span_ids))
     
     return header + "\n" + "\n".join(rows)
 
 
 def _render_gantt_rows(span: Span, depth: int, trace_start: str, dur_total: float,
-                       children_map, span_map, handoff_pairs) -> list[str]:
+                       children_map, span_map, handoff_pairs, parallel_ids=None) -> list[str]:
     from datetime import datetime
     rows = []
     
@@ -303,7 +324,8 @@ def _render_gantt_rows(span: Span, depth: int, trace_start: str, dur_total: floa
         err_left = min(left_pct + width_pct + 1, 95)
         err_html = f'<div class="g-err" style="left:{err_left}%">⚠ {_esc(span.error)[:40]}</div>'
     
-    rows.append(f'''<div class="g-row" style="{opacity}">
+    par_cls = " parallel" if (parallel_ids and span.span_id in parallel_ids) else ""
+    rows.append(f'''<div class="g-row{par_cls}" style="{opacity}">
 <div class="g-lbl" style="padding-left:{depth*16}px"><span class="icon">{icon}</span><span class="nm">{_esc(span.name)}</span>{ver_html}</div>
 <div class="g-bar-area"><div class="g-bar {bar_cls}" style="left:{left_pct:.1f}%;width:{max(width_pct,0.5):.1f}%">{dur_s}</div>{err_html}</div>
 </div>''')
@@ -313,7 +335,7 @@ def _render_gantt_rows(span: Span, depth: int, trace_start: str, dur_total: floa
     children_sorted = sorted(children, key=lambda s: s.started_at or "")
     
     for i, child in enumerate(children_sorted):
-        rows.extend(_render_gantt_rows(child, depth + 1, trace_start, dur_total, children_map, span_map, handoff_pairs))
+        rows.extend(_render_gantt_rows(child, depth + 1, trace_start, dur_total, children_map, span_map, handoff_pairs, parallel_ids))
         
         # Insert handoff between sequential agents (only if analysis confirmed)
         if (child.span_type == SpanType.AGENT and 
