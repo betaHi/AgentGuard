@@ -41,7 +41,7 @@
 - [x] Merge getting-started.md + quickstart.md into one clear onboarding doc
 - [S] Create docs/api-reference.md with all public function signatures + examples (SKIPPED: 3x REJECT)
 - [x] Create docs/configuration.md — agentguard.json schema, CLI flags, env vars
-- [ ] Audit README claims against actual stable implementation — remove overstatements
+- [x] Audit README claims against actual stable implementation — remove overstatements
 
 ### P3: Deepen diagnostics
 - [ ] Deepen Q5: refactor analyze_decisions to ≤50 lines with extracted helpers, revert progress.txt
