@@ -364,3 +364,4 @@ REJECT: 15th identical diff. Logged to memory. Orchestrator needs a circuit brea
 [2026-04-12T14:02:50Z] Iter 4 (40s): Viewer: verify every analysis finding is correctly rendered (no phantom handoffs) — 745 passed in 12.83s — REJECT: 3rd attempt, only `progress.txt` again. Story blocked — generator is not producing implementation code. | Confidence: HIGH
 [2026-04-12T14:10Z] Viewer fidelity tests ACCEPTED by Planner — 7 tests verify no phantom handoffs. Generator committed good code but included progress.txt (auto-REJECT). Code at 582e64d is correct.
 [2026-04-12T14:06:17Z] Iter 1 (173s): Add TracingExecutor (ThreadPoolExecutor wrapper that propagates trace context) — 751 passed in 12.82s — No planner files modified. Let me check the class body length and verify `__init__.py` exports:
+[2026-04-12T14:09:47Z] Iter 4 (0s): Add async context propagation for asyncio.create_task — NO CHANGES
