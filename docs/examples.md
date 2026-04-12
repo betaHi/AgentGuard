@@ -50,15 +50,15 @@ planner ──[handoff: plan]──► code-searcher ──[handoff: context]─
 
 **What this demonstrates:**
 
-- **Up to 6 explicit handoffs** with context size tracking
+- **6 explicit handoffs** with context size tracking
 - **Graceful fallback:** vector_search may fail → keyword_search takes over
 - **Unhandled failure:** notifier may fail (Slack rate limit simulation), creating an unhandled tail failure
 - **Bottleneck:** LLM calls (especially in code-generator) are typically the slowest spans
 - **Conditional flow:** deployer only runs if review approved AND tests passed
-- **Resilience varies:** depends on which tools fail in each run (some randomness)
+- **Consistent resilience:** vector_search fails (fallback to keyword_search), notifier always fails (Slack rate limit), yielding 50% resilience
 
-Note: The demo includes controlled randomness to show different outcomes across runs.
-Run multiple times to see both "deployed" and "needs_fixes" paths.
+Note: The demo uses a fixed random seed for reproducible output.
+Every run produces the same trace structure, diagnostics, and "deployed" result.
 
 **Run it:**
 

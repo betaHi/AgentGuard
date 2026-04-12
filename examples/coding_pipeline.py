@@ -66,7 +66,7 @@ def codebase_search(query: str) -> list[dict]:
 def vector_search(query: str) -> list[dict]:
     """Vector similarity search over code embeddings."""
     time.sleep(random.uniform(0.05, 0.1))
-    # Simulating intermittent failure
+    # With seed(42), this fails deterministically — triggers keyword fallback
     if random.random() < 0.6:
         raise ConnectionError("Embedding service timeout: Pinecone cluster unresponsive")
     return [{"file": "src/utils/pagination.py", "score": 0.91}]
