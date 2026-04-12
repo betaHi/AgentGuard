@@ -1,0 +1,54 @@
+🛡️ AgentGuard Ralph Loop
+   Generator: 🐯 黑虎虾 (heihu agent)
+   Max iterations: 100
+   Max hours: 10
+   Started: Sun Apr 12 06:22:49 UTC 2026
+   Log: /home/azureuser/AgentGuard/.ralph-log.txt
+
+━━━ Iteration 1/100 (0min elapsed, 36000s remaining) ━━━
+📋 Story: Make subprocess example a true cross-process trace (not inline simulation)
+🐯 Dispatching to 黑虎虾...
+Now I understand. The `subprocess_demo.py` uses inline decorated functions (same process) but claims to show cross-process traces. The `distributed.py` module already has the real infrastructure. I need to rewrite the demo to actually spawn child processes.
+Demo works — real cross-process traces with separate PIDs. Now run tests:
+All 706 tests pass. Commit:
+🐯 完成！
+
+**Story:** Make subprocess example a true cross-process trace
+
+**改了什么：** 重写 `examples/subprocess_demo.py`，把原来的 inline 模拟替换成真正的跨进程 trace：
+
+- 父进程通过 `inject_trace_context()` 注入 env vars，用 `subprocess.Popen` 启动两个子进程
+- 每个子进程用 `init_recorder_from_env()` 恢复 trace 上下文，运行 agent，写独立 trace 文件
+- 父进程用 `merge_child_traces()` 合并所有子进程 span 到一个 trace
+
+**测试：** 706 passed ✅
+**Commit:** `c71a14a`
+Status: ok
+
+🧪 Evaluator verifying...
+   Tests: 706 passed in 12.33s
+   Iteration took: 94s
+
+━━━ Iteration 2/100 (1min elapsed, 35891s remaining) ━━━
+📋 Story: Make subprocess example a true cross-process trace (not inline simulation)
+🐯 Dispatching to 黑虎虾...
+🐯 这个 story 我刚刚已经完成了！
+
+- **Commit:** `c71a14a` — `feat: make subprocess_demo a true cross-process trace`
+- **测试:** 706 passed ✅
+- `.story-current.md` 还没被 Planner 更新到下一个 story
+
+等 Planner 更新 `.story-current.md` 到新任务后再叫我。
+Status: ok
+
+🧪 Evaluator verifying...
+   Tests: 706 passed in 12.33s
+   Iteration took: 15s
+
+━━━ Iteration 3/100 (2min elapsed, 35861s remaining) ━━━
+📋 Story: Make subprocess example a true cross-process trace (not inline simulation)
+🐯 Dispatching to 黑虎虾...
+🐯 Story 没变，还是同一个任务 — 已经在 commit `c71a14a` 完成了。等 Planner 更新 `.story-current.md` 后再叫我。
+Status: ok
+
+🧪 Evaluator verifying...

@@ -115,6 +115,18 @@ except Exception as e:
     echo "   Tests: $TEST_RESULT" | tee -a "$LOG_FILE"
     echo "   Iteration took: ${ITER_DURATION}s" | tee -a "$LOG_FILE"
     
+    # Check if tests passed — if so, mark story as done
+    if echo "$TEST_RESULT" | grep -q "passed"; then
+        # Mark story as done in program.md
+        # Escape special chars for sed
+        ESCAPED_STORY=$(echo "$NEXT_STORY" | sed 's/[&/\.]/\\&/g')
+        sed -i "s/^- \[ \] ${ESCAPED_STORY}/- [x] ${ESCAPED_STORY}/" program.md
+        echo "   ✅ Story marked as done in program.md" | tee -a "$LOG_FILE"
+        git add program.md && git commit -m "mark story done: $NEXT_STORY" 2>/dev/null || true
+    else
+        echo "   ❌ Tests failed — story NOT marked as done" | tee -a "$LOG_FILE"
+    fi
+    
     # Log progress (append-only)
     echo "[$(date -u +%Y-%m-%dT%H:%M:%SZ)] Iter $ITERATION (${ITER_DURATION}s): $NEXT_STORY — $TEST_RESULT" >> progress.txt
     
