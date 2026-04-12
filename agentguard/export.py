@@ -159,4 +159,6 @@ def trace_statistics(trace: ExecutionTrace) -> dict:
         "error_rate": len(errors) / len(spans) if spans else 0,
         "deepest_nesting": max_depth,
         "slowest_span": {"name": slowest.name, "duration_ms": slowest.duration_ms},
+        "total_tokens": sum(s.token_count or 0 for s in spans),
+        "total_cost_usd": sum(s.estimated_cost_usd or 0 for s in spans),
     }

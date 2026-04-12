@@ -80,6 +80,11 @@ class Span:
     # Retry tracking [experimental]
     retry_count: int = 0               # number of retries before this span succeeded/failed
     retry_of: Optional[str] = None     # span_id of the original attempt (if this is a retry)
+    tags: list[str] = field(default_factory=list)  # user-defined labels for filtering
+    
+    # Cost tracking [experimental]
+    token_count: Optional[int] = None        # tokens consumed by this span
+    estimated_cost_usd: Optional[float] = None  # estimated cost in USD
     
     # Failure propagation tracking [experimental]
     caused_by: Optional[str] = None         # span_id of the root cause failure

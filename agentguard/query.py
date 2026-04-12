@@ -61,6 +61,7 @@ class TraceStore:
         min_duration_ms: Optional[float] = None,
         max_duration_ms: Optional[float] = None,
         has_errors: Optional[bool] = None,
+        tag: Optional[str] = None,
     ) -> list[ExecutionTrace]:
         """Filter traces by criteria.
         
@@ -89,6 +90,13 @@ class TraceStore:
             if has_errors is not None:
                 has_err = any(s.status == SpanStatus.FAILED for s in t.spans)
                 if has_errors != has_err:
+                    continue
+            
+            if tag:
+                all_tags = set()
+                for s in t.spans:
+                    all_tags.update(getattr(s, 'tags', []))
+                if tag not in all_tags:
                     continue
             
             results.append(t)
