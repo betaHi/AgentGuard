@@ -17,7 +17,7 @@ from typing import Any, Optional
 
 from agentguard.core.trace import ExecutionTrace, Span, SpanType, SpanStatus
 
-__all__ = ['FailureNode', 'FailureAnalysis', 'analyze_failures', 'HandoffInfo', 'FlowAnalysis', 'analyze_flow', 'BottleneckReport', 'analyze_bottleneck', 'ContextFlowPoint', 'ContextFlowReport', 'analyze_context_flow', 'analyze_retries', 'analyze_cost', 'analyze_timing']
+__all__ = ['FailureNode', 'FailureAnalysis', 'analyze_failures', 'HandoffInfo', 'FlowAnalysis', 'analyze_flow', 'BottleneckReport', 'analyze_bottleneck', 'ContextFlowPoint', 'ContextFlowReport', 'analyze_context_flow', 'analyze_retries', 'analyze_cost', 'analyze_cost_yield', 'CostYieldEntry', 'CostYieldReport', 'analyze_timing']
 
 
 @dataclass
@@ -667,6 +667,150 @@ def analyze_cost(trace: ExecutionTrace) -> dict:
         "agent_costs": {k: {**v, "cost_usd": round(v["cost_usd"], 4)} for k, v in agent_costs.items()},
         "tool_costs": {k: {**v, "cost_usd": round(v["cost_usd"], 4)} for k, v in tool_costs.items()},
     }
+
+
+
+@dataclass
+class CostYieldEntry:
+    """Cost-yield analysis for a single agent."""
+    agent: str
+    tokens: int
+    cost_usd: float
+    status: str
+    duration_ms: float
+    has_output: bool
+    output_size_bytes: int
+    cost_per_success: float  # cost_usd / 1 if succeeded, else inf
+    tokens_per_ms: float  # efficiency: tokens consumed per ms of work
+    yield_score: float  # 0-100: composite quality signal
+
+
+@dataclass
+class CostYieldReport:
+    """Cost-yield analysis across all agents in a trace."""
+    entries: list[CostYieldEntry]
+    total_cost_usd: float
+    total_tokens: int
+    highest_cost_agent: str
+    lowest_yield_agent: str
+    best_ratio_agent: str
+
+    def to_dict(self) -> dict:
+        return {
+            "total_cost_usd": round(self.total_cost_usd, 4),
+            "total_tokens": self.total_tokens,
+            "highest_cost_agent": self.highest_cost_agent,
+            "lowest_yield_agent": self.lowest_yield_agent,
+            "best_ratio_agent": self.best_ratio_agent,
+            "agents": [
+                {
+                    "agent": e.agent, "tokens": e.tokens,
+                    "cost_usd": round(e.cost_usd, 4),
+                    "status": e.status, "duration_ms": round(e.duration_ms, 1),
+                    "has_output": e.has_output,
+                    "output_size_bytes": e.output_size_bytes,
+                    "cost_per_success": round(e.cost_per_success, 4) if e.cost_per_success != float("inf") else "N/A",
+                    "tokens_per_ms": round(e.tokens_per_ms, 2),
+                    "yield_score": round(e.yield_score, 1),
+                } for e in self.entries
+            ],
+        }
+
+    def to_report(self) -> str:
+        lines = [
+            "# Cost-Yield Analysis", "",
+            f"Total: {self.total_tokens:,} tokens, ${self.total_cost_usd:.4f}", "",
+            f"- Highest cost: {self.highest_cost_agent}",
+            f"- Lowest yield: {self.lowest_yield_agent}",
+            f"- Best ratio:   {self.best_ratio_agent}", "",
+            "## Per-Agent Breakdown", "",
+        ]
+        for e in sorted(self.entries, key=lambda x: -x.cost_usd):
+            cps = f"${e.cost_per_success:.4f}" if e.cost_per_success != float("inf") else "N/A (failed)"
+            lines.append(f"**{e.agent}** — {e.tokens:,} tokens, ${e.cost_usd:.4f}")
+            lines.append(f"  yield: {e.yield_score:.0f}/100, cost/success: {cps}, {e.duration_ms:.0f}ms")
+            lines.append("")
+        return "\n".join(lines)
+
+
+def analyze_cost_yield(trace: ExecutionTrace) -> CostYieldReport:
+    """Compare token spend per agent vs output quality.
+
+    Answers Q4: "Which execution path has the highest cost but worst yield?"
+
+    For each agent computes:
+    - Cost (tokens + USD)
+    - Yield score (composite of: completed? has output? output size)
+    - Cost-per-success ratio
+    - Tokens-per-ms efficiency
+
+    Args:
+        trace: The execution trace to analyze.
+
+    Returns:
+        CostYieldReport with per-agent breakdown and summary.
+    """
+    import json as _json
+
+    entries = []
+    for s in trace.agent_spans:
+        tokens = s.token_count or 0
+        cost = s.estimated_cost_usd or 0.0
+        dur = s.duration_ms or 0.0
+        succeeded = s.status == SpanStatus.COMPLETED
+        has_output = s.output_data is not None
+
+        # Measure output size
+        output_size = 0
+        if s.output_data is not None:
+            try:
+                output_size = len(_json.dumps(s.output_data, default=str).encode("utf-8"))
+            except Exception:
+                output_size = 0
+
+        # Yield score: 0-100 composite
+        yield_score = 0.0
+        if succeeded:
+            yield_score += 50  # completed
+        if has_output:
+            yield_score += 30  # produced output
+        if output_size > 100:
+            yield_score += 10  # substantial output
+        if output_size > 1000:
+            yield_score += 10  # rich output
+
+        cost_per_success = cost if succeeded and cost > 0 else (float("inf") if not succeeded else 0.0)
+        tokens_per_ms = tokens / max(dur, 1)
+
+        entries.append(CostYieldEntry(
+            agent=s.name,
+            tokens=tokens,
+            cost_usd=cost,
+            status=s.status.value,
+            duration_ms=dur,
+            has_output=has_output,
+            output_size_bytes=output_size,
+            cost_per_success=cost_per_success,
+            tokens_per_ms=tokens_per_ms,
+            yield_score=yield_score,
+        ))
+
+    total_cost = sum(e.cost_usd for e in entries)
+    total_tokens = sum(e.tokens for e in entries)
+
+    highest_cost = max(entries, key=lambda e: e.cost_usd).agent if entries else "N/A"
+    lowest_yield = min(entries, key=lambda e: e.yield_score).agent if entries else "N/A"
+    # Best ratio = highest yield_score / max(cost, 0.0001)
+    best_ratio = max(entries, key=lambda e: e.yield_score / max(e.cost_usd, 0.0001)).agent if entries else "N/A"
+
+    return CostYieldReport(
+        entries=entries,
+        total_cost_usd=total_cost,
+        total_tokens=total_tokens,
+        highest_cost_agent=highest_cost,
+        lowest_yield_agent=lowest_yield,
+        best_ratio_agent=best_ratio,
+    )
 
 
 def analyze_timing(trace: ExecutionTrace) -> dict:
