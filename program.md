@@ -241,3 +241,11 @@ Beyond tree view — show the actual flow:
 
 ### 🎯 2026-04-12 — ITERATION 300 MILESTONE  
 - 300 iterations | 612 tests | 192 commits | 23.3K LOC | 74 modules | 16 examples | 30 CLI commands
+
+### 2026-04-12 — Iterations 300-305: Final deepening
+- Error classification panel in viewer
+- JSON view panel (collapsible)
+- Scoring edge case tests (timeouts, retries, duration benchmarks)
+- Mermaid output tests
+- Trace compression module
+- Tests: 612 → 623
