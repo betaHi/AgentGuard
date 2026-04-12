@@ -45,9 +45,17 @@ def record_handoff(
         metadata: Additional metadata.
     
     Returns:
-        The handoff Span.
-    
-    Example:
+        The completed handoff Span, with ``context_size_bytes`` and
+        ``context_passed`` populated. Pass this span to
+        ``mark_context_used()`` after the receiver processes the handoff.
+
+    Note:
+        The span is immediately completed (handoffs are instantaneous events).
+        Context is serialized only to measure size — the original object is
+        not stored in the trace.
+
+    Example::
+
         news = collector.run(topic)
         record_handoff("collector", "analyst", context=news, summary="5 articles")
         analysis = analyst.run(news)
@@ -99,17 +107,27 @@ def detect_context_loss(
     required_keys: Optional[list[str]] = None,
 ) -> dict:
     """Detect if context was lost during a handoff.
-    
-    Compares what was sent vs what was received to identify
-    missing or changed keys.
-    
+
+    Compares the keys and serialized sizes of sent vs received data
+    to identify missing information, unexpected additions, or size
+    discrepancies.
+
     Args:
-        sent_context: What the sender passed.
-        received_input: What the receiver actually got.
-        required_keys: Keys that must be present (optional).
-    
+        sent_context: The data dict the sender passed at handoff time.
+        received_input: The data dict the receiver actually received.
+        required_keys: Keys that *must* be present in the received input.
+            If any are missing, ``loss_detected`` is True regardless of
+            other key comparisons.
+
     Returns:
-        Dict with: missing_keys, extra_keys, size_delta, loss_detected
+        Dict containing:
+            - ``missing_keys``: Keys in sent but not in received.
+            - ``extra_keys``: Keys in received but not in sent.
+            - ``required_missing``: Required keys that are absent.
+            - ``sent_size_bytes``: Serialized size of sent context.
+            - ``received_size_bytes``: Serialized size of received input.
+            - ``size_delta_bytes``: ``received - sent`` (negative = shrinkage).
+            - ``loss_detected``: True if any keys are missing or required keys absent.
     """
     sent_keys = set(sent_context.keys()) if isinstance(sent_context, dict) else set()
     recv_keys = set(received_input.keys()) if isinstance(received_input, dict) else set()
@@ -142,18 +160,28 @@ def mark_context_used(
     received_context: Any = None,
 ) -> dict:
     """Mark which context keys were actually used by the receiving agent.
-    
-    Call this after the receiver processes the handoff to track context utilization.
-    
+
+    Call this after the receiver processes the handoff to track context
+    utilization. Updates the handoff span in place with used/dropped key
+    lists and a utilization ratio.
+
     Args:
-        handoff_span: The handoff span returned by record_handoff.
-        used_keys: Keys that the receiver actually used.
-        received_context: What the receiver got (for size comparison).
-    
+        handoff_span: The handoff Span returned by ``record_handoff()``.
+        used_keys: Keys that the receiver actually consumed.
+        received_context: The data the receiver got (optional). If provided,
+            its serialized size is recorded for comparison with sent size.
+
     Returns:
-        Dict with: used_keys, dropped_keys, utilization_ratio
-    
-    Example:
+        Dict containing:
+            - ``used_keys``: Keys the receiver consumed.
+            - ``dropped_keys``: Keys that were sent but not used.
+            - ``extra_used``: Keys the receiver used that were not in the
+              original sent context (e.g., derived or injected data).
+            - ``utilization_ratio``: Fraction of sent keys that were used
+              (0.0–1.0). A low ratio suggests the sender is over-sharing.
+
+    Example::
+
         h = record_handoff("collector", "analyst", context=data)
         result = analyst.run(data)
         mark_context_used(h, used_keys=["articles", "topic"])
