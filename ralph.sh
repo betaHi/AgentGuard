@@ -170,10 +170,10 @@ except: print('EVAL_ERROR')
         fi
     else
         echo "   ❌ REJECTED — will retry next iteration" | tee -a "$LOG_FILE"
-        # Save evaluator feedback for next iteration
+        # Save evaluator feedback for next iteration  
         echo "$EVAL_TEXT" > .evaluator-feedback.txt
-        # Revert the generator's commit so next iteration can try again
-        git revert HEAD --no-edit 2>/dev/null || true
+        # Don't revert — keep the code, just don't mark story as done
+        # Next iteration will see the same story and the evaluator feedback
     fi
     
     # Log

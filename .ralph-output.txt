@@ -522,3 +522,153 @@ New hash again.
 ━━━ Iteration 8 (8min elapsed) ━━━
 📋 Story: Write comprehensive getting-started tutorial in docs/tutorial.md
 🐯 Generator: 黑虎虾...
+New story!
+There's already `getting-started.md` and `quickstart.md`. The story asks for a comprehensive tutorial. Let me write `docs/tutorial.md`:
+🐯 完成！
+
+**Story:** Write comprehensive getting-started tutorial in docs/tutorial.md
+
+**改了什么（1 new file）：**
+- `docs/tutorial.md` — 272 行，6 部分教程：
+1. First Trace（init、decorators、show）
+2. Multi-Agent Pipelines（handoffs、context managers、error handling）
+3. Analysis（CLI + programmatic、flow graph）
+4. Comparing & Monitoring（diff、SLA、guard、web report）
+5. Distributed Tracing（cross-process propagation）
+6. Health Check（doctor）
+
+**测试：** 706 passed ✅
+**Commit:** `118dd1a`
+
+Same hash — tutorial story, already done at `118dd1a`. 等 Planner 推新任务。
+
+NO_REPLY
+
+🧪 Tests: 706 passed in 12.44s
+🔱 Evaluator reviewing...
+🧪 Tests: 706 passed in 13.34s
+🔱 Evaluator reviewing...
+   ACCEPT: Comprehensive tutorial covering core features (tracing, multi-agent pipelines) in docs/tutorial.md as specified, tests pass, aligns with project scope.
+   ⏱️ 127s
+   ✅ ACCEPTED + marked done
+[main 7d1386a] mark done: Write comprehensive getting-started tutorial in docs/tutorial.md
+ 1 file changed, 1 insertion(+), 1 deletion(-)
+
+━━━ Iteration 7 (7min elapsed) ━━━
+📋 Story: Add examples/minimal.py — smallest possible AgentGuard example (10 lines)
+🐯 Generator: 黑虎虾...
+   ACCEPT: Tutorial doc matches the story spec, all 706 tests pass, and it's a docs-only addition with no code impact.
+   ⏱️ 134s
+   ✅ ACCEPTED + marked done
+On branch main
+Your branch is up to date with 'origin/main'.
+
+Changes not staged for commit:
+  (use "git add <file>..." to update what will be committed)
+  (use "git restore <file>..." to discard changes in working directory)
+	modified:   .ralph-log.txt
+	modified:   .ralph-output.txt
+	modified:   .story-current.md
+	modified:   progress.txt
+
+no changes added to commit (use "git add" and/or "git commit -a")
+
+━━━ Iteration 9 (11min elapsed) ━━━
+📋 Story: Add examples/minimal.py — smallest possible AgentGuard example (10 lines)
+🐯 Generator: 黑虎虾...
+🐯 完成！
+
+**Story:** Add examples/minimal.py — smallest possible AgentGuard example (10 lines)
+
+**改了什么（1 new file）：**
+- `examples/minimal.py` — 14 行（含 docstring + blank line），核心代码 10 行：init → @record_tool → @record_agent → finish → print
+
+**测试：** 706 passed ✅
+**Commit:** `e0df7b4`
+
+Same hash — minimal.py story, already done at `e0df7b4`.
+
+NO_REPLY
+
+🧪 Tests: 706 passed in 12.74s
+🔱 Evaluator reviewing...
+🧪 Tests: 706 passed in 13.23s
+🔱 Evaluator reviewing...
+   ACCEPT: 14-line minimal example with 10 lines of core code matches the story spec, tests pass, and it's a straightforward addition with no scope creep.
+   ⏱️ 78s
+   ✅ ACCEPTED + marked done
+[main 004d077] mark done: Add examples/minimal.py — smallest possible AgentGuard example (10 lines)
+ 1 file changed, 1 insertion(+), 1 deletion(-)
+
+━━━ Iteration 8 (9min elapsed) ━━━
+📋 Story: Improve scoring: add configurable weights for score components
+🐯 Generator: 黑虎虾...
+   ACCEPT: minimal.py example added, tests pass, story fulfilled — straightforward addition matching spec.
+   ⏱️ 82s
+   ✅ ACCEPTED + marked done
+On branch main
+Your branch is up to date with 'origin/main'.
+
+Changes not staged for commit:
+  (use "git add <file>..." to update what will be committed)
+  (use "git restore <file>..." to discard changes in working directory)
+	modified:   .ralph-log.txt
+	modified:   .ralph-output.txt
+	modified:   .story-current.md
+	modified:   progress.txt
+
+no changes added to commit (use "git add" and/or "git commit -a")
+
+━━━ Iteration 10 (12min elapsed) ━━━
+📋 Story: Improve scoring: add configurable weights for score components
+🐯 Generator: 黑虎虾...
+Weights are hardcoded. I need to make them configurable via a parameter:
+🐯 完成！
+
+**Story:** Improve scoring: add configurable weights for score components
+
+**改了什么（1 file）：**
+- `agentguard/scoring.py`
+- 新增 `DEFAULT_WEIGHTS` dict（5 个 component 的默认权重）
+- `score_trace()` 新增 `weights` 参数，支持自定义各维度权重
+- 缺失的 key 自动 fallback 到默认值
+
+**测试：** 706 passed ✅
+**Commit:** `408c261`
+
+Same hash — scoring weights story, done at `408c261`.
+
+NO_REPLY
+
+🧪 Tests: 706 passed in 12.48s
+🔱 Evaluator reviewing...
+🧪 Tests: 706 passed in 13.20s
+🔱 Evaluator reviewing...
+   ACCEPT: Story asked for configurable weights, implementation adds DEFAULT_WEIGHTS dict with fallback and a `weights` parameter on `score_trace()` — matches spec, no scope creep, tests pass.
+   ⏱️ 97s
+   ✅ ACCEPTED + marked done
+[main b66b59f] mark done: Improve scoring: add configurable weights for score components
+ 1 file changed, 1 insertion(+), 1 deletion(-)
+
+━━━ Iteration 9 (11min elapsed) ━━━
+📋 Story: Add trace export to OpenTelemetry format (reverse of import)
+🐯 Generator: 黑虎虾...
+   ACCEPT: Clean implementation — adds `DEFAULT_WEIGHTS` dict and optional `weights` param with fallback, replaces hardcoded values, minimal and focused change matching the story spec.
+   ⏱️ 98s
+   ✅ ACCEPTED + marked done
+On branch main
+Your branch is up to date with 'origin/main'.
+
+Changes not staged for commit:
+  (use "git add <file>..." to update what will be committed)
+  (use "git restore <file>..." to discard changes in working directory)
+	modified:   .ralph-log.txt
+	modified:   .ralph-output.txt
+	modified:   .story-current.md
+	modified:   progress.txt
+
+no changes added to commit (use "git add" and/or "git commit -a")
+
+━━━ Iteration 11 (14min elapsed) ━━━
+📋 Story: Add trace export to OpenTelemetry format (reverse of import)
+🐯 Generator: 黑虎虾...
