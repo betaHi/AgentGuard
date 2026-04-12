@@ -68,7 +68,7 @@ Focus: Make README, examples, analysis, and viewer tell the same story.
 
 - [x] Add comprehensive docstrings to all public APIs in core/trace.py
 - [x] Add comprehensive docstrings to all public APIs in sdk/decorators.py and sdk/context.py
-- [ ] Add comprehensive docstrings to all public APIs in sdk/handoff.py
+- [x] Add comprehensive docstrings to all public APIs in sdk/handoff.py
 - [ ] Add type stubs (py.typed marker + complete type hints) for core/trace.py
 - [ ] Improve viewer Gantt chart: add zoom controls and time axis labels
 - [ ] Add viewer dark theme polish: consistent colors, better contrast ratios
