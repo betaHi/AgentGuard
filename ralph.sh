@@ -137,12 +137,12 @@ $(cat .evaluator-feedback.txt 2>/dev/null || echo "None — first attempt")
 - Import external packages in core/ or sdk/
 STORYEOF
     
-    # ── GENERATOR ──
+    # ── GENERATOR (agent: heihu) ──
     ITER_START=$(date +%s)
     echo "🔧 Generator..." | tee -a "$LOG_FILE"
     
     GEN_RESULT=$(openclaw agent \
-        --agent heihu  # generator agent ID \
+        --agent heihu \
         --session-id "gen-$ITERATION-$(date +%s)" \
         --message "Read $(pwd)/.story-current.md. 
 
@@ -167,14 +167,14 @@ except: print('GEN_ERROR')
     TEST_SUMMARY=$(echo "$TEST_RESULT" | tail -1)
     echo "🧪 Tests: $TEST_SUMMARY" | tee -a "$LOG_FILE"
     
-    # ── REVIEWER (full diff, design doc alignment) ──
+    # ── REVIEWER (agent: luoshi) (full diff, design doc alignment) ──
     echo "🔍 Reviewer..." | tee -a "$LOG_FILE"
     
     DIFF_STAT=$(git diff HEAD~1 --stat 2>/dev/null)
     DIFF_FULL=$(git diff HEAD~1 -- "*.py" "*.md" 2>/dev/null | head -300)
     
     EVAL_RESULT=$(openclaw agent \
-        --agent luoshi  # reviewer agent ID \
+        --agent luoshi \
         --session-id "rev-$ITERATION-$(date +%s)" \
         --message "REVIEW for AgentGuard. Read $(pwd)/REVIEW.md first.
 
