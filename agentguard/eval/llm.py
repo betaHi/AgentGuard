@@ -8,7 +8,7 @@ This module is optional — core evaluation works fine with rules alone.
 Usage:
     from agentguard.eval.llm import LLMEvaluator
     
-    evaluator = LLMEvaluator(api_key="sk-...", model="gpt-4o-mini")
+    evaluator = LLMEvaluator(model="gpt-4o-mini"  # uses AGENTGUARD_LLM_API_KEY env var)
     result = evaluator.pairwise_compare(
         baseline_output="...",
         candidate_output="...",

@@ -7,3 +7,12 @@ build/
 .venv/
 .env
 *.egg
+
+# Ralph loop runtime files
+.ralph-log.txt
+.ralph-output.txt
+.ralph-state.json
+.ralph-pid
+.story-current.md
+.evaluator-feedback.txt
+nohup.out
