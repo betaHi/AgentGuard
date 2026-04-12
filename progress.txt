@@ -19,3 +19,8 @@
 [2026-04-12T06:25:36Z] Iter 3 (15s): Make subprocess example a true cross-process trace (not inline simulation) — 706 passed in 12.34s
 [2026-04-12T06:27:47Z] Iter 1 (117s): Stabilize coding_pipeline output so diagnostics match documentation every run — 706 passed in 12.52s
 [2026-04-12T06:27:55Z] Iter 4 (124s): Stabilize coding_pipeline output so diagnostics match documentation every run — 706 passed in 12.77s
+[2026-04-12T06:31:10Z] Iter 1 (74s): Add comprehensive docstrings to all public APIs in core/trace.py — 706 passed in 12.36s
+[2026-04-12T06:32:41Z] Iter 2 (76s): Add comprehensive docstrings to all public APIs in sdk/decorators.py and sdk/context.py — 706 passed in 12.33s
+[2026-04-12T06:34:04Z] Iter 3 (67s): Add comprehensive docstrings to all public APIs in sdk/handoff.py — 706 passed in 12.36s
+[2026-04-12T06:35:28Z] Iter 4 (69s): Add type stubs (py.typed marker + complete type hints) for core/trace.py — 706 passed in 12.34s
+[2026-04-12T06:37:42Z] Iter 5 (117s): Improve viewer Gantt chart: add zoom controls and time axis labels — 706 passed in 12.34s

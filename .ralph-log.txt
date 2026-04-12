@@ -122,3 +122,123 @@ Status: ok
 ━━━ Iteration 1/100 (0min elapsed, 35999s remaining) ━━━
 📋 Story: Add comprehensive docstrings to all public APIs in core/trace.py
 🐯 Dispatching to 黑虎虾...
+Most methods have one-liner docstrings. I need to add comprehensive Args/Returns/Raises docstrings to all public APIs.
+🐯 完成！
+
+**Story:** Add comprehensive docstrings to all public APIs in core/trace.py
+
+**改了什么：** 给 `core/trace.py` 的所有公开 API 补全了 Args/Returns/Note 格式的 docstring：
+- `SpanStatus` / `SpanType` — 每个枚举值都有说明
+- `Span` 的 6 个方法/属性 — `duration_ms`, `complete()`, `fail()`, `to_dict()`
+- `ExecutionTrace` 的 12 个方法/属性 — `add_span()`, `complete()`, `fail()`, `duration_ms`, `agent_spans`, `tool_spans`, `build_tree()`, `to_dict()`, `to_json()`, `from_dict()`, `from_json()`
+
+**测试：** 706 passed ✅
+**Commit:** `9ed0a9b`
+Status: ok
+
+🧪 Evaluator verifying...
+   Tests: 706 passed in 12.36s
+   Iteration took: 74s
+   ✅ Story marked as done in program.md
+
+━━━ Iteration 2/100 (1min elapsed, 35909s remaining) ━━━
+📋 Story: Add comprehensive docstrings to all public APIs in sdk/decorators.py and sdk/context.py
+🐯 Dispatching to 黑虎虾...
+Both files already have decent docstrings on the decorators, but the context manager classes and their methods need comprehensive docstrings. Let me add them:
+🐯 完成！
+
+**Story:** Add comprehensive docstrings to all public APIs in sdk/decorators.py and sdk/context.py
+
+**改了什么：**
+- `sdk/decorators.py` — 给 `_safe_serialize()` 加了 Args/Returns docstring
+- `sdk/context.py` — 给所有 4 个类 (`ToolContext`, `AgentTrace`, `AsyncAgentTrace`, `AsyncToolContext`) 及其公开方法 (`__init__`, `set_output`, `tool`) 加了完整的 class-level + method-level docstrings，包含 Args、Returns、Example
+
+**测试：** 706 passed ✅
+**Commit:** `c8c70a8`
+Status: ok
+
+🧪 Evaluator verifying...
+   Tests: 706 passed in 12.33s
+   Iteration took: 76s
+   ✅ Story marked as done in program.md
+
+━━━ Iteration 3/100 (3min elapsed, 35818s remaining) ━━━
+📋 Story: Add comprehensive docstrings to all public APIs in sdk/handoff.py
+🐯 Dispatching to 黑虎虾...
+The docstrings are already quite comprehensive. The main gaps are the module-level docstring could be richer, and `detect_context_loss` and `mark_context_used` could use more detail. Let me check what's truly missing:
+
+All three public functions already have Args/Returns/Example. The story says "comprehensive" — I should add Raises where applicable and flesh out the descriptions slightly.
+🐯 完成！
+
+**Story:** Add comprehensive docstrings to all public APIs in sdk/handoff.py
+
+**改了什么：** 增强了 3 个公开函数的 docstring：
+- `record_handoff()` — 补充 Returns 说明（context_size_bytes, context_passed）、Note（handoff 是瞬时事件）
+- `detect_context_loss()` — 详细文档化返回 dict 的每个 key、required_keys 的行为
+- `mark_context_used()` — 详细文档化 utilization_ratio 含义、extra_used 来源、Example 格式修正
+
+**测试：** 706 passed ✅
+**Commit:** `9fd35a4`
+Status: ok
+
+🧪 Evaluator verifying...
+   Tests: 706 passed in 12.36s
+   Iteration took: 67s
+   ✅ Story marked as done in program.md
+
+━━━ Iteration 4/100 (4min elapsed, 35735s remaining) ━━━
+📋 Story: Add type stubs (py.typed marker + complete type hints) for core/trace.py
+🐯 Dispatching to 黑虎虾...
+`py.typed` already exists. Let me check the type hints in core/trace.py:
+The return types `dict` and `list` are missing type parameters. Let me tighten them:
+Now verify there are no other bare `dict` or `list` return types missing params (the `list[Span]` ones are already typed):
+Good, no bare `dict` left. Let me also verify `py.typed` is a proper marker file and run tests:
+Empty file — correct marker. Now run tests:
+🐯 完成！
+
+**Story:** Add type stubs (py.typed marker + complete type hints) for core/trace.py
+
+**改了什么：**
+- `py.typed` marker 已存在 ✓
+- `core/trace.py` — 把 `Span.to_dict()` 和 `ExecutionTrace.to_dict()` 的返回类型从 bare `dict` 改为 `dict[str, Any]`，`from_dict()` 参数同理。其余类型标注已经完整。
+
+**测试：** 706 passed ✅
+**Commit:** `5026b82`
+Status: ok
+
+🧪 Evaluator verifying...
+   Tests: 706 passed in 12.34s
+   Iteration took: 69s
+   ✅ Story marked as done in program.md
+
+━━━ Iteration 5/100 (5min elapsed, 35650s remaining) ━━━
+📋 Story: Improve viewer Gantt chart: add zoom controls and time axis labels
+🐯 Dispatching to 黑虎虾...
+I need to add zoom controls and improve the time axis labels in the Gantt chart. The key areas are `_build_gantt` for the time axis and the HTML/CSS/JS for zoom controls.
+The JS braces in the f-string need escaping. Let me fix — the issue is the JS code is inside an f-string in the HTML template. Let me check context:
+The zoom JS got inserted in both the main HTML and empty HTML templates. The main one is inside an f-string where `{` needs to be `{{`. Let me check the actual context:
+This is inside an f-string. Need to double the braces:
+The CSS I added is also inside the f-string. Need to double those braces too:
+Now run tests:
+🐯 完成！
+
+**Story:** Improve viewer Gantt chart: add zoom controls and time axis labels
+
+**改了什么：**
+- **Zoom controls** — 在 timeline 上方加了 `−` / `+` / `⟲` 按钮，50%–400% 缩放范围，50% 步进
+- **Time axis** — 用绝对定位的 tick marks + tick lines 替代原来的均匀文字刻度，8 个区间，自动 ms/s 格式
+- **Scrollable container** — timeline 包裹在 `overflow-x:auto` 容器内，放大后可横向滚动
+- CSS 全部在 `<style>` 内，JS 用原生 DOM 操作，零外部依赖
+
+**测试：** 706 passed ✅
+**Commit:** `444f6cd`
+Status: ok
+
+🧪 Evaluator verifying...
+   Tests: 706 passed in 12.34s
+   Iteration took: 117s
+   ✅ Story marked as done in program.md
+
+━━━ Iteration 6/100 (8min elapsed, 35517s remaining) ━━━
+📋 Story: Add viewer dark theme polish: consistent colors, better contrast ratios
+🐯 Dispatching to 黑虎虾...

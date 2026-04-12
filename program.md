@@ -91,6 +91,11 @@ Focus: Make README, examples, analysis, and viewer tell the same story.
 - [ ] Evolve: connect evolve suggestions to viewer diagnostics panel
 - [ ] Evolve: add compare_to_best — track best trace per pipeline and detect regressions
 - [ ] Evolve: auto-generate improvement PRDs based on recurring failure patterns
+- [ ] Merge getting-started.md and quickstart.md into one clear onboarding doc
+- [ ] Update ralph-loop-guide.md to reflect actual OpenClaw sub-agent architecture (not Claude Code plugin)
+- [ ] Create docs/api-reference.md — document all public APIs with signatures and examples
+- [ ] Create docs/configuration.md — document agentguard.json config, CLI flags, env vars
+- [ ] Create docs/faq.md — common questions and troubleshooting
 
 ### Completed Stories (previous priority: Deepen Trace Semantics)
 
