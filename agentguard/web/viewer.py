@@ -107,9 +107,9 @@ def _build_full_html(traces: list[ExecutionTrace]) -> str:
 <meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1.0">
 <title>AgentGuard — Orchestration Panel</title>
 <style>
-:root{{--bg:#0d1117;--sf:#161b22;--bd:#21262d;--tx:#c9d1d9;--dim:#6e7681;--br:#f0f6fc;
---gn:#3fb950;--rd:#f85149;--bl:#58a6ff;--yl:#d29922;--pp:#bc8cff;
---gn-bg:#1a3a1a;--rd-bg:#3a1a1a;--yl-bg:#3a2f1a;--bl-bg:#1a2a3a;--pp-bg:#2a1a3a;}}
+:root{{--bg:#0d1117;--sf:#161b22;--bd:#30363d;--tx:#c9d1d9;--dim:#8b949e;--br:#f0f6fc;
+--gn:#3fb950;--rd:#f85149;--bl:#58a6ff;--yl:#e3b341;--pp:#bc8cff;
+--gn-bg:#1b3a2a;--rd-bg:#3d1f1f;--yl-bg:#3d321e;--bl-bg:#1e2d3d;--pp-bg:#2d1e3d;}}
 *{{margin:0;padding:0;box-sizing:border-box;}}
 body{{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',system-ui,monospace;background:var(--bg);color:var(--tx);}}
 .top-bar{{background:var(--sf);border-bottom:1px solid var(--bd);padding:10px 20px;display:flex;align-items:center;justify-content:space-between;}}
@@ -132,8 +132,8 @@ body{{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',system-ui,monospac
 .main h2{{font-size:10px;text-transform:uppercase;letter-spacing:1px;color:var(--dim);margin-bottom:8px;}}
 .tl-header{{display:flex;padding:0 0 6px 180px;border-bottom:1px solid var(--bd);margin-bottom:2px;}}
 .tl-header .tick{{font-size:9px;color:var(--dim);flex:1;text-align:center;}}
-.g-row{{display:flex;align-items:center;padding:2px 0;min-height:24px;border-bottom:1px solid rgba(48,54,61,0.2);}}
-.g-row:hover{{background:rgba(56,139,253,0.03);}}
+.g-row{{display:flex;align-items:center;padding:2px 0;min-height:24px;border-bottom:1px solid rgba(48,54,61,0.4);}}
+.g-row:hover{{background:rgba(56,139,253,0.06);}}
 .g-lbl{{width:180px;flex-shrink:0;display:flex;align-items:center;gap:5px;font-size:11px;padding-right:6px;overflow:hidden;}}
 .g-lbl .icon{{font-size:12px;}} .g-lbl .nm{{font-weight:500;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;}}
 .g-lbl .vr{{font-size:9px;color:var(--dim);}}
