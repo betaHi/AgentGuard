@@ -463,7 +463,8 @@ class ContextFlowPoint:
     size_received_bytes: int = 0
     keys_lost: list[str] = field(default_factory=list)
     size_delta_bytes: int = 0
-    anomaly: str = ""  # "loss", "bloat", "compression", "ok"
+    anomaly: str = ""  # "loss", "bloat", "compression", "truncation", "ok"
+    truncation_detail: str = ""  # description if truncation detected
 
     def to_dict(self) -> dict:
         return {
@@ -471,6 +472,7 @@ class ContextFlowPoint:
             "keys_sent": self.keys_sent, "size_bytes": self.size_bytes,
             "keys_lost": self.keys_lost, "size_delta_bytes": self.size_delta_bytes,
             "anomaly": self.anomaly,
+            "truncation_detail": self.truncation_detail,
         }
 
 
@@ -506,7 +508,44 @@ class ContextFlowReport:
                 lines.append(f"   ⚠ Lost keys: {p.keys_lost}")
             if p.anomaly == "bloat":
                 lines.append(f"   ⚠ Context grew by {p.size_delta_bytes:,}B")
+            if p.anomaly == "truncation" and p.truncation_detail:
+                lines.append(f"   ✂ Truncated: {p.truncation_detail}")
         return "\n".join(lines)
+
+
+def _detect_truncation(
+    sender_output: Any,
+    receiver_input: Any,
+) -> tuple[bool, str]:
+    """Detect if receiver input is a truncated version of sender output.
+
+    Truncation occurs when:
+    - A list was shortened (fewer items)
+    - A string was cut (receiver is a prefix of sender)
+    - Dict values were trimmed (same keys, smaller values)
+
+    Returns:
+        (is_truncated, description)
+    """
+    if isinstance(sender_output, dict) and isinstance(receiver_input, dict):
+        for key in receiver_input:
+            if key not in sender_output:
+                continue
+            sent_val = sender_output[key]
+            recv_val = receiver_input[key]
+            # List truncation
+            if isinstance(sent_val, list) and isinstance(recv_val, list):
+                if len(recv_val) < len(sent_val) and recv_val == sent_val[:len(recv_val)]:
+                    return True, f"key '{key}': list truncated {len(sent_val)}→{len(recv_val)} items"
+            # String truncation
+            if isinstance(sent_val, str) and isinstance(recv_val, str):
+                if len(recv_val) < len(sent_val) and sent_val.startswith(recv_val):
+                    return True, f"key '{key}': string truncated {len(sent_val)}→{len(recv_val)} chars"
+    # Top-level list truncation
+    if isinstance(sender_output, list) and isinstance(receiver_input, list):
+        if len(receiver_input) < len(sender_output) and receiver_input == sender_output[:len(receiver_input)]:
+            return True, f"list truncated {len(sender_output)}→{len(receiver_input)} items"
+    return False, ""
 
 
 def analyze_context_flow(trace: ExecutionTrace) -> ContextFlowReport:
@@ -572,14 +611,20 @@ def analyze_context_flow(trace: ExecutionTrace) -> ContextFlowReport:
                 elif delta > s_size * 2 and s_size > 0:
                     anomaly = "bloat"
                 elif delta < -s_size * 0.5 and s_size > 100:
-                    anomaly = "compression"  # significant shrinkage may indicate info loss
-                
+                    anomaly = "compression"
+
+                # Check for truncation (subset detection)
+                is_trunc, trunc_desc = _detect_truncation(sender_output, receiver_input)
+                if is_trunc:
+                    anomaly = "truncation"
+
                 points.append(ContextFlowPoint(
                     from_agent=sender.name, to_agent=receiver.name,
                     keys_sent=s_keys, size_bytes=s_size,
                     keys_received=r_keys, size_received_bytes=r_size,
                     keys_lost=lost, size_delta_bytes=delta,
                     anomaly=anomaly,
+                    truncation_detail=trunc_desc if is_trunc else "",
                 ))
     
     total_bytes = sum(p.size_bytes for p in points)
