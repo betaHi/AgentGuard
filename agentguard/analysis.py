@@ -585,3 +585,40 @@ def analyze_retries(trace: ExecutionTrace) -> dict:
         "retries": retries,
         "total_wasted_attempts": sum(r["failures"] for r in retries),
     }
+
+
+def analyze_cost(trace: ExecutionTrace) -> dict:
+    """Analyze cost distribution across agents and tools.
+    
+    Returns per-agent and per-tool cost breakdown.
+    """
+    agent_costs: dict[str, dict] = {}
+    tool_costs: dict[str, dict] = {}
+    
+    for s in trace.spans:
+        tokens = s.token_count or 0
+        cost = s.estimated_cost_usd or 0
+        
+        target = agent_costs if s.span_type == SpanType.AGENT else tool_costs
+        name = s.name
+        
+        if name not in target:
+            target[name] = {"tokens": 0, "cost_usd": 0, "calls": 0}
+        target[name]["tokens"] += tokens
+        target[name]["cost_usd"] += cost
+        target[name]["calls"] += 1
+    
+    total_tokens = sum(d["tokens"] for d in {**agent_costs, **tool_costs}.values())
+    total_cost = sum(d["cost_usd"] for d in {**agent_costs, **tool_costs}.values())
+    
+    # Find most expensive
+    all_items = {**agent_costs, **tool_costs}
+    most_expensive = max(all_items.items(), key=lambda x: x[1]["cost_usd"])[0] if all_items else "N/A"
+    
+    return {
+        "total_tokens": total_tokens,
+        "total_cost_usd": round(total_cost, 4),
+        "most_expensive": most_expensive,
+        "agent_costs": {k: {**v, "cost_usd": round(v["cost_usd"], 4)} for k, v in agent_costs.items()},
+        "tool_costs": {k: {**v, "cost_usd": round(v["cost_usd"], 4)} for k, v in tool_costs.items()},
+    }

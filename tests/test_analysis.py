@@ -220,3 +220,22 @@ def test_retry_analysis():
     result = analyze_retries(trace)
     assert result["retry_count"] == 1
     assert result["total_wasted_attempts"] == 1
+
+
+def test_cost_analysis():
+    """Cost analysis breaks down by agent/tool."""
+    from agentguard.analysis import analyze_cost
+    
+    trace = ExecutionTrace(task="cost-test")
+    a = Span(name="agent", span_type=SpanType.AGENT, token_count=500, estimated_cost_usd=0.01)
+    a.complete()
+    t = Span(name="llm", span_type=SpanType.TOOL, token_count=2000, estimated_cost_usd=0.04)
+    t.complete()
+    trace.add_span(a)
+    trace.add_span(t)
+    trace.complete()
+    
+    result = analyze_cost(trace)
+    assert result["total_tokens"] == 2500
+    assert result["total_cost_usd"] == 0.05
+    assert result["most_expensive"] == "llm"
