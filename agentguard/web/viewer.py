@@ -169,13 +169,87 @@ body{{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',system-ui,monospac
 <div class="ft">AgentGuard · Orchestration Observability</div>
 </div></div>
 
+<script>
+// Span click to expand details
+document.querySelectorAll('.g-row').forEach(row => {
+  row.style.cursor = 'pointer';
+  row.addEventListener('click', function() {
+    const existing = this.nextElementSibling;
+    if (existing && existing.classList.contains('g-detail')) {
+      existing.remove();
+      return;
+    }
+    // Remove any other open details
+    document.querySelectorAll('.g-detail').forEach(d => d.remove());
+    
+    const bar = this.querySelector('.g-bar');
+    if (!bar) return;
+    
+    const name = this.querySelector('.nm')?.textContent || '';
+    const dur = bar.textContent || '';
+    const cls = bar.classList.contains('err') ? 'error' : bar.classList.contains('slow') ? 'warning' : 'ok';
+    
+    const detail = document.createElement('div');
+    detail.className = 'g-detail';
+    detail.style.cssText = 'padding:8px 12px 8px 196px;background:var(--sf);border-bottom:1px solid var(--bd);font-size:10px;color:var(--dim);animation:fadeIn 0.15s;';
+    detail.innerHTML = `<b style="color:var(--br)">${name}</b> · ${dur} · <span class="badge b-${cls === 'error' ? 'fail' : cls === 'warning' ? 'warn' : 'pass'}">${cls}</span>`;
+    
+    this.after(detail);
+  });
+});
+
+// Keyboard navigation
+document.addEventListener('keydown', e => {
+  if (e.key === 'Escape') {
+    document.querySelectorAll('.g-detail').forEach(d => d.remove());
+  }
+});
+</script>
+<style>@keyframes fadeIn{from{opacity:0;transform:translateY(-4px)}to{opacity:1;transform:translateY(0)}}</style>
 </body></html>'''
 
 
 def _build_empty_html() -> str:
     return '''<!DOCTYPE html><html><head><title>AgentGuard</title>
 <style>body{background:#0d1117;color:#8b949e;font-family:monospace;display:flex;justify-content:center;align-items:center;height:100vh;}
-</style></head><body><div style="text-align:center"><h1>🛡️ AgentGuard</h1><p>No traces found. Record some agent executions first.</p></div></body></html>'''
+</style></head><body><div style="text-align:center"><h1>🛡️ AgentGuard</h1><p>No traces found. Record some agent executions first.</p></div><script>
+// Span click to expand details
+document.querySelectorAll('.g-row').forEach(row => {
+  row.style.cursor = 'pointer';
+  row.addEventListener('click', function() {
+    const existing = this.nextElementSibling;
+    if (existing && existing.classList.contains('g-detail')) {
+      existing.remove();
+      return;
+    }
+    // Remove any other open details
+    document.querySelectorAll('.g-detail').forEach(d => d.remove());
+    
+    const bar = this.querySelector('.g-bar');
+    if (!bar) return;
+    
+    const name = this.querySelector('.nm')?.textContent || '';
+    const dur = bar.textContent || '';
+    const cls = bar.classList.contains('err') ? 'error' : bar.classList.contains('slow') ? 'warning' : 'ok';
+    
+    const detail = document.createElement('div');
+    detail.className = 'g-detail';
+    detail.style.cssText = 'padding:8px 12px 8px 196px;background:var(--sf);border-bottom:1px solid var(--bd);font-size:10px;color:var(--dim);animation:fadeIn 0.15s;';
+    detail.innerHTML = `<b style="color:var(--br)">${name}</b> · ${dur} · <span class="badge b-${cls === 'error' ? 'fail' : cls === 'warning' ? 'warn' : 'pass'}">${cls}</span>`;
+    
+    this.after(detail);
+  });
+});
+
+// Keyboard navigation
+document.addEventListener('keydown', e => {
+  if (e.key === 'Escape') {
+    document.querySelectorAll('.g-detail').forEach(d => d.remove());
+  }
+});
+</script>
+<style>@keyframes fadeIn{from{opacity:0;transform:translateY(-4px)}to{opacity:1;transform:translateY(0)}}</style>
+</body></html>'''
 
 
 def _build_sidebar(trace: ExecutionTrace, failures, bn) -> str:
