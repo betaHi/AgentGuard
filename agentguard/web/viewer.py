@@ -149,7 +149,7 @@ body{{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',system-ui,monospac
 .ctx-badge{{background:var(--pp-bg);color:var(--pp);padding:1px 5px;border-radius:3px;font-size:8px;}}
 .diag{{background:var(--sf);border:1px solid var(--bd);border-radius:8px;padding:14px;margin-top:14px;}}
 .diag h3{{font-size:11px;color:var(--br);margin-bottom:10px;}}
-.diag-grid{{display:grid;grid-template-columns:1fr 1fr;gap:10px;}}
+.diag-grid{{display:grid;grid-template-columns:repeat(auto-fit, minmax(280px, 1fr));gap:10px;}}
 .d-box{{background:var(--bg);border:1px solid var(--bd);border-radius:6px;padding:10px;}}
 .d-box h4{{font-size:9px;text-transform:uppercase;letter-spacing:.5px;color:var(--dim);margin-bottom:5px;}}
 .d-box .val{{font-size:16px;font-weight:700;color:var(--br);}}
@@ -491,10 +491,22 @@ def _build_diagnostics(failures, bn, flow, ctx, retries=None, cost=None) -> str:
 </div>
 
 <div class="d-box">
-<h4>📊 Critical Path & Context</h4>
+<h4>📊 Critical Path</h4>
 <div class="val" style="font-size:12px">{_esc(cp)}</div>
-<div class="det">{flow.critical_path_duration_ms:.0f}ms</div>
+<div class="det">{flow.critical_path_duration_ms:.0f}ms · {len(flow.critical_path)} hops</div>
 <div class="items">{ctx_note}</div>
+</div>
+
+<div class="d-box">
+<h4>💰 Cost & Tokens</h4>
+<div class="val">${cost["total_cost_usd"]:.4f}</div>
+<div class="det">{cost["total_tokens"]:,} tokens · {cost.get("most_expensive", "N/A")} most expensive</div>
+</div>
+
+<div class="d-box">
+<h4>🔄 Retries</h4>
+<div class="val">{retries["retry_count"]} retries</div>
+<div class="det">{retries["total_wasted_attempts"]} wasted attempts</div>
 </div>
 
 </div></div>'''
