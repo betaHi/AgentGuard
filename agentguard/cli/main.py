@@ -516,6 +516,105 @@ def cmd_schema(args):
 
 
 
+def cmd_span_diff(args):
+    """Span-level diff between two traces."""
+    from agentguard.core.trace import ExecutionTrace
+    from agentguard.span_diff import diff_spans
+    
+    trace_a = ExecutionTrace.from_json(open(args.trace_a).read())
+    trace_b = ExecutionTrace.from_json(open(args.trace_b).read())
+    result = diff_spans(trace_a, trace_b)
+    print(result.to_report())
+
+
+def cmd_sla(args):
+    """Check trace against SLA constraints."""
+    from agentguard.core.trace import ExecutionTrace
+    from agentguard.sla import SLAChecker
+    
+    trace = ExecutionTrace.from_json(open(args.file).read())
+    checker = SLAChecker()
+    
+    if args.max_duration:
+        checker.max_duration_ms(args.max_duration)
+    if args.min_score:
+        checker.min_score(args.min_score)
+    if args.max_cost:
+        checker.max_cost_usd(args.max_cost)
+    if args.max_error_rate:
+        checker.max_error_rate(args.max_error_rate)
+    
+    result = checker.check(trace)
+    print(result.to_report())
+
+
+def cmd_dependencies(args):
+    """Show agent dependency graph."""
+    from agentguard.core.trace import ExecutionTrace
+    from agentguard.dependency import build_dependency_graph
+    
+    trace = ExecutionTrace.from_json(open(args.file).read())
+    graph = build_dependency_graph(trace)
+    
+    if args.mermaid:
+        print(graph.to_mermaid())
+    else:
+        print(graph.to_report())
+
+
+def cmd_benchmark(args):
+    """Run performance benchmark on analysis modules."""
+    from agentguard.benchmark import run_benchmark
+    suite = run_benchmark(trace_count=args.traces, agents_per_trace=args.agents)
+    print(suite.to_report())
+
+
+def cmd_generate(args):
+    """Generate synthetic traces."""
+    from agentguard.generate import generate_trace
+    from agentguard.store import TraceStore
+    
+    store = TraceStore(directory=args.dir)
+    for i in range(args.count):
+        trace = generate_trace(agents=args.agents, failure_rate=args.failure_rate, seed=i)
+        path = store.save(trace)
+        print(f"  Generated: {trace.trace_id} ({len(trace.spans)} spans)")
+    print(f"Saved {args.count} traces to {args.dir}")
+
+
+def cmd_summarize(args):
+    """Summarize a trace in natural language."""
+    from agentguard.core.trace import ExecutionTrace
+    from agentguard.summarize import summarize_trace, summarize_brief
+    
+    trace = ExecutionTrace.from_json(open(args.file).read())
+    if args.brief:
+        print(summarize_brief(trace))
+    else:
+        print(summarize_trace(trace))
+
+
+def cmd_tree(args):
+    """Display trace as indented tree."""
+    from agentguard.core.trace import ExecutionTrace
+    from agentguard.tree import tree_to_text
+    
+    trace = ExecutionTrace.from_json(open(args.file).read())
+    print(tree_to_text(trace))
+
+
+def cmd_compare(args):
+    """Compare two traces comprehensively."""
+    from agentguard.core.trace import ExecutionTrace
+    from agentguard.comparison import compare_traces
+    
+    trace_a = ExecutionTrace.from_json(open(args.trace_a).read())
+    trace_b = ExecutionTrace.from_json(open(args.trace_b).read())
+    result = compare_traces(trace_a, trace_b)
+    print(result.to_report())
+
+
+
 def cmd_report(args):
     """Generate HTML report."""
     from agentguard.web.viewer import generate_timeline_html
@@ -602,6 +701,50 @@ def main():
     p = sub.add_parser("context-flow", help="Analyze context flow through pipeline")
     p.add_argument("file", help="Path to trace JSON file")
     
+    # span-diff
+    p = sub.add_parser("span-diff", help="Span-level diff between traces")
+    p.add_argument("trace_a", help="First trace")
+    p.add_argument("trace_b", help="Second trace")
+    
+    # sla
+    p = sub.add_parser("sla", help="Check trace against SLA")
+    p.add_argument("file", help="Trace file")
+    p.add_argument("--max-duration", type=float, help="Max duration in ms")
+    p.add_argument("--min-score", type=float, help="Min quality score")
+    p.add_argument("--max-cost", type=float, help="Max cost in USD")
+    p.add_argument("--max-error-rate", type=float, help="Max error rate (0-1)")
+    
+    # dependencies
+    p = sub.add_parser("dependencies", help="Agent dependency graph")
+    p.add_argument("file", help="Trace file")
+    p.add_argument("--mermaid", action="store_true", help="Mermaid output")
+    
+    # benchmark
+    p = sub.add_parser("benchmark", help="Performance benchmark")
+    p.add_argument("--traces", type=int, default=10, help="Number of traces")
+    p.add_argument("--agents", type=int, default=5, help="Agents per trace")
+    
+    # generate
+    p = sub.add_parser("generate", help="Generate synthetic traces")
+    p.add_argument("--count", type=int, default=10)
+    p.add_argument("--agents", type=int, default=3)
+    p.add_argument("--failure-rate", type=float, default=0.1)
+    p.add_argument("--dir", default=".agentguard/traces")
+    
+    # summarize
+    p = sub.add_parser("summarize", help="Natural language summary")
+    p.add_argument("file", help="Trace file")
+    p.add_argument("--brief", action="store_true")
+    
+    # tree
+    p = sub.add_parser("tree", help="Display as indented tree")
+    p.add_argument("file", help="Trace file")
+    
+    # compare
+    p = sub.add_parser("compare", help="Comprehensive trace comparison")
+    p.add_argument("trace_a", help="First trace")
+    p.add_argument("trace_b", help="Second trace")
+    
     # timeline
     p = sub.add_parser("timeline", help="Display trace as event timeline")
     p.add_argument("file", help="Path to trace JSON file")
@@ -641,7 +784,7 @@ def main():
     
     args = parser.parse_args()
     
-    cmds = {"show": cmd_show, "list": cmd_list, "search": cmd_search, "eval": cmd_eval, "merge": cmd_merge, "validate": cmd_validate, "diff": cmd_diff, "analyze": cmd_analyze, "evolve": cmd_evolve, "propagation": cmd_propagation, "flowgraph": cmd_flowgraph, "context-flow": cmd_context_flow, "timeline": cmd_timeline, "metrics": cmd_metrics, "schema": cmd_schema, "score": cmd_score, "aggregate": cmd_aggregate, "annotate": cmd_annotate, "correlate": cmd_correlate, "report": cmd_report, "guard": cmd_guard}
+    cmds = {"show": cmd_show, "list": cmd_list, "search": cmd_search, "eval": cmd_eval, "merge": cmd_merge, "validate": cmd_validate, "diff": cmd_diff, "analyze": cmd_analyze, "evolve": cmd_evolve, "propagation": cmd_propagation, "flowgraph": cmd_flowgraph, "context-flow": cmd_context_flow, "span-diff": cmd_span_diff, "sla": cmd_sla, "dependencies": cmd_dependencies, "benchmark": cmd_benchmark, "generate": cmd_generate, "summarize": cmd_summarize, "tree": cmd_tree, "compare": cmd_compare, "timeline": cmd_timeline, "metrics": cmd_metrics, "schema": cmd_schema, "score": cmd_score, "aggregate": cmd_aggregate, "annotate": cmd_annotate, "correlate": cmd_correlate, "report": cmd_report, "guard": cmd_guard}
     if args.command in cmds:
         cmds[args.command](args)
     else:
