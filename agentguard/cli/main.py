@@ -200,6 +200,25 @@ def cmd_eval(args):
         sys.exit(1)
 
 
+def cmd_merge(args):
+    """Merge distributed child traces into parent."""
+    from agentguard.sdk.distributed import merge_child_traces
+    
+    path = Path(args.file)
+    if not path.exists():
+        print(f"{C.RED}Error: {args.file} not found{C.RESET}", file=sys.stderr)
+        sys.exit(1)
+    
+    data = json.loads(path.read_text(encoding="utf-8"))
+    trace = ExecutionTrace.from_dict(data)
+    traces_dir = str(path.parent)
+    
+    merged = merge_child_traces(trace, traces_dir, cleanup=not args.keep)
+    print(f"  Merged {len(merged.spans)} spans into {args.file}")
+    if not args.keep:
+        print(f"  Child files cleaned up")
+
+
 def cmd_validate(args):
     """Validate trace integrity."""
     from agentguard.validate import validate_trace
@@ -379,6 +398,11 @@ def main():
     p.add_argument("--dir", default=".agentguard/traces", help="Traces directory")
     p.add_argument("--output", default=".agentguard/report.html", help="Output HTML path")
     
+    # merge
+    p = sub.add_parser("merge", help="Merge distributed child traces")
+    p.add_argument("file", help="Parent trace file")
+    p.add_argument("--keep", action="store_true", help="Keep child files after merge")
+    
     # validate
     p = sub.add_parser("validate", help="Validate trace integrity")
     p.add_argument("file", help="Path to trace JSON file")
@@ -401,7 +425,7 @@ def main():
     
     args = parser.parse_args()
     
-    cmds = {"show": cmd_show, "list": cmd_list, "eval": cmd_eval, "validate": cmd_validate, "diff": cmd_diff, "analyze": cmd_analyze, "evolve": cmd_evolve, "report": cmd_report, "guard": cmd_guard}
+    cmds = {"show": cmd_show, "list": cmd_list, "eval": cmd_eval, "merge": cmd_merge, "validate": cmd_validate, "diff": cmd_diff, "analyze": cmd_analyze, "evolve": cmd_evolve, "report": cmd_report, "guard": cmd_guard}
     if args.command in cmds:
         cmds[args.command](args)
     else:
