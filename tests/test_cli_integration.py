@@ -87,3 +87,52 @@ class TestCLI:
         assert result.returncode == 0
         data = json.loads(result.stdout)
         assert "title" in data
+
+    def test_diff(self, trace_file, tmp_path):
+        """Test diff command with two traces."""
+        # Create a second trace
+        from agentguard.builder import TraceBuilder
+        trace2 = (TraceBuilder("CLI diff test v2")
+            .agent("researcher", duration_ms=5000)
+            .end()
+            .agent("editor", duration_ms=2000)
+            .end()
+            .build())
+        path2 = tmp_path / "trace2.json"
+        path2.write_text(trace2.to_json())
+        
+        result = _run_cli("diff", trace_file, str(path2))
+        assert result.returncode == 0
+
+    def test_flowgraph(self, trace_file):
+        result = _run_cli("flowgraph", trace_file)
+        assert result.returncode == 0
+
+    def test_flowgraph_mermaid(self, trace_file):
+        result = _run_cli("flowgraph", trace_file, "--mermaid")
+        assert result.returncode == 0
+        assert "graph" in result.stdout
+
+    def test_propagation(self, trace_file):
+        result = _run_cli("propagation", trace_file)
+        assert result.returncode == 0
+
+    def test_context_flow(self, trace_file):
+        result = _run_cli("context-flow", trace_file)
+        assert result.returncode == 0
+
+    def test_annotate(self, trace_file):
+        result = _run_cli("annotate", trace_file)
+        assert result.returncode == 0
+
+    def test_correlate(self, trace_file):
+        result = _run_cli("correlate", trace_file)
+        assert result.returncode == 0
+
+    def test_dependencies(self, trace_file):
+        result = _run_cli("dependencies", trace_file)
+        assert result.returncode == 0
+
+    def test_summarize_brief(self, trace_file):
+        result = _run_cli("summarize", trace_file, "--brief")
+        assert result.returncode == 0
