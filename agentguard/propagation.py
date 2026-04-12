@@ -279,3 +279,157 @@ def hypothetical_failure(trace: ExecutionTrace, span_id: str) -> dict:
         "blast_radius": len(affected),
         "critical": is_critical,
     }
+
+
+def analyze_handoff_chains(trace: ExecutionTrace) -> dict:
+    """Analyze sequences of handoffs to detect patterns.
+    
+    Looks at the full chain of handoffs (A→B→C→D) to identify:
+    - Context degradation over the chain (progressive loss)
+    - Handoff frequency (too many handoffs = overhead)
+    - Critical handoff points (where most context is lost)
+    
+    Returns:
+        Dict with: chains, total_handoffs, degradation_score, critical_handoff
+    """
+    handoff_spans = [s for s in trace.spans if s.span_type == SpanType.HANDOFF]
+    
+    if not handoff_spans:
+        return {
+            "chains": [],
+            "total_handoffs": 0,
+            "degradation_score": 0.0,
+            "critical_handoff": None,
+        }
+    
+    # Sort by time
+    handoff_spans.sort(key=lambda s: s.started_at or "")
+    
+    # Build chains: connected sequences of handoffs
+    chains: list[list[dict]] = []
+    current_chain: list[dict] = []
+    
+    for h in handoff_spans:
+        fr = h.handoff_from or ""
+        to = h.handoff_to or ""
+        ctx_size = h.context_size_bytes or 0
+        utilization = h.metadata.get("handoff.utilization", 1.0)
+        
+        entry = {
+            "from": fr,
+            "to": to,
+            "context_size_bytes": ctx_size,
+            "utilization": utilization,
+            "dropped_keys": h.context_dropped_keys or [],
+        }
+        
+        if current_chain and current_chain[-1]["to"] == fr:
+            current_chain.append(entry)
+        else:
+            if current_chain:
+                chains.append(current_chain)
+            current_chain = [entry]
+    
+    if current_chain:
+        chains.append(current_chain)
+    
+    # Calculate degradation: how much context is lost across each chain
+    chain_reports = []
+    max_loss = 0
+    critical_handoff = None
+    
+    for chain in chains:
+        if len(chain) < 1:
+            continue
+        
+        first_size = chain[0]["context_size_bytes"]
+        last_size = chain[-1]["context_size_bytes"]
+        
+        agents = [chain[0]["from"]] + [h["to"] for h in chain]
+        total_dropped = []
+        for h in chain:
+            total_dropped.extend(h["dropped_keys"])
+        
+        avg_utilization = sum(h["utilization"] for h in chain) / len(chain)
+        
+        chain_reports.append({
+            "agents": agents,
+            "length": len(chain),
+            "start_size_bytes": first_size,
+            "end_size_bytes": last_size,
+            "total_keys_dropped": len(total_dropped),
+            "dropped_keys": total_dropped,
+            "avg_utilization": round(avg_utilization, 2),
+        })
+        
+        # Find the handoff with most context loss
+        for h in chain:
+            loss = len(h["dropped_keys"])
+            if loss > max_loss:
+                max_loss = loss
+                critical_handoff = {"from": h["from"], "to": h["to"], "keys_dropped": h["dropped_keys"]}
+    
+    # Degradation score: 0 = no degradation, 1 = total loss
+    total_dropped_all = sum(len(h.context_dropped_keys or []) for h in handoff_spans)
+    total_sent_all = sum(len(h.metadata.get("handoff.context_keys", [])) for h in handoff_spans)
+    degradation = total_dropped_all / max(total_sent_all, 1)
+    
+    return {
+        "chains": chain_reports,
+        "total_handoffs": len(handoff_spans),
+        "degradation_score": round(degradation, 2),
+        "critical_handoff": critical_handoff,
+    }
+
+
+def compute_context_integrity(trace: ExecutionTrace) -> dict:
+    """Compute an overall context integrity score for the trace.
+    
+    Combines multiple signals:
+    - Handoff utilization (are receivers using the context?)
+    - Context loss detection (are keys being dropped?)
+    - Failure containment (do circuit breakers work?)
+    
+    Returns:
+        Dict with: integrity_score (0-1), components, recommendations
+    """
+    # Component 1: Handoff utilization
+    handoff_spans = [s for s in trace.spans if s.span_type == SpanType.HANDOFF]
+    utilizations = [s.metadata.get("handoff.utilization", 1.0) for s in handoff_spans]
+    avg_utilization = sum(utilizations) / max(len(utilizations), 1)
+    
+    # Component 2: Context loss
+    total_dropped = sum(len(s.context_dropped_keys or []) for s in handoff_spans)
+    total_keys = sum(len(s.metadata.get("handoff.context_keys", [])) for s in handoff_spans)
+    loss_rate = total_dropped / max(total_keys, 1)
+    loss_score = 1.0 - loss_rate
+    
+    # Component 3: Failure resilience
+    from agentguard.propagation import analyze_propagation
+    prop = analyze_propagation(trace)
+    resilience = prop.containment_rate
+    
+    # Weighted score
+    integrity = (avg_utilization * 0.4) + (loss_score * 0.4) + (resilience * 0.2)
+    
+    recommendations = []
+    if avg_utilization < 0.7:
+        recommendations.append("Low context utilization — receivers are ignoring sent data. Review what context is being passed.")
+    if loss_rate > 0.3:
+        recommendations.append(f"High context loss rate ({loss_rate:.0%}) — critical keys may be dropped during handoffs.")
+    if resilience < 0.5 and prop.total_failures > 0:
+        recommendations.append("Low failure containment — add error handling or circuit breakers to agents.")
+    if not handoff_spans:
+        recommendations.append("No explicit handoffs recorded — use record_handoff() to track context flow.")
+    
+    return {
+        "integrity_score": round(integrity, 2),
+        "components": {
+            "handoff_utilization": round(avg_utilization, 2),
+            "context_preservation": round(loss_score, 2),
+            "failure_resilience": round(resilience, 2),
+        },
+        "recommendations": recommendations,
+        "total_handoffs": len(handoff_spans),
+        "total_keys_dropped": total_dropped,
+    }

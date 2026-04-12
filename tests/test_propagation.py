@@ -196,3 +196,89 @@ class TestHypotheticalFailure:
         # Leaf tool is not critical
         result_leaf = hypothetical_failure(trace, "tw")
         assert result_leaf["critical"] is False
+
+
+class TestHandoffChains:
+    """Tests for handoff chain analysis."""
+
+    def test_no_handoffs(self):
+        """Trace without handoffs should return empty."""
+        from agentguard.propagation import analyze_handoff_chains
+        trace = _make_trace_with_cascade()
+        result = analyze_handoff_chains(trace)
+        assert result["total_handoffs"] == 0
+        assert result["chains"] == []
+
+    def test_with_handoffs(self):
+        """Trace with handoffs should detect chains."""
+        from agentguard.propagation import analyze_handoff_chains
+        from agentguard.sdk.recorder import init_recorder, finish_recording
+        from agentguard.sdk.handoff import record_handoff, mark_context_used
+        
+        init_recorder(task="chain_test")
+        
+        h1 = record_handoff("collector", "analyzer", context={"data": [1, 2], "meta": "info"})
+        mark_context_used(h1, used_keys=["data"])
+        
+        h2 = record_handoff("analyzer", "writer", context={"analysis": "done"})
+        mark_context_used(h2, used_keys=["analysis"])
+        
+        trace = finish_recording()
+        result = analyze_handoff_chains(trace)
+        
+        assert result["total_handoffs"] == 2
+        assert len(result["chains"]) >= 1
+        # Chain should be: collector → analyzer → writer
+        chain = result["chains"][0]
+        assert "collector" in chain["agents"]
+
+    def test_degradation_score(self):
+        """Degradation score should reflect key loss."""
+        from agentguard.propagation import analyze_handoff_chains
+        from agentguard.sdk.recorder import init_recorder, finish_recording
+        from agentguard.sdk.handoff import record_handoff, mark_context_used
+        
+        init_recorder(task="degradation")
+        
+        h = record_handoff("a", "b", context={"x": 1, "y": 2, "z": 3})
+        mark_context_used(h, used_keys=["x"])  # drops y, z
+        
+        trace = finish_recording()
+        result = analyze_handoff_chains(trace)
+        
+        assert result["degradation_score"] > 0
+
+
+class TestContextIntegrity:
+    """Tests for context integrity scoring."""
+
+    def test_perfect_integrity(self):
+        """Trace with no issues should score high."""
+        from agentguard.propagation import compute_context_integrity
+        now = datetime.now(timezone.utc)
+        trace = ExecutionTrace(task="ok", started_at=now.isoformat(), ended_at=now.isoformat())
+        trace.add_span(Span(span_id="a", name="agent", status=SpanStatus.COMPLETED,
+                           started_at=now.isoformat(), ended_at=now.isoformat()))
+        
+        result = compute_context_integrity(trace)
+        assert result["integrity_score"] >= 0.0
+        assert "integrity_score" in result
+        assert "components" in result
+
+    def test_with_failures(self):
+        """Trace with failures should have lower resilience component."""
+        from agentguard.propagation import compute_context_integrity
+        trace = _make_deep_chain()  # all failures
+        
+        result = compute_context_integrity(trace)
+        assert result["components"]["failure_resilience"] == 0.0  # no containment
+
+    def test_recommendations(self):
+        """Should generate recommendations for poor traces."""
+        from agentguard.propagation import compute_context_integrity
+        now = datetime.now(timezone.utc)
+        trace = ExecutionTrace(task="empty")
+        result = compute_context_integrity(trace)
+        
+        # No handoffs = should recommend using record_handoff
+        assert any("handoff" in r.lower() for r in result["recommendations"])
