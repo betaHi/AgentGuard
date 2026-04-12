@@ -146,7 +146,7 @@ class Span:
         self.ended_at = datetime.now(timezone.utc).isoformat()
         self.error = error
 
-    def to_dict(self) -> dict:
+    def to_dict(self) -> dict[str, Any]:
         """Serialize to a plain dictionary.
 
         Enum fields are converted to their string values. Empty children
@@ -276,7 +276,7 @@ class ExecutionTrace:
                 roots.append(span)
         return roots
 
-    def to_dict(self) -> dict:
+    def to_dict(self) -> dict[str, Any]:
         """Serialize the entire trace to a plain dictionary.
 
         Returns:
@@ -306,7 +306,7 @@ class ExecutionTrace:
         return json.dumps(self.to_dict(), indent=indent, ensure_ascii=False)
 
     @classmethod
-    def from_dict(cls, data: dict) -> ExecutionTrace:
+    def from_dict(cls, data: dict[str, Any]) -> ExecutionTrace:
         """Deserialize an ExecutionTrace from a plain dictionary.
 
         Args:
