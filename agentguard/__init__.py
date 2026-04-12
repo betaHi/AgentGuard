@@ -42,6 +42,21 @@ from agentguard.scoring import score_trace
 from agentguard.aggregate import aggregate_traces
 from agentguard.annotations import auto_annotate, AnnotationStore
 from agentguard.filter import filter_spans, filter_traces, sample_traces
+from agentguard.builder import TraceBuilder
+from agentguard.timeline import build_timeline
+from agentguard.tree import tree_to_text, compute_tree_stats
+from agentguard.normalize import normalize_trace
+from agentguard.summarize import summarize_trace, summarize_brief
+from agentguard.comparison import compare_traces
+from agentguard.profile import build_agent_profiles
+from agentguard.dependency import build_dependency_graph
+from agentguard.sla import SLAChecker
+from agentguard.alerts import AlertEngine, rule_trace_failed, rule_score_below
+from agentguard.metrics import extract_metrics
+from agentguard.batch import batch_analyze
+from agentguard.generate import generate_trace, generate_batch
+from agentguard.templates import create_from_template
+from agentguard.plugin import register_analyzer, register_exporter, get_plugin_registry
 
 __all__ = [
     "record_agent", "record_tool",
@@ -58,4 +73,11 @@ __all__ = [
     "score_trace", "aggregate_traces",
     "auto_annotate", "AnnotationStore",
     "filter_spans", "filter_traces", "sample_traces",
+    "TraceBuilder", "build_timeline", "tree_to_text", "compute_tree_stats",
+    "normalize_trace", "summarize_trace", "summarize_brief",
+    "compare_traces", "build_agent_profiles", "build_dependency_graph",
+    "SLAChecker", "AlertEngine", "rule_trace_failed", "rule_score_below",
+    "extract_metrics", "batch_analyze",
+    "generate_trace", "generate_batch", "create_from_template",
+    "register_analyzer", "register_exporter", "get_plugin_registry",
 ]
