@@ -126,3 +126,49 @@ All notable changes to AgentGuard will be documented in this file.
 ### Tests
 - 106 tests covering: trace schema, decorators, context managers, async,
   distributed, eval rules, replay, guard, analysis, diff, web, edge cases
+
+## [Unreleased] — 2026-04-12
+
+### Added — Deep Trace Semantics
+
+#### Handoff Enhancements
+- `mark_context_used()` — track which context keys the receiver actually used
+- Context utilization ratio (0-1) measuring how much of passed context was consumed
+- `context_received`, `context_used_keys`, `context_dropped_keys` fields on Span
+- Handoff chain analysis (`analyze_handoff_chains`) — detect progressive context degradation
+
+#### Failure Propagation (new module: `propagation.py`)
+- `analyze_propagation()` — full causal chain analysis with circuit breaker detection
+- `hypothetical_failure()` — what-if analysis for blast radius estimation
+- `compute_context_integrity()` — overall trace health score combining utilization, loss, and resilience
+
+#### Flow Graph (new module: `flowgraph.py`)
+- `build_flow_graph()` — dependency DAG with true parallel/sequential detection
+- Execution phase detection (groups of concurrent spans)
+- Critical path via topological sort + longest path
+- Mermaid diagram output (`graph.to_mermaid()`)
+- Sequential fraction metric
+
+#### Context Flow (new module: `context_flow.py`)
+- `analyze_context_flow_deep()` — compression/truncation/expansion event detection
+- Bandwidth analysis (bytes/second between agents)
+- Context bottleneck detection
+- Per-transition classification: stable, compression, truncation, expansion, transformation
+
+#### Span Correlation (new module: `correlation.py`)
+- `analyze_correlations()` — combined fingerprint + causal + pattern analysis
+- `fingerprint_span()` — structural fingerprint for cross-trace pattern matching
+- `correlate_failures_to_handoffs()` — causal links between handoffs and failures
+- `detect_patterns()` — repeated failures, retry storms, slow agents
+
+#### Enhanced Diff
+- `diff_flow_graphs()` — compare parallelism, phases, critical path between traces
+- `diff_context_flow()` — compare compression ratios, truncation events, bottlenecks
+
+#### CLI
+- `agentguard propagation <file>` — failure propagation report
+- `agentguard flowgraph <file> [--mermaid]` — flow graph / Mermaid diagram
+- `agentguard context-flow <file>` — context flow analysis
+
+### Fixed
+- `pyproject.toml` build-backend corrected to `setuptools.build_meta`

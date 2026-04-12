@@ -102,3 +102,12 @@ Beyond tree view — show the actual flow:
 - Context flow: compression/truncation/expansion events, bandwidth analysis, bottleneck detection (context_flow.py)
 - 3 new CLI commands: propagation, flowgraph, context-flow
 - Tests: 148 → 189+
+
+### 2026-04-12 — Iterations 146-150: Deep semantics + wiring
+- Handoff chain analysis + context integrity scoring (propagation.py)
+- Span correlation: fingerprinting, failure-handoff causality, pattern detection (correlation.py)
+- Semantic trace diff: flow graph + context flow comparison (diff.py)
+- End-to-end deep analysis demo (examples/deep_analysis_demo.py)
+- All new modules wired into __init__.py exports + CLI
+- CHANGELOG updated
+- Tests: 189 → 209

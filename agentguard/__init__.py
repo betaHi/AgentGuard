@@ -35,6 +35,9 @@ from agentguard.sdk.handoff import record_handoff, mark_context_used, detect_con
 from agentguard.propagation import analyze_propagation, hypothetical_failure
 from agentguard.flowgraph import build_flow_graph
 from agentguard.context_flow import analyze_context_flow_deep
+from agentguard.correlation import analyze_correlations, fingerprint_span
+from agentguard.propagation import analyze_handoff_chains, compute_context_integrity
+from agentguard.diff import diff_flow_graphs, diff_context_flow
 
 __all__ = [
     "record_agent", "record_tool",
@@ -45,4 +48,7 @@ __all__ = [
     "analyze_propagation", "hypothetical_failure",
     "build_flow_graph",
     "analyze_context_flow_deep",
+    "analyze_correlations", "fingerprint_span",
+    "analyze_handoff_chains", "compute_context_integrity",
+    "diff_flow_graphs", "diff_context_flow",
 ]
