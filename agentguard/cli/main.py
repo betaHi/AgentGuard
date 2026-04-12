@@ -55,6 +55,43 @@ def _fmt_duration(ms: Optional[float]) -> str:
     if ms < 60000: return f"{ms/1000:.1f}s"
     return f"{ms/60000:.1f}m"
 
+def _load_trace_file(filepath: str) -> ExecutionTrace:
+    """Load and parse a trace JSON file with user-friendly error messages.
+
+    Args:
+        filepath: Path to the trace JSON file.
+
+    Returns:
+        Parsed ExecutionTrace.
+
+    Raises:
+        SystemExit: If file not found or JSON is invalid.
+    """
+    path = Path(filepath)
+    if not path.exists():
+        print(f"{C.RED}Error: File not found: {filepath}{C.RESET}", file=sys.stderr)
+        sys.exit(1)
+    try:
+        text = path.read_text(encoding="utf-8")
+    except PermissionError:
+        print(f"{C.RED}Error: Permission denied reading: {filepath}{C.RESET}", file=sys.stderr)
+        sys.exit(1)
+    except OSError as e:
+        print(f"{C.RED}Error: Cannot read file: {filepath} ({e}){C.RESET}", file=sys.stderr)
+        sys.exit(1)
+    try:
+        data = json.loads(text)
+    except json.JSONDecodeError as e:
+        print(f"{C.RED}Error: Invalid JSON in {filepath}: {e.args[0]}{C.RESET}", file=sys.stderr)
+        sys.exit(1)
+    try:
+        return ExecutionTrace.from_dict(data)
+    except (KeyError, TypeError, ValueError) as e:
+        print(f"{C.RED}Error: Invalid trace format in {filepath}: {e}{C.RESET}", file=sys.stderr)
+        sys.exit(1)
+
+
+
 
 def _render_tree(span: dict, indent: int = 0, is_last: bool = True, prefix: str = "") -> list[str]:
     lines = []
@@ -82,13 +119,8 @@ def _render_tree(span: dict, indent: int = 0, is_last: bool = True, prefix: str 
 
 def cmd_show(args):
     """Display a trace file."""
-    path = Path(args.file)
-    if not path.exists():
-        print(f"{C.RED}Error: File not found: {args.file}{C.RESET}", file=sys.stderr)
-        sys.exit(1)
-    
-    data = json.loads(path.read_text(encoding="utf-8"))
-    trace = ExecutionTrace.from_dict(data)
+    trace = _load_trace_file(args.file)
+    data = json.loads(Path(args.file).read_text(encoding="utf-8"))
     
     print(f"\n{C.BOLD}{'═' * 60}{C.RESET}")
     print(f"{C.BOLD}  🛡️  AgentGuard Trace Report{C.RESET}")
@@ -147,13 +179,7 @@ def cmd_list(args):
 
 def cmd_eval(args):
     """Evaluate a trace against rules."""
-    path = Path(args.file)
-    if not path.exists():
-        print(f"{C.RED}Error: File not found: {args.file}{C.RESET}", file=sys.stderr)
-        sys.exit(1)
-    
-    data = json.loads(path.read_text(encoding="utf-8"))
-    trace = ExecutionTrace.from_dict(data)
+    trace = _load_trace_file(args.file)
     
     # Load rules from config or CLI
     rules = []
@@ -236,13 +262,7 @@ def cmd_merge(args):
     """Merge distributed child traces into parent."""
     from agentguard.sdk.distributed import merge_child_traces
     
-    path = Path(args.file)
-    if not path.exists():
-        print(f"{C.RED}Error: {args.file} not found{C.RESET}", file=sys.stderr)
-        sys.exit(1)
-    
-    data = json.loads(path.read_text(encoding="utf-8"))
-    trace = ExecutionTrace.from_dict(data)
+    trace = _load_trace_file(args.file)
     traces_dir = str(path.parent)
     
     merged = merge_child_traces(trace, traces_dir, cleanup=not args.keep)
@@ -255,13 +275,7 @@ def cmd_validate(args):
     """Validate trace integrity."""
     from agentguard.validate import validate_trace
     
-    path = Path(args.file)
-    if not path.exists():
-        print(f"{C.RED}Error: {args.file} not found{C.RESET}", file=sys.stderr)
-        sys.exit(1)
-    
-    data = json.loads(path.read_text(encoding="utf-8"))
-    trace = ExecutionTrace.from_dict(data)
+    trace = _load_trace_file(args.file)
     result = validate_trace(trace)
     
     print(f"\n{C.BOLD}  🔍 Trace Validation{C.RESET}")
@@ -287,15 +301,8 @@ def cmd_diff(args):
     """Compare two traces side by side."""
     from agentguard.diff import diff_traces
     
-    for f_path in [args.trace_a, args.trace_b]:
-        if not Path(f_path).exists():
-            print(f"{C.RED}Error: {f_path} not found{C.RESET}", file=sys.stderr)
-            sys.exit(1)
-    
-    data_a = json.loads(Path(args.trace_a).read_text(encoding="utf-8"))
-    data_b = json.loads(Path(args.trace_b).read_text(encoding="utf-8"))
-    trace_a = ExecutionTrace.from_dict(data_a)
-    trace_b = ExecutionTrace.from_dict(data_b)
+    trace_a = _load_trace_file(args.trace_a)
+    trace_b = _load_trace_file(args.trace_b)
     
     result = diff_traces(trace_a, trace_b)
     
@@ -332,13 +339,7 @@ def cmd_diff(args):
 
 def cmd_analyze(args):
     """Analyze failure propagation and flow in a trace."""
-    path = Path(args.file)
-    if not path.exists():
-        print(f"{C.RED}Error: File not found: {args.file}{C.RESET}", file=sys.stderr)
-        sys.exit(1)
-    
-    data = json.loads(path.read_text(encoding="utf-8"))
-    trace = ExecutionTrace.from_dict(data)
+    trace = _load_trace_file(args.file)
     
     from agentguard.analysis import analyze_failures, analyze_flow, analyze_bottleneck, analyze_context_flow, analyze_retries, analyze_cost, analyze_timing
     
@@ -388,7 +389,7 @@ def cmd_propagation(args):
     from agentguard.core.trace import ExecutionTrace
     from agentguard.propagation import analyze_propagation
     
-    trace = ExecutionTrace.from_json(open(args.file).read())
+    trace = _load_trace_file(args.file)
     result = analyze_propagation(trace)
     print(result.to_report())
 
@@ -398,7 +399,7 @@ def cmd_flowgraph(args):
     from agentguard.core.trace import ExecutionTrace
     from agentguard.flowgraph import build_flow_graph
     
-    trace = ExecutionTrace.from_json(open(args.file).read())
+    trace = _load_trace_file(args.file)
     graph = build_flow_graph(trace)
     
     if args.mermaid:
@@ -412,7 +413,7 @@ def cmd_context_flow(args):
     from agentguard.core.trace import ExecutionTrace
     from agentguard.context_flow import analyze_context_flow_deep
     
-    trace = ExecutionTrace.from_json(open(args.file).read())
+    trace = _load_trace_file(args.file)
     result = analyze_context_flow_deep(trace)
     print(result.to_report())
 
@@ -422,7 +423,7 @@ def cmd_score(args):
     from agentguard.core.trace import ExecutionTrace
     from agentguard.scoring import score_trace
     
-    trace = ExecutionTrace.from_json(open(args.file).read())
+    trace = _load_trace_file(args.file)
     expected = args.expected_ms if hasattr(args, 'expected_ms') and args.expected_ms else None
     score = score_trace(trace, expected_duration_ms=expected)
     print(score.to_report())
@@ -458,7 +459,7 @@ def cmd_annotate(args):
     from agentguard.core.trace import ExecutionTrace
     from agentguard.annotations import auto_annotate
     
-    trace = ExecutionTrace.from_json(open(args.file).read())
+    trace = _load_trace_file(args.file)
     store = auto_annotate(trace)
     summary = store.summary()
     
@@ -477,7 +478,7 @@ def cmd_correlate(args):
     from agentguard.core.trace import ExecutionTrace
     from agentguard.correlation import analyze_correlations
     
-    trace = ExecutionTrace.from_json(open(args.file).read())
+    trace = _load_trace_file(args.file)
     result = analyze_correlations(trace)
     print(result.to_report())
 
@@ -488,7 +489,7 @@ def cmd_timeline(args):
     from agentguard.core.trace import ExecutionTrace
     from agentguard.timeline import build_timeline
     
-    trace = ExecutionTrace.from_json(open(args.file).read())
+    trace = _load_trace_file(args.file)
     tl = build_timeline(trace)
     print(tl.to_text(max_events=args.max or 50))
 
@@ -499,7 +500,7 @@ def cmd_metrics(args):
     from agentguard.metrics import extract_metrics
     import json as _json
     
-    trace = ExecutionTrace.from_json(open(args.file).read())
+    trace = _load_trace_file(args.file)
     m = extract_metrics(trace)
     
     if args.prometheus:
@@ -521,8 +522,8 @@ def cmd_span_diff(args):
     from agentguard.core.trace import ExecutionTrace
     from agentguard.span_diff import diff_spans
     
-    trace_a = ExecutionTrace.from_json(open(args.trace_a).read())
-    trace_b = ExecutionTrace.from_json(open(args.trace_b).read())
+    trace_a = _load_trace_file(args.trace_a)
+    trace_b = _load_trace_file(args.trace_b)
     result = diff_spans(trace_a, trace_b)
     print(result.to_report())
 
@@ -532,7 +533,7 @@ def cmd_sla(args):
     from agentguard.core.trace import ExecutionTrace
     from agentguard.sla import SLAChecker
     
-    trace = ExecutionTrace.from_json(open(args.file).read())
+    trace = _load_trace_file(args.file)
     checker = SLAChecker()
     
     if args.max_duration:
@@ -553,7 +554,7 @@ def cmd_dependencies(args):
     from agentguard.core.trace import ExecutionTrace
     from agentguard.dependency import build_dependency_graph
     
-    trace = ExecutionTrace.from_json(open(args.file).read())
+    trace = _load_trace_file(args.file)
     graph = build_dependency_graph(trace)
     
     if args.mermaid:
@@ -587,7 +588,7 @@ def cmd_summarize(args):
     from agentguard.core.trace import ExecutionTrace
     from agentguard.summarize import summarize_trace, summarize_brief
     
-    trace = ExecutionTrace.from_json(open(args.file).read())
+    trace = _load_trace_file(args.file)
     if args.brief:
         print(summarize_brief(trace))
     else:
@@ -599,7 +600,7 @@ def cmd_tree(args):
     from agentguard.core.trace import ExecutionTrace
     from agentguard.tree import tree_to_text
     
-    trace = ExecutionTrace.from_json(open(args.file).read())
+    trace = _load_trace_file(args.file)
     print(tree_to_text(trace))
 
 
@@ -608,8 +609,8 @@ def cmd_compare(args):
     from agentguard.core.trace import ExecutionTrace
     from agentguard.comparison import compare_traces
     
-    trace_a = ExecutionTrace.from_json(open(args.trace_a).read())
-    trace_b = ExecutionTrace.from_json(open(args.trace_b).read())
+    trace_a = _load_trace_file(args.trace_a)
+    trace_b = _load_trace_file(args.trace_b)
     result = compare_traces(trace_a, trace_b)
     print(result.to_report())
 

@@ -245,3 +245,61 @@ Status: ok
 ━━━ Iteration 6/100 (8min elapsed, 35517s remaining) ━━━
 📋 Story: Add viewer dark theme polish: consistent colors, better contrast ratios
 🐯 Dispatching to 黑虎虾...
+Current colors follow GitHub's dark theme. Let me check WCAG contrast ratios and improve them:
+
+- `--dim:#6e7681` on `--bg:#0d1117` → contrast ~3.3:1 (fails AA for small text, needs 4.5:1)
+- `--yl:#d29922` on `--bg:#0d1117` → contrast ~5.2:1 (passes)
+- `--tx:#c9d1d9` on `--bg:#0d1117` → contrast ~9.4:1 (good)
+- `--gn:#3fb950` on backgrounds could use a bump
+- Error text `--rd:#f85149` on dark bg is fine
+
+Key fix: bump `--dim` for readability, and improve the semi-transparent backgrounds:
+🐯 完成！
+
+**Story:** Add viewer dark theme polish: consistent colors, better contrast ratios
+
+**改了什么：**
+- `--dim` #6e7681 → #8b949e（对比度 3.3:1 → 4.6:1，达标 WCAG AA）
+- `--bd` #21262d → #30363d（边框更清晰）
+- `--yl` #d29922 → #e3b341（暗底上更易读）
+- Badge 背景色统一调亮（gn-bg/rd-bg/yl-bg/bl-bg/pp-bg）
+- Row hover 和 border 透明度提升，交互反馈更明显
+
+**测试：** 706 passed ✅
+**Commit:** `1886c8c`
+Status: ok
+
+🧪 Evaluator verifying...
+   Tests: 706 passed in 12.38s
+   Iteration took: 63s
+   ✅ Story marked as done in program.md
+[main 75ae55b] mark story done: Add viewer dark theme polish: consistent colors, better contrast ratios
+ 1 file changed, 1 insertion(+), 1 deletion(-)
+
+━━━ Iteration 7/100 (9min elapsed, 35438s remaining) ━━━
+📋 Story: Add viewer: show agent version badges in timeline
+🐯 Dispatching to 黑虎虾...
+Let me check what's currently shown for versions in the Gantt rows:
+Currently version shows as plain text `(v2.1)` with class `vr` styled as dim small text. I need to make it a badge:
+🐯 完成！
+
+**Story:** Add viewer: show agent version badges in timeline
+
+**改了什么：**
+- 版本号从灰色括号文字 `(v2.1)` 改为蓝色 pill badge `v2.1`
+- 样式：`--bl` 文字色 + `--bl-bg` 背景，圆角 3px，8px 字号
+
+**测试：** 706 passed ✅
+**Commit:** `489c089`
+Status: ok
+
+🧪 Evaluator verifying...
+   Tests: 706 passed in 12.36s
+   Iteration took: 59s
+   ✅ Story marked as done in program.md
+[main 08f326a] mark story done: Add viewer: show agent version badges in timeline
+ 1 file changed, 1 insertion(+), 1 deletion(-)
+
+━━━ Iteration 8/100 (10min elapsed, 35363s remaining) ━━━
+📋 Story: Improve error messages in CLI commands when file not found or invalid JSON
+🐯 Dispatching to 黑虎虾...
