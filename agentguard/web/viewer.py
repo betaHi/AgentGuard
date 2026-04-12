@@ -160,6 +160,10 @@ body{{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',system-ui,monospac
 .ff-h{{background:var(--yl-bg);color:var(--yl);}} .ff-u{{background:var(--rd-bg);color:var(--rd);}}
 .empty{{text-align:center;padding:60px;color:var(--dim);}}
 .ft{{text-align:center;padding:12px;color:var(--dim);font-size:10px;border-top:1px solid var(--bd);margin-top:14px;}}
+@media print{{body{{background:#fff;color:#000;}}.top-bar,.sidebar{{background:#f5f5f5;}}.main{{background:#fff;}}
+.ag-card,.d-box{{border-color:#ddd;background:#fafafa;}}.g-bar.ok{{background:#28a745;}}.g-bar.err{{background:#dc3545;}}
+.badge,.score-badge{{print-color-adjust:exact;-webkit-print-color-adjust:exact;}}}}
+@media(max-width:768px){{.layout{{grid-template-columns:1fr;}}.sidebar{{border-right:none;border-bottom:1px solid var(--bd);max-height:200px;}}}}
 </style></head><body>
 
 <div class="top-bar">
