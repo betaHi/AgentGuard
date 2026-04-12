@@ -483,6 +483,39 @@ def cmd_correlate(args):
 
 
 
+def cmd_timeline(args):
+    """Display trace as chronological event timeline."""
+    from agentguard.core.trace import ExecutionTrace
+    from agentguard.timeline import build_timeline
+    
+    trace = ExecutionTrace.from_json(open(args.file).read())
+    tl = build_timeline(trace)
+    print(tl.to_text(max_events=args.max or 50))
+
+
+def cmd_metrics(args):
+    """Extract metrics from a trace."""
+    from agentguard.core.trace import ExecutionTrace
+    from agentguard.metrics import extract_metrics
+    import json as _json
+    
+    trace = ExecutionTrace.from_json(open(args.file).read())
+    m = extract_metrics(trace)
+    
+    if args.prometheus:
+        print(m.to_prometheus())
+    else:
+        print(_json.dumps(m.to_dict(), indent=2))
+
+
+def cmd_schema(args):
+    """Print the trace JSON schema."""
+    from agentguard.schema import get_schema
+    import json as _json
+    print(_json.dumps(get_schema(), indent=2))
+
+
+
 def cmd_report(args):
     """Generate HTML report."""
     from agentguard.web.viewer import generate_timeline_html
@@ -569,6 +602,19 @@ def main():
     p = sub.add_parser("context-flow", help="Analyze context flow through pipeline")
     p.add_argument("file", help="Path to trace JSON file")
     
+    # timeline
+    p = sub.add_parser("timeline", help="Display trace as event timeline")
+    p.add_argument("file", help="Path to trace JSON file")
+    p.add_argument("--max", type=int, help="Max events to show")
+    
+    # metrics
+    p = sub.add_parser("metrics", help="Extract metrics from a trace")
+    p.add_argument("file", help="Path to trace JSON file")
+    p.add_argument("--prometheus", action="store_true", help="Output Prometheus format")
+    
+    # schema
+    p = sub.add_parser("schema", help="Print trace JSON schema")
+    
     # score
     p = sub.add_parser("score", help="Score a trace on quality dimensions")
     p.add_argument("file", help="Path to trace JSON file")
@@ -595,7 +641,7 @@ def main():
     
     args = parser.parse_args()
     
-    cmds = {"show": cmd_show, "list": cmd_list, "search": cmd_search, "eval": cmd_eval, "merge": cmd_merge, "validate": cmd_validate, "diff": cmd_diff, "analyze": cmd_analyze, "evolve": cmd_evolve, "propagation": cmd_propagation, "flowgraph": cmd_flowgraph, "context-flow": cmd_context_flow, "score": cmd_score, "aggregate": cmd_aggregate, "annotate": cmd_annotate, "correlate": cmd_correlate, "report": cmd_report, "guard": cmd_guard}
+    cmds = {"show": cmd_show, "list": cmd_list, "search": cmd_search, "eval": cmd_eval, "merge": cmd_merge, "validate": cmd_validate, "diff": cmd_diff, "analyze": cmd_analyze, "evolve": cmd_evolve, "propagation": cmd_propagation, "flowgraph": cmd_flowgraph, "context-flow": cmd_context_flow, "timeline": cmd_timeline, "metrics": cmd_metrics, "schema": cmd_schema, "score": cmd_score, "aggregate": cmd_aggregate, "annotate": cmd_annotate, "correlate": cmd_correlate, "report": cmd_report, "guard": cmd_guard}
     if args.command in cmds:
         cmds[args.command](args)
     else:
