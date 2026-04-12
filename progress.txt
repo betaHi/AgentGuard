@@ -366,3 +366,4 @@ REJECT: 15th identical diff. Logged to memory. Orchestrator needs a circuit brea
 [2026-04-12T14:15Z] Async traced_task() ACCEPTED by Planner — 5 tests, zero deps. Generator code at 56fe083 was correct, only progress.txt triggered REJECT.
 [2026-04-12T14:14:26Z] Iter 3 (0s): Merge getting-started.md + quickstart.md into one clear onboarding doc — NO CHANGES
 [2026-04-12T14:18:46Z] Iter 7 (0s): Create docs/api-reference.md with all public function signatures + examples — NO CHANGES
+[2026-04-12T14:25Z] api-reference.md ACCEPTED by Planner — 561 lines auto-generated from source. Code at 6452dac correct.

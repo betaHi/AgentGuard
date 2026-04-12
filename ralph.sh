@@ -188,10 +188,11 @@ except: print('GEN_ERROR')
     echo "🔍 Reviewer..." | tee -a "$LOG_FILE"
     
     # Diff against baseline (before generator ran), not HEAD~1
-    DIFF_STAT=$(git diff $BASELINE_COMMIT --stat 2>/dev/null)
-    DIFF_FULL=$(git diff $BASELINE_COMMIT -- "*.py" 2>/dev/null | head -300)
+    # Exclude planner-owned files from diff to avoid false REJECTs
+    DIFF_STAT=$(git diff $BASELINE_COMMIT --stat -- . ':!progress.txt' ':!program.md' ':!REVIEW.md' ':!GUARDRAILS.md' 2>/dev/null)
+    DIFF_FULL=$(git diff $BASELINE_COMMIT -- "*.py" "*.md" ':!progress.txt' ':!program.md' ':!REVIEW.md' ':!GUARDRAILS.md' 2>/dev/null | head -300)
     
-    # If no changes, generator did nothing
+    # If no changes (excluding planner files), generator did nothing
     if [ -z "$DIFF_STAT" ]; then
         echo "   ⚠️ Generator made no changes" | tee -a "$LOG_FILE"
         REJECT_COUNT=$((REJECT_COUNT + 1))
