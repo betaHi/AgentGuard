@@ -185,3 +185,39 @@ README 现在的产品表达方向是对的，而且比早期版本强很多。
 而是“analysis、viewer、examples 能不能始终讲同一个真实的故事”。
 
 现在并行示例的拓扑已经基本站住了。下一步如果 viewer 再继续跟上 analysis 的语义，AgentGuard 就会从一个已经很强的 trace / diagnostics 原型，进一步升级成一个更可信的 multi-agent orchestration observability 工具。
+
+---
+
+## 7. Sprint 1 修复记录 (2026-04-12)
+
+以下问题在 Sprint 1 中已修复：
+
+### §2.1 viewer ↔ analysis bottleneck 语义对齐
+- ✅ viewer sidebar 现在支持 tool-span bottleneck 卡片（不再只显示 agent）
+- ✅ 新增 7 个 viewer fidelity 测试，验证 viewer 不显示 phantom handoffs
+- ⚠️ 仍需深化：tool-level drill-down（点击 agent → 展开 tool 细节）
+
+### §2.2 线程上下文传播
+- ✅ TracingExecutor — ThreadPoolExecutor wrapper，自动传播 trace context
+- ✅ traced_task() — asyncio.create_task 的 trace-aware 版本
+- ✅ TraceThread — threading.Thread 的 trace-aware 版本
+- ⚠️ 仍需深化：ProcessPoolExecutor、框架 middleware（LangChain/CrewAI/AutoGen）
+
+### §2.3 examples 文档一致性
+- ✅ README audit 完成 — 移除了不存在的 `evolve` CLI 引用，修正了数字
+- ✅ getting-started.md 和 quickstart.md 合并
+
+### §2.4 README 叙事
+- ✅ README 数字更新：750+ tests, 15K+ LOC, 30+ CLI commands
+- ✅ 移除了 evolve CLI 引用
+
+### 新增能力
+- Q4 cost-yield analysis（9 个测试）
+- Q5 decision tracking + refactor（9 个测试，≤50 行函数）
+- Integration roundtrip test（8 个测试）
+- Span duration anomaly detection
+- Context truncation detection
+- Context flow waterfall chart in viewer
+- Multi-model pipeline example
+- Error recovery: timeout + partial result patterns
+- api-reference.md, configuration.md 文档
