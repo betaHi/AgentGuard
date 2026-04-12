@@ -184,3 +184,11 @@ Beyond tree view — show the actual flow:
 - Statistical analysis (stats.py)
 - ASCII visualization (ascii_viz.py): Gantt, status summary, distribution
 - Tests: 480 → 507
+
+### 2026-04-12 — Iterations 230-240
+- Plugin system (plugin.py): custom analyzers/exporters registry
+- Trace templates (templates.py): research, code_review, support, ETL
+- ASCII visualization (ascii_viz.py): Gantt chart, status summary
+- Schema compatibility + migration (compat.py)
+- Statistical analysis (stats.py)
+- Tests: 507 → 523
