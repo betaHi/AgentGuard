@@ -139,3 +139,11 @@ Beyond tree view — show the actual flow:
 - Trace summarizer (summarize.py): natural language summaries
 - Agent profiling (profile.py): per-agent stats across traces
 - Tests: 322 → 358
+
+### 2026-04-12 — Iterations 181-190: Integration + edge cases + alerting
+- Full integration test: 23 analysis modules tested on complex trace  
+- Extended edge cases: empty, 100-span, 50-deep, malformed, unicode
+- Span-level diff (span_diff.py): field-by-field comparison
+- Alert rules engine (alerts.py): declarative rules, severity, batch
+- README feature table
+- Tests: 358 → 418
