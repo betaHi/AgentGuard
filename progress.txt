@@ -372,3 +372,4 @@ REJECT: 15th identical diff. Logged to memory. Orchestrator needs a circuit brea
 [2026-04-12T14:37:40Z] Iter 3 (0s): Handoff: detect context truncation (compare input size vs what arrived at next agent) — NO CHANGES
 [2026-04-12T14:38:10Z] Iter 5 (0s): Span duration anomaly detection: flag spans 3x slower than historical baseline — NO CHANGES
 [2026-04-12T14:43:20Z] Iter 3 (0s): Span duration anomaly detection: flag spans 3x slower than historical baseline — NO CHANGES
+[2026-04-12T14:48:09Z] Iter 7 (0s): Viewer: context flow waterfall chart (context size at each handoff as bar) — NO CHANGES
