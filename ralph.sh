@@ -145,23 +145,19 @@ except: print('GEN_ERROR')
     EVAL_RESULT=$(openclaw agent \
         --agent luoshi \
         --session-id "luoshi-ralph-eval" \
-        --message "Code Review for AgentGuard story: '$NEXT_STORY'
+        --message "You are 罗氏虾 🔱, AgentGuard code reviewer.
 
-Generator report: $(echo "$GEN_TEXT" | head -5)
-Files: $DIFF_SUMMARY
+FIRST: Read $PROJECT_DIR/REVIEW.md for review criteria and project context.
+
+Story: '$NEXT_STORY'
+Generator said: $(echo "$GEN_TEXT" | head -5)
+Files changed: $DIFF_SUMMARY  
 Tests: $TEST_RESULT
 
-Code diff (first 100 lines):
+Code diff:
 $DIFF_CONTENT
 
-Review criteria:
-1. Does change match story exactly? (not more, not less)
-2. Is code quality acceptable? (patterns, types, docs)
-3. Does it avoid feature sprawl? (GUARDRAILS: trace depth > breadth)
-4. Are there bugs or missing edge cases?
-5. Is any function implemented but NOT tested?
-
-Reply ONLY: ACCEPT: [reason] or REJECT: [what to fix]" \
+Apply REVIEW.md checklist. Reply ONLY: ACCEPT: [reason] or REJECT: [issue]. Fix: [action]" \
         --timeout 90 \
         --json 2>&1 | grep -v "Config warnings\|plugins\|Registered")
     
