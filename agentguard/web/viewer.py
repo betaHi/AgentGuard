@@ -540,6 +540,58 @@ def _build_suggestions_panel(trace) -> str:
         items.append(f'<div class="item">{icon} <b>{_esc(s.agent)}</b> ({s.confidence:.0%}): {_esc(s.suggestion[:60])}</div>')
     return f'<div class="d-box" style="grid-column:1/-1"><h4>🧠 Learned Suggestions</h4><div class="items">{chr(10).join(items)}</div></div>'
 
+def _build_context_waterfall(ctx) -> str:
+    """Build a context flow waterfall chart showing size at each handoff.
+
+    Each handoff is rendered as a horizontal bar proportional to context
+    size, with color coding for anomalies (red=loss, yellow=bloat/truncation,
+    green=ok).
+    """
+    if not ctx.points:
+        return ""
+
+    max_size = max((p.size_bytes for p in ctx.points), default=1) or 1
+
+    bars = []
+    for p in ctx.points:
+        pct = (p.size_bytes / max_size) * 100
+        if p.anomaly in ("loss", "truncation"):
+            color = "var(--rd)"
+            icon = "\u26a0"
+        elif p.anomaly == "bloat":
+            color = "var(--yl)"
+            icon = "\u26a0"
+        else:
+            color = "var(--gn)"
+            icon = "\u2713"
+
+        size_str = f"{p.size_bytes:,}B" if p.size_bytes < 10000 else f"{p.size_bytes/1024:.1f}KB"
+        detail = ""
+        if hasattr(p, "truncation_detail") and p.truncation_detail:
+            detail = f' <span style="color:var(--dim);font-size:9px">\u2702 {_esc(p.truncation_detail)}</span>'
+        elif p.keys_lost:
+            detail = f' <span style="color:var(--rd);font-size:9px">lost: {_esc(", ".join(p.keys_lost[:3]))}</span>'
+
+        bars.append(
+            f'<div style="display:flex;align-items:center;gap:6px;margin:3px 0;font-size:10px">'
+            f'<span style="min-width:160px;color:var(--dim)">{icon} {_esc(p.from_agent)} \u2192 {_esc(p.to_agent)}</span>'
+            f'<div style="flex:1;height:14px;background:var(--bd);border-radius:3px;overflow:hidden">'
+            f'<div style="width:{max(pct,2):.0f}%;height:100%;background:{color};border-radius:3px"></div>'
+            f'</div>'
+            f'<span style="min-width:60px;text-align:right;color:var(--tx)">{size_str}</span>'
+            f'{detail}'
+            f'</div>'
+        )
+
+    return (
+        f'<div class="diag" style="margin-top:10px">'
+        f'<h3 style="font-size:11px;color:var(--br);margin-bottom:8px">'
+        f'\U0001f4ca Context Flow Waterfall ({len(ctx.points)} handoffs, {ctx.total_context_bytes:,}B total)</h3>'
+        f'<div style="padding:4px 8px">{"".join(bars)}</div>'
+        f'</div>'
+    )
+
+
 def _build_diagnostics(failures, bn, flow, ctx, retries=None, cost=None, error_report=None) -> str:
     # Failure panel
     fail_items = []
