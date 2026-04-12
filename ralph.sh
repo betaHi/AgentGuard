@@ -76,6 +76,9 @@ $NEXT_STORY
 - Changes committed with descriptive message
 - Minimal changes — only what the story requires
 
+## Previous Evaluator Feedback (if any)
+$(cat .evaluator-feedback.txt 2>/dev/null || echo "None — first attempt")
+
 ## Do NOT
 - Add new Python modules unless the story explicitly requires it
 - Modify program.md or progress.txt
@@ -162,10 +165,13 @@ except: print('EVAL_ERROR')
             ESCAPED=$(echo "$NEXT_STORY" | sed 's/[&/\\.]/\\&/g')
             sed -i "s/^- \[ \] ${ESCAPED}/- [x] ${ESCAPED}/" program.md
             echo "   ✅ ACCEPTED + marked done" | tee -a "$LOG_FILE"
+            rm -f .evaluator-feedback.txt
             git add program.md && git commit -m "mark done: $NEXT_STORY" 2>/dev/null || true
         fi
     else
         echo "   ❌ REJECTED — will retry next iteration" | tee -a "$LOG_FILE"
+        # Save evaluator feedback for next iteration
+        echo "$EVAL_TEXT" > .evaluator-feedback.txt
         # Revert the generator's commit so next iteration can try again
         git revert HEAD --no-edit 2>/dev/null || true
     fi

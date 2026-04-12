@@ -26,3 +26,11 @@
 [2026-04-12T06:37:42Z] Iter 5 (117s): Improve viewer Gantt chart: add zoom controls and time axis labels — 706 passed in 12.34s
 [2026-04-12T06:39:00Z] Iter 6 (63s): Add viewer dark theme polish: consistent colors, better contrast ratios — 706 passed in 12.38s
 [2026-04-12T06:40:16Z] Iter 7 (59s): Add viewer: show agent version badges in timeline — 706 passed in 12.36s
+[2026-04-12T06:43:12Z] Iter 1 (96s): Improve error messages in CLI commands when file not found or invalid JSON — Tests: 706 passed in 12.37s — Eval: There's a bug — `cmd_merge` references `path` which is no longer defined after refactoring to `_load_trace_file()`.
+
+REJECT: `cmd_merge` has a bug — line 266 references `path` (undefined after refactor); also `cmd_show` re-reads the file redundantly. Fix: pass `args.file` to `Path()` in `cmd_merge` for `traces_dir`, and remove the duplicate `json.loads` in `cmd_show`.
+[2026-04-12T06:44:05Z] Iter 2 (50s): Improve error messages in CLI commands when file not found or invalid JSON — Tests: 706 passed in 12.37s — Eval: There's a bug. In `cmd_merge`, after the refactor, line 265 still references `path` (from the old `path = Path(args.file)`) which was removed. `traces_dir = str(path.parent)` will crash with `NameError`.
+
+Also, the commit message says "ralph.sh v3: adds Evaluator agent" — it doesn't describe the actual story change at all. And `ralph.sh` + `.ralph-log.txt` + `.ralph-output.txt` are included in the commit, which are infrastructure files unrelated to the story.
+
+REJECT: `cmd_merge` has a `NameError` — references undefined `path` variable after refactor (line ~265: `traces_dir = str(path.parent)`). Also commit includes unrelated files (ralph.sh, .ralph-log.txt, .ralph-output.txt) and commit message doesn't describe the story. Fix the bug, split out unrelated files, use a descriptive commit message.

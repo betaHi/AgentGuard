@@ -263,7 +263,7 @@ def cmd_merge(args):
     from agentguard.sdk.distributed import merge_child_traces
     
     trace = _load_trace_file(args.file)
-    traces_dir = str(path.parent)
+    traces_dir = str(Path(args.file).parent)
     
     merged = merge_child_traces(trace, traces_dir, cleanup=not args.keep)
     print(f"  Merged {len(merged.spans)} spans into {args.file}")
