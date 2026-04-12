@@ -264,3 +264,88 @@ class AsyncToolContext:
         """
         if self._span:
             self._span.output_data = output
+
+
+class TracingExecutor:
+    """ThreadPoolExecutor wrapper that propagates trace context to workers.
+
+    Without this, spans created in worker threads become orphans because
+    the thread-local span stack is empty. TracingExecutor captures the
+    parent context at submit time and restores it in each worker before
+    the callable runs.
+
+    Uses only stdlib (concurrent.futures) — zero external dependencies.
+
+    Example::
+
+        from agentguard.sdk.context import TracingExecutor
+
+        with TracingExecutor(max_workers=4) as executor:
+            futures = [
+                executor.submit(my_agent, task)
+                for task in tasks
+            ]
+            results = [f.result() for f in futures]
+    """
+
+    def __init__(self, max_workers: Optional[int] = None) -> None:
+        from concurrent.futures import ThreadPoolExecutor
+        self._executor = ThreadPoolExecutor(max_workers=max_workers)
+
+    def submit(self, fn: Any, *args: Any, **kwargs: Any) -> Any:
+        """Submit a callable with trace context propagation.
+
+        Captures the current span stack and restores it in the worker
+        thread before calling fn.
+
+        Args:
+            fn: Callable to execute in the thread pool.
+            *args: Positional arguments for fn.
+            **kwargs: Keyword arguments for fn.
+
+        Returns:
+            A Future representing the pending result.
+        """
+        recorder = get_recorder()
+        parent_context = recorder.capture_context()
+
+        def _wrapped() -> Any:
+            recorder.restore_context(parent_context)
+            return fn(*args, **kwargs)
+
+        return self._executor.submit(_wrapped)
+
+    def map(self, fn: Any, *iterables: Any, timeout: Optional[float] = None) -> Any:
+        """Map fn over iterables with trace context propagation.
+
+        Each invocation receives the parent trace context so spans
+        are correctly parented.
+
+        Args:
+            fn: Callable to map.
+            *iterables: Input iterables.
+            timeout: Max seconds to wait for results.
+
+        Returns:
+            Iterator of results.
+        """
+        recorder = get_recorder()
+        parent_context = recorder.capture_context()
+
+        def _make_wrapped(item_args: tuple) -> Any:
+            recorder.restore_context(parent_context)
+            return fn(*item_args)
+
+        # Zip iterables into tuples for _make_wrapped
+        zipped = zip(*iterables)
+        return self._executor.map(_make_wrapped, zipped, timeout=timeout)
+
+    def shutdown(self, wait: bool = True) -> None:
+        """Shut down the executor."""
+        self._executor.shutdown(wait=wait)
+
+    def __enter__(self) -> "TracingExecutor":
+        return self
+
+    def __exit__(self, exc_type: Any, exc_val: Any, exc_tb: Any) -> None:
+        self.shutdown(wait=True)
