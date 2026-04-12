@@ -622,3 +622,65 @@ def analyze_cost(trace: ExecutionTrace) -> dict:
         "agent_costs": {k: {**v, "cost_usd": round(v["cost_usd"], 4)} for k, v in agent_costs.items()},
         "tool_costs": {k: {**v, "cost_usd": round(v["cost_usd"], 4)} for k, v in tool_costs.items()},
     }
+
+
+def analyze_timing(trace: ExecutionTrace) -> dict:
+    """Analyze timing patterns — detect gaps, overlaps, and idle time.
+    
+    Identifies:
+    - Time gaps between sequential spans (potential idle/waiting time)
+    - Overlapping spans (parallel execution)
+    - Agent utilization (active vs idle time)
+    """
+    from datetime import datetime
+    
+    if not trace.spans or not trace.started_at:
+        return {"gaps": [], "overlaps": 0, "utilization": 0}
+    
+    # Parse all span times
+    timed = []
+    for s in trace.spans:
+        try:
+            start = datetime.fromisoformat(s.started_at) if s.started_at else None
+            end = datetime.fromisoformat(s.ended_at) if s.ended_at else None
+            if start and end:
+                timed.append({"name": s.name, "start": start, "end": end, "dur_ms": s.duration_ms or 0})
+        except:
+            pass
+    
+    if len(timed) < 2:
+        return {"gaps": [], "overlaps": 0, "utilization": 1.0}
+    
+    # Sort by start time
+    timed.sort(key=lambda x: x["start"])
+    
+    # Detect gaps
+    gaps = []
+    for i in range(len(timed) - 1):
+        gap_ms = (timed[i+1]["start"] - timed[i]["end"]).total_seconds() * 1000
+        if gap_ms > 10:  # >10ms gap is noteworthy
+            gaps.append({
+                "after": timed[i]["name"],
+                "before": timed[i+1]["name"],
+                "gap_ms": round(gap_ms, 1),
+            })
+    
+    # Detect overlaps (parallel execution)
+    overlaps = 0
+    for i in range(len(timed)):
+        for j in range(i+1, len(timed)):
+            if timed[j]["start"] < timed[i]["end"]:
+                overlaps += 1
+    
+    # Utilization: total span time / trace time
+    total_span_ms = sum(t["dur_ms"] for t in timed)
+    trace_ms = trace.duration_ms or 1
+    utilization = min(1.0, total_span_ms / trace_ms)
+    
+    return {
+        "gaps": gaps[:10],
+        "gap_count": len(gaps),
+        "total_gap_ms": sum(g["gap_ms"] for g in gaps),
+        "overlaps": overlaps,
+        "utilization": round(utilization, 2),
+    }

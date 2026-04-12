@@ -239,3 +239,12 @@ def test_cost_analysis():
     assert result["total_tokens"] == 2500
     assert result["total_cost_usd"] == 0.05
     assert result["most_expensive"] == "llm"
+
+
+def test_timing_analysis():
+    """Timing analysis detects basic patterns."""
+    from agentguard.analysis import analyze_timing
+    trace = _make_flow_trace()
+    result = analyze_timing(trace)
+    assert "utilization" in result
+    assert 0 <= result["utilization"] <= 1.0
