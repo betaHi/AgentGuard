@@ -17,7 +17,7 @@ from typing import Any, Optional
 
 from agentguard.core.trace import ExecutionTrace, Span, SpanType, SpanStatus
 
-__all__ = ['FailureNode', 'FailureAnalysis', 'analyze_failures', 'HandoffInfo', 'FlowAnalysis', 'analyze_flow', 'BottleneckReport', 'analyze_bottleneck', 'ContextFlowPoint', 'ContextFlowReport', 'analyze_context_flow', 'analyze_retries', 'analyze_cost', 'analyze_cost_yield', 'CostYieldEntry', 'CostYieldReport', 'DecisionRecord', 'DecisionAnalysis', 'analyze_decisions', 'DurationAnomaly', 'DurationAnomalyReport', 'detect_duration_anomalies', 'analyze_timing']
+__all__ = ['FailureNode', 'FailureAnalysis', 'analyze_failures', 'HandoffInfo', 'FlowAnalysis', 'analyze_flow', 'BottleneckReport', 'analyze_bottleneck', 'ContextFlowPoint', 'ContextFlowReport', 'analyze_context_flow', 'analyze_retries', 'analyze_cost', 'analyze_cost_yield', 'CostYieldEntry', 'CostYieldReport', 'DecisionRecord', 'DecisionAnalysis', 'analyze_decisions', 'DurationAnomaly', 'DurationAnomalyReport', 'detect_duration_anomalies', 'analyze_timing', 'CounterfactualResult', 'CounterfactualAnalysis', 'analyze_counterfactual']
 
 
 @dataclass
@@ -1298,3 +1298,228 @@ def analyze_timing(trace: ExecutionTrace) -> dict:
         "overlaps": overlaps,
         "utilization": round(utilization, 2),
     }
+
+
+@dataclass
+class CounterfactualResult:
+    """Comparison of actual decision vs best alternative path.
+
+    Why counterfactual: knowing what DID happen isn't enough.
+    Q5 asks whether the orchestrator chose optimally. We compare
+    the chosen agent's actual outcome against alternatives that
+    ran elsewhere in the trace (or historical data).
+    """
+    coordinator: str
+    chosen_agent: str
+    chosen_status: str
+    chosen_duration_ms: Optional[float]
+    best_alternative: Optional[str]
+    best_alt_status: Optional[str]
+    best_alt_duration_ms: Optional[float]
+    regret_ms: Optional[float]  # chosen_duration - best_alt_duration (positive = regret)
+    chosen_failed: bool
+    best_alt_failed: bool
+    verdict: str  # "optimal", "suboptimal", "catastrophic", "no_alternatives"
+
+    def to_dict(self) -> dict[str, Any]:
+        return {
+            "coordinator": self.coordinator,
+            "chosen": self.chosen_agent,
+            "chosen_status": self.chosen_status,
+            "chosen_duration_ms": self.chosen_duration_ms,
+            "best_alternative": self.best_alternative,
+            "best_alt_status": self.best_alt_status,
+            "best_alt_duration_ms": self.best_alt_duration_ms,
+            "regret_ms": round(self.regret_ms, 1) if self.regret_ms is not None else None,
+            "chosen_failed": self.chosen_failed,
+            "best_alt_failed": self.best_alt_failed,
+            "verdict": self.verdict,
+        }
+
+
+@dataclass
+class CounterfactualAnalysis:
+    """Aggregated counterfactual analysis across all decisions."""
+    results: list[CounterfactualResult]
+    total_decisions: int
+    optimal_count: int
+    suboptimal_count: int
+    catastrophic_count: int  # chose agent that failed, alternative succeeded
+    total_regret_ms: float  # sum of positive regrets
+
+    def to_dict(self) -> dict[str, Any]:
+        return {
+            "total_decisions": self.total_decisions,
+            "optimal": self.optimal_count,
+            "suboptimal": self.suboptimal_count,
+            "catastrophic": self.catastrophic_count,
+            "total_regret_ms": round(self.total_regret_ms, 1),
+            "results": [r.to_dict() for r in self.results],
+        }
+
+    def to_report(self) -> str:
+        lines = [
+            "# Counterfactual Decision Analysis", "",
+            f"Decisions: {self.total_decisions}",
+            f"Optimal: {self.optimal_count}, "
+            f"Suboptimal: {self.suboptimal_count}, "
+            f"Catastrophic: {self.catastrophic_count}",
+            f"Total regret: {self.total_regret_ms:.0f}ms", "",
+        ]
+        for r in self.results:
+            icon = _verdict_icon(r.verdict)
+            lines.append(f"{icon} **{r.coordinator}** chose **{r.chosen_agent}**")
+            dur = f" ({r.chosen_duration_ms:.0f}ms)" if r.chosen_duration_ms else ""
+            lines.append(f"  Actual: {r.chosen_status}{dur}")
+            if r.best_alternative:
+                alt_dur = f" ({r.best_alt_duration_ms:.0f}ms)" if r.best_alt_duration_ms else ""
+                lines.append(f"  Best alt: {r.best_alternative} → {r.best_alt_status}{alt_dur}")
+            if r.regret_ms and r.regret_ms > 0:
+                lines.append(f"  Regret: +{r.regret_ms:.0f}ms")
+            lines.append("")
+        return "\n".join(lines)
+
+
+def _verdict_icon(verdict: str) -> str:
+    """Map verdict to display icon."""
+    return {"optimal": "\u2705", "suboptimal": "\u26a0\ufe0f",
+            "catastrophic": "\u274c", "no_alternatives": "\u2796"}.get(verdict, "?")
+
+
+def _find_agent_performance(
+    agent_name: str, trace: ExecutionTrace
+) -> tuple[Optional[str], Optional[float]]:
+    """Find an agent's best performance in the trace.
+
+    Searches all spans matching the agent name to get status and duration.
+    Returns (status, duration_ms) or (None, None) if not found.
+    """
+    best_status = None
+    best_duration = None
+    for s in trace.spans:
+        if s.name != agent_name or s.span_type != SpanType.AGENT:
+            continue
+        dur = s.duration_ms
+        status = s.status.value if s.status else "unknown"
+        # Prefer completed over failed, then shortest duration
+        if best_status is None:
+            best_status, best_duration = status, dur
+        elif status == "completed" and best_status != "completed":
+            best_status, best_duration = status, dur
+        elif status == best_status and dur is not None:
+            if best_duration is None or dur < best_duration:
+                best_duration = dur
+    return best_status, best_duration
+
+
+def _evaluate_single_decision(
+    decision: DecisionRecord, trace: ExecutionTrace
+) -> CounterfactualResult:
+    """Compare one decision's chosen agent against its alternatives."""
+    chosen_dur = decision.downstream_duration_ms
+    chosen_failed = decision.led_to_failure
+    chosen_status = decision.downstream_status
+
+    best_alt = None
+    best_alt_status = None
+    best_alt_dur = None
+    best_alt_failed = True
+
+    for alt_name in decision.alternatives:
+        alt_status, alt_dur = _find_agent_performance(alt_name, trace)
+        if alt_status is None:
+            continue  # alternative never ran, can't compare
+        alt_is_failed = alt_status == "failed"
+        if _is_better(alt_is_failed, alt_dur, best_alt_failed, best_alt_dur):
+            best_alt = alt_name
+            best_alt_status = alt_status
+            best_alt_dur = alt_dur
+            best_alt_failed = alt_is_failed
+
+    regret = _compute_regret(chosen_dur, best_alt_dur)
+    verdict = _determine_verdict(
+        chosen_failed, best_alt, best_alt_failed, regret
+    )
+
+    return CounterfactualResult(
+        coordinator=decision.coordinator,
+        chosen_agent=decision.chosen_agent,
+        chosen_status=chosen_status,
+        chosen_duration_ms=chosen_dur,
+        best_alternative=best_alt,
+        best_alt_status=best_alt_status,
+        best_alt_duration_ms=best_alt_dur,
+        regret_ms=regret,
+        chosen_failed=chosen_failed,
+        best_alt_failed=best_alt_failed if best_alt else True,
+        verdict=verdict,
+    )
+
+
+def _is_better(
+    alt_failed: bool, alt_dur: Optional[float],
+    best_failed: bool, best_dur: Optional[float],
+) -> bool:
+    """Is this alternative better than current best?"""
+    if not alt_failed and best_failed:
+        return True
+    if alt_failed == best_failed and alt_dur is not None:
+        if best_dur is None or alt_dur < best_dur:
+            return True
+    return False
+
+
+def _compute_regret(
+    chosen_dur: Optional[float], best_alt_dur: Optional[float]
+) -> Optional[float]:
+    """Compute time regret (positive = chose slower path)."""
+    if chosen_dur is not None and best_alt_dur is not None:
+        return chosen_dur - best_alt_dur
+    return None
+
+
+def _determine_verdict(
+    chosen_failed: bool,
+    best_alt: Optional[str],
+    best_alt_failed: bool,
+    regret: Optional[float],
+) -> str:
+    """Classify decision quality."""
+    if best_alt is None:
+        return "no_alternatives"
+    if chosen_failed and not best_alt_failed:
+        return "catastrophic"
+    if regret is not None and regret > 0:
+        return "suboptimal"
+    return "optimal"
+
+
+def analyze_counterfactual(trace: ExecutionTrace) -> CounterfactualAnalysis:
+    """Compare actual decisions against best alternative paths.
+
+    For each orchestration decision, finds the best alternative that
+    actually ran in the trace and compares outcomes. This answers Q5:
+    'Was the orchestrator's decision optimal?'
+
+    Limitations: can only compare against alternatives that ran.
+    Alternatives that never executed get no counterfactual score.
+    """
+    da = analyze_decisions(trace)
+    results = [_evaluate_single_decision(d, trace) for d in da.decisions]
+
+    optimal = sum(1 for r in results if r.verdict == "optimal")
+    suboptimal = sum(1 for r in results if r.verdict == "suboptimal")
+    catastrophic = sum(1 for r in results if r.verdict == "catastrophic")
+    total_regret = sum(
+        r.regret_ms for r in results
+        if r.regret_ms is not None and r.regret_ms > 0
+    )
+
+    return CounterfactualAnalysis(
+        results=results,
+        total_decisions=len(results),
+        optimal_count=optimal,
+        suboptimal_count=suboptimal,
+        catastrophic_count=catastrophic,
+        total_regret_ms=total_regret,
+    )
