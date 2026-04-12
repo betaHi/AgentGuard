@@ -382,3 +382,34 @@ def test_validate_then_analyze():
     if v.valid:
         f = analyze_failures(trace)
         assert f.total_failed_spans == 0
+
+
+def test_span_with_all_experimental_fields_roundtrip():
+    """Span with ALL experimental fields survives JSON roundtrip."""
+    trace = ExecutionTrace(task="full-fields")
+    s = Span(
+        name="full-span", span_type=SpanType.AGENT,
+        handoff_from="agent-a", handoff_to="agent-b",
+        context_passed={"key": "val"}, context_size_bytes=500,
+        caused_by="other-span-id", failure_handled=True,
+        retry_count=2, retry_of="orig-span",
+        tags=["prod", "v2"], token_count=1500, estimated_cost_usd=0.03,
+        metadata={"custom": "data"},
+    )
+    s.complete(output={"result": "ok"})
+    trace.add_span(s)
+    trace.complete()
+    
+    j = trace.to_json()
+    loaded = ExecutionTrace.from_json(j)
+    ls = loaded.spans[0]
+    
+    assert ls.handoff_from == "agent-a"
+    assert ls.handoff_to == "agent-b"
+    assert ls.context_size_bytes == 500
+    assert ls.failure_handled is True
+    assert ls.retry_count == 2
+    assert ls.retry_of == "orig-span"
+    assert ls.tags == ["prod", "v2"]
+    assert ls.token_count == 1500
+    assert ls.estimated_cost_usd == 0.03
