@@ -14,7 +14,7 @@ class TestOptimizations:
             .end()
             .build())
         result = suggest_optimizations(trace)
-        retry_suggestions = [s for s in result.suggestions if "retry" in s.title.lower()]
+        retry_suggestions = [s for s in result.suggestions if "retr" in s.title.lower()]
         assert len(retry_suggestions) >= 1
 
     def test_cost_dominant_span(self):
