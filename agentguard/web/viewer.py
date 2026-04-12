@@ -280,6 +280,16 @@ def _build_sidebar(trace: ExecutionTrace, failures, bn) -> str:
 <div class="ag-bar"><div class="ag-bar-fill" style="width:{max(pct,2):.0f}%;background:{bar_color}"></div></div>
 </div>''')
     
+        # LLM call summary
+    llm_spans = [s for s in trace.spans if s.span_type == SpanType.LLM_CALL]
+    if llm_spans:
+        cards.append('<div style="margin-top:8px;border-top:1px solid var(--bd);padding-top:8px">')
+        cards.append(f'<h2 style="font-size:10px;text-transform:uppercase;letter-spacing:1px;color:var(--dim);margin-bottom:6px">LLM Calls ({len(llm_spans)})</h2>')
+        total_tokens = sum(s.token_count or 0 for s in llm_spans)
+        total_cost = sum(s.estimated_cost_usd or 0 for s in llm_spans)
+        cards.append(f'<div class="ag-card"><div class="ag-stats"><span>{total_tokens:,} tokens</span><span>${total_cost:.4f}</span></div></div>')
+        cards.append('</div>')
+    
     return "\n".join(cards)
 
 
@@ -486,7 +496,7 @@ def _build_diagnostics(failures, bn, flow, ctx, retries=None, cost=None) -> str:
 <div class="d-box">
 <h4>🔀 Handoff Flow</h4>
 <div class="val">{len(flow.handoffs)} handoffs</div>
-<div class="det">Total: {ctx.total_context_bytes:,}B</div>
+<div class="det">Total: {ctx.total_context_bytes:,}B · Anomalies: {len(ctx.anomalies)}</div>
 <div class="items">{ho_html}</div>
 </div>
 
