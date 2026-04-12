@@ -122,7 +122,18 @@ def record_tool(
 
 
 def _safe_serialize(data: Any) -> Any:
-    """Attempt to make data JSON-serializable."""
+    """Attempt to make data JSON-serializable.
+
+    Recursively converts data to JSON-safe types. Non-serializable objects
+    are converted to their string representation.
+
+    Args:
+        data: Any Python object to serialize.
+
+    Returns:
+        A JSON-serializable version of the input, or ``"<unserializable>"``
+        as a last resort.
+    """
     if data is None:
         return None
     if isinstance(data, (str, int, float, bool)):

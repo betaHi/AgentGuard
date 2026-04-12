@@ -16,7 +16,23 @@ from agentguard.sdk.recorder import get_recorder
 
 
 class ToolContext:
-    """Context manager for recording a tool call."""
+    """Context manager for recording a single tool call as a trace span.
+
+    Creates a TOOL span on entry and completes/fails it on exit. Nest
+    inside an ``AgentTrace`` to establish parent-child relationships.
+
+    Args:
+        name: Tool name (e.g., ``"web_search"``, ``"db_query"``).
+        input_data: Input passed to the tool. Must be JSON-serializable.
+        metadata: Additional key-value metadata for the span.
+
+    Example::
+
+        with AgentTrace(name="agent") as agent:
+            with agent.tool("search", input_data={"q": "AI"}) as t:
+                results = search("AI")
+                t.set_output(results)
+    """
     
     def __init__(self, name: str, input_data: Any = None, metadata: Optional[dict] = None):
         self.name = name
@@ -47,6 +63,11 @@ class ToolContext:
         return False
     
     def set_output(self, output: Any) -> None:
+        """Store the tool's output data on the span.
+
+        Args:
+            output: Result data. Must be JSON-serializable.
+        """
         if self._span:
             self._span.output_data = output
 
@@ -67,6 +88,13 @@ class AgentTrace:
     """
     
     def __init__(self, name: str, version: str = "latest", metadata: Optional[dict] = None):
+        """Initialize an agent trace context.
+
+        Args:
+            name: Agent name (e.g., ``"researcher"``).
+            version: Agent version string (e.g., ``"v2.1"``).
+            metadata: Additional key-value metadata for the span.
+        """
         self.name = name
         self.version = version
         self._metadata = {"agent_version": version, **(metadata or {})}
@@ -94,18 +122,43 @@ class AgentTrace:
         return False
     
     def set_output(self, output: Any) -> None:
+        """Store the agent's output data on the span.
+
+        Args:
+            output: Result data. Must be JSON-serializable.
+        """
         if self._span:
             self._span.output_data = output
     
     def tool(self, name: str, input_data: Any = None, metadata: Optional[dict] = None) -> ToolContext:
-        """Create a tool context within this agent."""
+        """Create a nested tool context within this agent.
+
+        The returned ``ToolContext`` will have this agent's span as its parent.
+
+        Args:
+            name: Tool name.
+            input_data: Input to the tool. Must be JSON-serializable.
+            metadata: Additional key-value metadata.
+
+        Returns:
+            A ``ToolContext`` to use as a context manager.
+        """
         return ToolContext(name=name, input_data=input_data, metadata=metadata)
 
 
 class AsyncAgentTrace:
     """Async context manager for recording agent execution.
-    
-    Example:
+
+    Async equivalent of ``AgentTrace``. Use with ``async with`` for agents
+    that perform async I/O.
+
+    Args:
+        name: Agent name.
+        version: Agent version string.
+        metadata: Additional key-value metadata.
+
+    Example::
+
         async with AsyncAgentTrace(name="my-agent", version="v1") as agent:
             async with agent.tool("search") as t:
                 results = await search(query)
@@ -141,15 +194,39 @@ class AsyncAgentTrace:
         return False
     
     def set_output(self, output: Any) -> None:
+        """Store the agent's output data on the span.
+
+        Args:
+            output: Result data. Must be JSON-serializable.
+        """
         if self._span:
             self._span.output_data = output
     
     def tool(self, name: str, input_data: Any = None, metadata: Optional[dict] = None) -> AsyncToolContext:
+        """Create a nested async tool context within this agent.
+
+        Args:
+            name: Tool name.
+            input_data: Input to the tool.
+            metadata: Additional key-value metadata.
+
+        Returns:
+            An ``AsyncToolContext`` to use with ``async with``.
+        """
         return AsyncToolContext(name=name, input_data=input_data, metadata=metadata)
 
 
 class AsyncToolContext:
-    """Async context manager for recording tool calls."""
+    """Async context manager for recording tool calls.
+
+    Async equivalent of ``ToolContext``. Creates a TOOL span on async
+    entry and completes/fails it on async exit.
+
+    Args:
+        name: Tool name.
+        input_data: Input to the tool. Must be JSON-serializable.
+        metadata: Additional key-value metadata.
+    """
     
     def __init__(self, name: str, input_data: Any = None, metadata: Optional[dict] = None):
         self.name = name
@@ -180,5 +257,10 @@ class AsyncToolContext:
         return False
     
     def set_output(self, output: Any) -> None:
+        """Store the tool's output data on the span.
+
+        Args:
+            output: Result data. Must be JSON-serializable.
+        """
         if self._span:
             self._span.output_data = output
