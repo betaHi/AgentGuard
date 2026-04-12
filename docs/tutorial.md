@@ -269,4 +269,4 @@ Verifies Python version, core modules, traces directory, and config.
 - Browse [examples/](../examples/) for realistic pipelines
 - See [examples.md](examples.md) for the example catalog
 - See [architecture.md](architecture.md) for system design
-- See [quickstart.md](quickstart.md) for a condensed reference
+- See [getting-started.md](getting-started.md) for the onboarding guide

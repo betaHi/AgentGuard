@@ -35,7 +35,7 @@
 
 ### P1: SDK ergonomics for parallel (current-state-review §2.2)
 - [x] Add TracingExecutor (ThreadPoolExecutor wrapper that propagates trace context)
-- [S] Add async context propagation for asyncio.create_task (SKIPPED: 3x REJECT)
+- [x] Add async context propagation for asyncio.create_task
 
 ### P2: Docs/README consistency (current-state-review §2.3, §2.4)
 - [ ] Merge getting-started.md + quickstart.md into one clear onboarding doc

@@ -168,10 +168,10 @@ except: print('GEN_ERROR')
     echo "$GEN_TEXT" | head -20 | tee -a "$LOG_FILE"
     
     # ── AUTO-REVERT PLANNER FILES (generator should not touch these) ──
-    git checkout HEAD -- progress.txt 2>/dev/null || true
-    git checkout HEAD -- program.md 2>/dev/null || true
-    git checkout HEAD -- REVIEW.md 2>/dev/null || true
-    git checkout HEAD -- GUARDRAILS.md 2>/dev/null || true
+    git checkout $BASELINE_COMMIT -- progress.txt 2>/dev/null || true
+    git checkout $BASELINE_COMMIT -- program.md 2>/dev/null || true
+    git checkout $BASELINE_COMMIT -- REVIEW.md 2>/dev/null || true
+    git checkout $BASELINE_COMMIT -- GUARDRAILS.md 2>/dev/null || true
     # Re-add and amend if anything was reverted
     if ! git diff --cached --quiet 2>/dev/null || ! git diff --quiet -- progress.txt program.md REVIEW.md GUARDRAILS.md 2>/dev/null; then
         git add progress.txt program.md REVIEW.md GUARDRAILS.md 2>/dev/null || true
