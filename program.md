@@ -59,7 +59,7 @@ Focus: Make README, examples, analysis, and viewer tell the same story.
 - [x] Thread safety verification (20 concurrent agents)
 - [x] Align docs/examples.md descriptions with actual example behavior
 - [x] Remove "real failures, real fallbacks" overstatement from README
-- [ ] Fix viewer: only show handoffs confirmed by analysis layer (not inferred from sequence)
+- [x] Fix viewer: only show handoffs confirmed by analysis layer (not inferred from sequence)
 - [ ] Make subprocess example a true cross-process trace (not inline simulation)
 - [ ] Stabilize coding_pipeline output so diagnostics match documentation every run
 
