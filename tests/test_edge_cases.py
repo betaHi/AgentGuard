@@ -299,3 +299,86 @@ def test_html_xss_prevention():
         
         # Escaped versions SHOULD appear
         assert '&lt;script&gt;' in html_content, "Content should be HTML-escaped"
+
+
+# --- Analysis robustness ---
+
+def test_analysis_on_trace_with_only_tools():
+    """Analysis works on trace with no agents (only tools)."""
+    from agentguard.analysis import analyze_failures, analyze_flow, analyze_bottleneck
+    
+    trace = ExecutionTrace(task="tools-only")
+    t1 = Span(name="search", span_type=SpanType.TOOL)
+    t1.complete()
+    t2 = Span(name="write", span_type=SpanType.TOOL)
+    t2.fail("disk full")
+    trace.add_span(t1)
+    trace.add_span(t2)
+    trace.complete()
+    
+    f = analyze_failures(trace)
+    assert f.total_failed_spans == 1
+    
+    fl = analyze_flow(trace)
+    assert fl.tool_count == 2
+    
+    # bottleneck should handle no agents gracefully
+    bn = analyze_bottleneck(trace)
+    assert bn.bottleneck_span != ""
+
+
+def test_analysis_on_single_agent():
+    """Analysis works on minimal trace."""
+    from agentguard.analysis import analyze_failures, analyze_flow
+    
+    trace = ExecutionTrace(task="minimal")
+    s = Span(name="solo", span_type=SpanType.AGENT)
+    s.complete()
+    trace.add_span(s)
+    trace.complete()
+    
+    f = analyze_failures(trace)
+    assert f.resilience_score == 1.0
+    
+    fl = analyze_flow(trace)
+    assert fl.agent_count == 1
+
+
+def test_evolve_on_clean_trace():
+    """Evolve engine doesn't crash on trace with no issues."""
+    from agentguard.evolve import EvolutionEngine
+    
+    with tempfile.TemporaryDirectory() as tmpdir:
+        engine = EvolutionEngine(knowledge_dir=f"{tmpdir}/kb")
+        
+        trace = ExecutionTrace(task="clean")
+        s = Span(name="perfect-agent", span_type=SpanType.AGENT)
+        s.complete(output={"result": "ok"})
+        trace.add_span(s)
+        trace.complete()
+        
+        reflection = engine.reflect(trace)
+        # Should have no failure/handoff lessons (agent is clean)
+        failure_lessons = [l for l in reflection.lessons if l.category == "failure" and "unhandled" in l.observation.lower()]
+        assert len(failure_lessons) == 0
+
+
+def test_validate_then_analyze():
+    """Validate → analyze pipeline works."""
+    from agentguard.validate import validate_trace
+    from agentguard.analysis import analyze_failures
+    
+    trace = ExecutionTrace(task="validate-then-analyze")
+    s = Span(name="agent", span_type=SpanType.AGENT)
+    s.complete()
+    trace.add_span(s)
+    trace.complete()
+    
+    # Step 1: validate
+    v = validate_trace(trace)
+    assert v.valid
+    
+    # Step 2: analyze (only if valid)
+    if v.valid:
+        f = analyze_failures(trace)
+        assert f.total_failed_spans == 0
