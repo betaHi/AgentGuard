@@ -172,3 +172,41 @@ All notable changes to AgentGuard will be documented in this file.
 
 ### Fixed
 - `pyproject.toml` build-backend corrected to `setuptools.build_meta`
+
+## [Unreleased] — 2026-04-12 (Session 2)
+
+### Added — Deep Focus Session (iterations 260-300)
+
+#### Parallel Execution
+- `examples/parallel_pipeline.py` — 3 concurrent researchers with real threading
+- `examples/parallel_coding.py` — concurrent review/security/testing
+- `examples/error_recovery.py` — retry/circuit-breaker/degradation patterns
+- `examples/production_usage.py` — complete instrument→analyze→monitor workflow
+- Thread safety verified with 20 concurrent agent stress test
+
+#### Viewer Enhancements
+- Parallel span highlighting (purple border for concurrent execution)
+- Score badge in top bar
+- Interactive click-to-expand span details
+- Cost/token/retry diagnostic panels
+- LLM call summary in sidebar
+- Trace list sidebar for multiple traces
+- Print-friendly and responsive styles
+
+#### New Modules
+- `errors.py` — Error classification (transient/permanent/resource/logic)
+- `markdown.py` — Markdown trace reports for docs/PRs
+- `compress.py` — Trace compression (light/standard/aggressive)
+- `importer.py` — Import from OpenTelemetry JSON format
+
+#### CLI
+- `agentguard version` — Show version
+- 30 total CLI commands
+
+#### Tests
+- Quickstart verification tests (all docs code examples)
+- Example smoke tests (all 7 examples)
+- Comprehensive SDK tests (all integration styles)
+- Advanced builder tests (deep nesting, wide fanout, handoff chains)
+- Viewer diagnostics tests
+- Thread safety tests
