@@ -159,3 +159,10 @@ Beyond tree view — show the actual flow:
 - Extended edge case tests (empty/large/malformed/unicode/deep)
 - Span-level diff (span_diff.py)
 - Alert rules engine (alerts.py)
+
+### 2026-04-12 — Iterations 200-210: CLI, replay, search
+- 8 new CLI commands (29+ total): span-diff, sla, dependencies, benchmark, generate, summarize, tree, compare
+- Updated quickstart docs
+- Trace replay v2: assertions, mutation testing
+- Trace search: full-text, regex, multi-field
+- Tests: 447 → 467
