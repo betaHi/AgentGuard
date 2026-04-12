@@ -382,6 +382,41 @@ def cmd_analyze(args):
     print()
 
 
+
+def cmd_propagation(args):
+    """Analyze failure propagation with causal chains."""
+    from agentguard.core.trace import ExecutionTrace
+    from agentguard.propagation import analyze_propagation
+    
+    trace = ExecutionTrace.from_json(open(args.file).read())
+    result = analyze_propagation(trace)
+    print(result.to_report())
+
+
+def cmd_flowgraph(args):
+    """Build and display multi-agent flow graph."""
+    from agentguard.core.trace import ExecutionTrace
+    from agentguard.flowgraph import build_flow_graph
+    
+    trace = ExecutionTrace.from_json(open(args.file).read())
+    graph = build_flow_graph(trace)
+    
+    if args.mermaid:
+        print(graph.to_mermaid())
+    else:
+        print(graph.to_report())
+
+
+def cmd_context_flow(args):
+    """Analyze context flow through the agent pipeline."""
+    from agentguard.core.trace import ExecutionTrace
+    from agentguard.context_flow import analyze_context_flow_deep
+    
+    trace = ExecutionTrace.from_json(open(args.file).read())
+    result = analyze_context_flow_deep(trace)
+    print(result.to_report())
+
+
 def cmd_report(args):
     """Generate HTML report."""
     from agentguard.web.viewer import generate_timeline_html
@@ -455,6 +490,19 @@ def main():
     p = sub.add_parser("analyze", help="Analyze failure propagation and flow")
     p.add_argument("file", help="Path to trace JSON file")
     
+    # propagation
+    p = sub.add_parser("propagation", help="Analyze failure propagation chains")
+    p.add_argument("file", help="Path to trace JSON file")
+    
+    # flowgraph
+    p = sub.add_parser("flowgraph", help="Build multi-agent flow graph")
+    p.add_argument("file", help="Path to trace JSON file")
+    p.add_argument("--mermaid", action="store_true", help="Output as Mermaid diagram")
+    
+    # context-flow
+    p = sub.add_parser("context-flow", help="Analyze context flow through pipeline")
+    p.add_argument("file", help="Path to trace JSON file")
+    
     # guard
     p = sub.add_parser("guard", help="Start continuous monitoring")
     p.add_argument("--dir", default=".agentguard/traces", help="Traces directory")
@@ -464,7 +512,7 @@ def main():
     
     args = parser.parse_args()
     
-    cmds = {"show": cmd_show, "list": cmd_list, "search": cmd_search, "eval": cmd_eval, "merge": cmd_merge, "validate": cmd_validate, "diff": cmd_diff, "analyze": cmd_analyze, "evolve": cmd_evolve, "report": cmd_report, "guard": cmd_guard}
+    cmds = {"show": cmd_show, "list": cmd_list, "search": cmd_search, "eval": cmd_eval, "merge": cmd_merge, "validate": cmd_validate, "diff": cmd_diff, "analyze": cmd_analyze, "evolve": cmd_evolve, "propagation": cmd_propagation, "flowgraph": cmd_flowgraph, "context-flow": cmd_context_flow, "report": cmd_report, "guard": cmd_guard}
     if args.command in cmds:
         cmds[args.command](args)
     else:

@@ -94,3 +94,11 @@ Beyond tree view — show the actual flow:
 - Bug fixes from code review (distributed trace, guard, XSS)
 - README repositioned: observability-first
 - program.md repositioned: trace depth over feature breadth
+
+### 2026-04-12 — Deepen trace semantics (iterations 141-145)
+- Handoff context usage tracking: mark_context_used(), utilization ratio, context_received/used_keys/dropped_keys
+- Failure propagation: causal chains, circuit breaker detection, hypothetical failure analysis (propagation.py)
+- Flow graph DAG: execution phases, parallel/sequential detection, critical path, Mermaid output (flowgraph.py)
+- Context flow: compression/truncation/expansion events, bandwidth analysis, bottleneck detection (context_flow.py)
+- 3 new CLI commands: propagation, flowgraph, context-flow
+- Tests: 148 → 189+
