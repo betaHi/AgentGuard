@@ -27,7 +27,6 @@ Usage:
     suggestions = engine.suggest()
 """
 
-__all__ = ['Lesson', 'Reflection', 'KnowledgeBase', 'EvolutionEngine']
 
 
 from __future__ import annotations
@@ -43,6 +42,8 @@ from agentguard.analysis import (
     analyze_failures, analyze_flow, analyze_bottleneck, analyze_context_flow,
     FailureAnalysis, FlowAnalysis,
 )
+
+__all__ = ['Lesson', 'Reflection', 'KnowledgeBase', 'EvolutionEngine']
 
 
 @dataclass

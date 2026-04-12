@@ -9,7 +9,6 @@ Usage:
     print(result.to_report())
 """
 
-__all__ = ['SpanDiff', 'TraceDiff', 'diff_traces']
 
 
 from __future__ import annotations
@@ -19,6 +18,8 @@ from dataclasses import dataclass, field
 from typing import Any, Optional
 
 from agentguard.core.trace import ExecutionTrace, Span, SpanType, SpanStatus
+
+__all__ = ['SpanDiff', 'TraceDiff', 'diff_traces']
 
 
 @dataclass

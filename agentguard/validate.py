@@ -8,7 +8,6 @@ Catches common issues:
 - Missing required fields
 """
 
-__all__ = ['ValidationIssue', 'ValidationResult', 'validate_trace']
 
 
 from __future__ import annotations
@@ -17,6 +16,8 @@ from dataclasses import dataclass, field
 from typing import Optional
 
 from agentguard.core.trace import ExecutionTrace, Span
+
+__all__ = ['ValidationIssue', 'ValidationResult', 'validate_trace']
 
 
 @dataclass

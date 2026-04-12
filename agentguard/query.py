@@ -15,7 +15,6 @@ Usage:
     stats = store.agent_stats()
 """
 
-__all__ = ['TraceStore']
 
 
 from __future__ import annotations
@@ -26,6 +25,8 @@ from pathlib import Path
 from typing import Optional
 
 from agentguard.core.trace import ExecutionTrace, Span, SpanType, SpanStatus
+
+__all__ = ['TraceStore']
 
 
 class TraceStore:

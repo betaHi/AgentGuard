@@ -6,7 +6,6 @@ Produces a health report answering:
 - Which tools are unreliable?
 """
 
-__all__ = ['AgentHealth', 'HealthReport', 'generate_health_report']
 
 
 from __future__ import annotations
@@ -15,6 +14,8 @@ from dataclasses import dataclass, field
 from typing import Optional
 
 from agentguard.query import TraceStore
+
+__all__ = ['AgentHealth', 'HealthReport', 'generate_health_report']
 
 
 @dataclass

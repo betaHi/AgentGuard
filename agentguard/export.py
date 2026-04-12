@@ -6,7 +6,6 @@ Export AgentGuard traces to various formats:
 - OTel-compatible format (for integration with observability platforms)
 """
 
-__all__ = ['export_jsonl', 'export_otel_spans', 'trace_statistics']
 
 
 from __future__ import annotations
@@ -16,6 +15,8 @@ from pathlib import Path
 from typing import Optional
 
 from agentguard.core.trace import ExecutionTrace, Span
+
+__all__ = ['export_jsonl', 'export_otel_spans', 'trace_statistics']
 
 
 def export_jsonl(trace: ExecutionTrace, filepath: str) -> None:

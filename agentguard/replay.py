@@ -16,7 +16,6 @@ Usage:
     result = engine.compare("test-1", candidate_output={"articles": [...]})
 """
 
-__all__ = ['ReplayCase', 'ReplayResult', 'ReplayEngine']
 
 
 from __future__ import annotations
@@ -29,6 +28,8 @@ from typing import Any, Callable, Optional
 from agentguard.eval.rules import evaluate_rules
 from agentguard.eval.compare import ComparisonResult, DiffItem
 from agentguard.core.eval_schema import EvaluationResult, RuleResult, RuleVerdict
+
+__all__ = ['ReplayCase', 'ReplayResult', 'ReplayEngine']
 
 
 @dataclass
