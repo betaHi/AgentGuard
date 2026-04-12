@@ -123,3 +123,135 @@ def span_distribution(trace: ExecutionTrace) -> str:
         lines.append(f"  {icon} {status}: {count}")
     
     return "\n".join(lines)
+
+
+def _agent_summary_rows(trace: ExecutionTrace) -> list[dict]:
+    """Extract agent span summaries for comparison."""
+    rows = []
+    for s in trace.spans:
+        if s.span_type.value != "agent":
+            continue
+        dur = s.duration_ms
+        rows.append({
+            "name": s.name,
+            "status": s.status.value if s.status else "unknown",
+            "duration_ms": dur,
+        })
+    return rows
+
+
+def _pad(text: str, width: int) -> str:
+    """Left-align text, truncate if too long."""
+    if len(text) > width:
+        return text[:width - 1] + "…"
+    return text.ljust(width)
+
+
+def _status_icon(status: str) -> str:
+    """Map status to icon."""
+    return {"completed": "\u2713", "failed": "\u2717", "running": "\u25cb"}.get(status, "?")
+
+
+def _diff_marker(left: dict, right: Optional[dict]) -> str:
+    """Return marker showing what changed between two agent rows."""
+    if right is None:
+        return " [+NEW]"
+    if left is None:
+        return " [-DEL]"
+    markers = []
+    if left["status"] != right["status"]:
+        markers.append("status")
+    ld = left.get("duration_ms") or 0
+    rd = right.get("duration_ms") or 0
+    if ld and rd and abs(ld - rd) / max(ld, rd, 1) > 0.2:
+        markers.append(f"timing:{rd-ld:+.0f}ms")
+    return f" [{', '.join(markers)}]" if markers else ""
+
+
+def compare_view(
+    trace_a: ExecutionTrace,
+    trace_b: ExecutionTrace,
+    label_a: str = "Baseline",
+    label_b: str = "Candidate",
+    col_width: int = 38,
+) -> str:
+    """Render two traces side-by-side with differences highlighted.
+
+    Shows agent name, status icon, and duration for each trace.
+    Highlights: status changes, timing differences (>20%), added/removed agents.
+
+    Args:
+        trace_a: Baseline trace (left side).
+        trace_b: Candidate trace (right side).
+        label_a: Label for baseline.
+        label_b: Label for candidate.
+        col_width: Width of each column.
+
+    Returns:
+        Multi-line string with side-by-side comparison.
+    """
+    rows_a = _agent_summary_rows(trace_a)
+    rows_b = _agent_summary_rows(trace_b)
+
+    map_a = {r["name"]: r for r in rows_a}
+    map_b = {r["name"]: r for r in rows_b}
+    all_names = list(dict.fromkeys(
+        [r["name"] for r in rows_a] + [r["name"] for r in rows_b]
+    ))
+
+    sep = "│"
+    header = _pad(label_a, col_width) + sep + _pad(label_b, col_width) + sep + " Diff"
+    divider = "─" * col_width + "┼" + "─" * col_width + "┼" + "─" * 20
+
+    lines = [
+        f"# Trace Comparison: {label_a} vs {label_b}",
+        "",
+        header,
+        divider,
+    ]
+
+    for name in all_names:
+        a = map_a.get(name)
+        b = map_b.get(name)
+        left = _format_agent_cell(a, col_width) if a else _pad("(absent)", col_width)
+        right = _format_agent_cell(b, col_width) if b else _pad("(absent)", col_width)
+        diff = _diff_marker(a, b)
+        lines.append(f"{left}{sep}{right}{sep}{diff}")
+
+    # Summary
+    lines.append(divider)
+    added = len(set(map_b) - set(map_a))
+    removed = len(set(map_a) - set(map_b))
+    changed = _count_changes(map_a, map_b, all_names)
+    lines.append(
+        f"Summary: {len(all_names)} agents, "
+        f"{changed} changed, {added} added, {removed} removed"
+    )
+    return "\n".join(lines)
+
+
+def _format_agent_cell(row: dict, width: int) -> str:
+    """Format one agent's info into a fixed-width cell."""
+    icon = _status_icon(row["status"])
+    dur = f"{row['duration_ms']:.0f}ms" if row.get("duration_ms") else "?ms"
+    text = f"{icon} {row['name']} ({dur})"
+    return _pad(text, width)
+
+
+def _count_changes(
+    map_a: dict, map_b: dict, all_names: list[str]
+) -> int:
+    """Count agents with status or significant timing differences."""
+    count = 0
+    for name in all_names:
+        a, b = map_a.get(name), map_b.get(name)
+        if a and b:
+            if a["status"] != b["status"]:
+                count += 1
+            elif a.get("duration_ms") and b.get("duration_ms"):
+                ad, bd = a["duration_ms"], b["duration_ms"]
+                if abs(ad - bd) / max(ad, bd, 1) > 0.2:
+                    count += 1
+        elif a or b:
+            count += 1
+    return count
