@@ -31,6 +31,15 @@ All notable changes to AgentGuard will be documented in this file.
 - Context compression detection (shrinkage > 50%)
 - `python -m agentguard` module entry point
 - PEP 561 py.typed marker
+- Span timing analysis (gaps, overlaps, utilization)
+- Cost analysis (per-agent/tool token + USD breakdown)
+- Retry pattern detection
+- Span tags for custom filtering
+- Token count + estimated cost fields
+- Security scanning pipeline example
+- Content creation pipeline example
+- 10 examples covering 6 domains
+- Full experimental field serialization roundtrip
 
 ### Changed
 - Web viewer now consumes `analysis.py` (single source of truth)
