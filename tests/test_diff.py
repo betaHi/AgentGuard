@@ -1,6 +1,6 @@
 """Tests for trace diff."""
 
-from agentguard.core.trace import ExecutionTrace, Span, SpanType
+from agentguard.core.trace import ExecutionTrace, Span, SpanType, SpanStatus
 from agentguard.diff import diff_traces
 
 
@@ -77,3 +77,54 @@ def test_diff_report():
     report = result.to_report()
     assert "Trace Diff" in report
     assert "Regressions" in report or "regressed" in report.lower()
+
+
+class TestDiffFlowGraphs:
+    """Tests for flow graph comparison."""
+
+    def test_same_traces(self):
+        """Identical traces should have no flow changes."""
+        from agentguard.diff import diff_flow_graphs
+        from datetime import datetime, timezone, timedelta
+        
+        now = datetime.now(timezone.utc)
+        trace = ExecutionTrace(task="same", started_at=now.isoformat(), ended_at=(now + timedelta(seconds=5)).isoformat())
+        trace.add_span(Span(name="a", span_type=SpanType.AGENT, status=SpanStatus.COMPLETED,
+                           started_at=now.isoformat(), ended_at=(now + timedelta(seconds=5)).isoformat()))
+        
+        result = diff_flow_graphs(trace, trace)
+        assert result["changes"] == [] or all(c["type"] not in ("nodes_added", "nodes_removed") for c in result["changes"])
+
+    def test_different_agents(self):
+        """Traces with different agents should detect added/removed nodes."""
+        from agentguard.diff import diff_flow_graphs
+        from datetime import datetime, timezone, timedelta
+        
+        now = datetime.now(timezone.utc)
+        
+        trace_a = ExecutionTrace(task="a", started_at=now.isoformat(), ended_at=(now + timedelta(seconds=5)).isoformat())
+        trace_a.add_span(Span(name="agent_x", span_type=SpanType.AGENT, status=SpanStatus.COMPLETED,
+                             started_at=now.isoformat(), ended_at=(now + timedelta(seconds=5)).isoformat()))
+        
+        trace_b = ExecutionTrace(task="b", started_at=now.isoformat(), ended_at=(now + timedelta(seconds=5)).isoformat())
+        trace_b.add_span(Span(name="agent_y", span_type=SpanType.AGENT, status=SpanStatus.COMPLETED,
+                             started_at=now.isoformat(), ended_at=(now + timedelta(seconds=5)).isoformat()))
+        
+        result = diff_flow_graphs(trace_a, trace_b)
+        change_types = {c["type"] for c in result["changes"]}
+        assert "nodes_added" in change_types or "nodes_removed" in change_types
+
+
+class TestDiffContextFlow:
+    """Tests for context flow comparison."""
+
+    def test_basic_diff(self):
+        """Context flow diff should return a dict."""
+        from agentguard.diff import diff_context_flow
+        
+        trace = ExecutionTrace(task="test")
+        result = diff_context_flow(trace, trace)
+        
+        assert "changes" in result
+        assert "flow_a" in result
+        assert "flow_b" in result
