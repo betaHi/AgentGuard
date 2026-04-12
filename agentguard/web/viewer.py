@@ -500,7 +500,7 @@ def _build_diagnostics(failures, bn, flow, ctx, retries=None, cost=None) -> str:
 <div class="d-box">
 <h4>💰 Cost & Tokens</h4>
 <div class="val">${cost["total_cost_usd"]:.4f}</div>
-<div class="det">{cost["total_tokens"]:,} tokens · {cost.get("most_expensive", "N/A")} most expensive</div>
+<div class="det">{cost["total_tokens"]:,} tokens · {_esc(cost.get("most_expensive", "N/A"))} most expensive</div>
 </div>
 
 <div class="d-box">
