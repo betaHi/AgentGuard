@@ -166,3 +166,9 @@ Beyond tree view — show the actual flow:
 - Trace replay v2: assertions, mutation testing
 - Trace search: full-text, regex, multi-field
 - Tests: 447 → 467
+
+### 2026-04-12 — Iterations 210-220
+- Optimization suggestions (optimize.py): retries, parallelization, cost, context
+- Enhanced export (export_v2.py): CSV/TSV/table for pandas
+- Trace search (search.py): full-text, regex, multi-field
+- Tests: 467 → 480
