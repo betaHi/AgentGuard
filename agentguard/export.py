@@ -139,12 +139,21 @@ def trace_statistics(trace: ExecutionTrace) -> dict:
     # Find slowest span
     slowest = max(spans, key=lambda s: s.duration_ms or 0)
     
+    # Percentiles
+    sorted_dur = sorted(durations)
+    p50 = sorted_dur[len(sorted_dur) // 2] if sorted_dur else 0
+    p95 = sorted_dur[int(len(sorted_dur) * 0.95)] if sorted_dur else 0
+    p99 = sorted_dur[int(len(sorted_dur) * 0.99)] if sorted_dur else 0
+    
     return {
         "total_spans": len(spans),
         "agent_count": len(trace.agent_spans),
         "tool_count": len(trace.tool_spans),
         "total_duration_ms": trace.duration_ms,
         "avg_span_duration_ms": sum(durations) / len(durations) if durations else 0,
+        "p50_duration_ms": p50,
+        "p95_duration_ms": p95,
+        "p99_duration_ms": p99,
         "max_span_duration_ms": max(durations) if durations else 0,
         "error_count": len(errors),
         "error_rate": len(errors) / len(spans) if spans else 0,
