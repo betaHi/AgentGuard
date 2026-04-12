@@ -384,22 +384,42 @@ def analyze_bottleneck(trace: ExecutionTrace) -> BottleneckReport:
         if dur > critical_dur:
             critical_path, critical_dur = path, dur
     
-    # Find bottleneck: slowest span on critical path
+    # Find bottleneck: slowest WORK span on critical path
+    # Exclude container/coordinator spans (spans that are parents of other spans)
+    # because they naturally cover the entire duration and aren't the real bottleneck.
     total_dur = trace.duration_ms or 1
-    path_spans = [s for s in trace.spans if s.name in critical_path]
-    bottleneck = max(path_spans, key=lambda s: s.duration_ms or 0) if path_spans else trace.spans[0] if trace.spans else None
+    parent_ids = set(children_map.keys())
     
-    # Rank agents by duration
+    # Work spans = spans on critical path that are NOT container nodes
+    path_spans = [s for s in trace.spans if s.name in critical_path]
+    work_spans = [s for s in path_spans if s.span_id not in parent_ids]
+    
+    # If all spans are containers (unlikely), fall back to all path spans
+    if not work_spans:
+        work_spans = path_spans
+    
+    bottleneck = max(work_spans, key=lambda s: s.duration_ms or 0) if work_spans else (trace.spans[0] if trace.spans else None)
+    
+    # Rank agents by OWN duration (exclude time spent in children)
     agent_rankings = []
     for s in trace.agent_spans:
-        d = s.duration_ms or 0
+        total_d = s.duration_ms or 0
+        # Calculate own time = total - sum of direct children durations
+        child_dur = sum(c.duration_ms or 0 for c in children_map.get(s.span_id, []))
+        own_d = max(total_d - child_dur, 0)
+        
+        # Use own duration for ranking, but show total for context
         agent_rankings.append({
             "name": s.name,
-            "duration_ms": d,
-            "pct": (d / max(total_dur, 1)) * 100,
+            "duration_ms": total_d,
+            "own_duration_ms": own_d,
+            "pct": (total_d / max(total_dur, 1)) * 100,
+            "own_pct": (own_d / max(total_dur, 1)) * 100,
             "status": s.status.value,
+            "is_container": s.span_id in parent_ids,
         })
-    agent_rankings.sort(key=lambda x: x["duration_ms"], reverse=True)
+    # Sort by own duration (real work), not total duration
+    agent_rankings.sort(key=lambda x: x["own_duration_ms"], reverse=True)
     
     return BottleneckReport(
         critical_path=critical_path,

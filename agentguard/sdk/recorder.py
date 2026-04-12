@@ -57,8 +57,30 @@ class TraceRecorder:
     def finish(self) -> ExecutionTrace:
         """Finalize the trace and write to disk."""
         # Determine overall status
-        failed_spans = [s for s in self.trace.spans if s.status.value == "failed"]
-        if failed_spans:
+        # A trace is only FAILED if there are UNHANDLED failures.
+        # Handled failures (failure_handled=True, or parent succeeded) don't count.
+        span_map = {s.span_id: s for s in self.trace.spans}
+        has_unhandled_failure = False
+        
+        for s in self.trace.spans:
+            if s.status.value != "failed":
+                continue
+            
+            # Check if this failure was explicitly handled
+            if s.failure_handled:
+                continue
+            
+            # Check if parent succeeded (implicit handling — circuit breaker)
+            if s.parent_span_id and s.parent_span_id in span_map:
+                parent = span_map[s.parent_span_id]
+                if parent.status.value == "completed":
+                    continue
+            
+            # This is an unhandled root-level failure
+            has_unhandled_failure = True
+            break
+        
+        if has_unhandled_failure:
             self.trace.fail()
         else:
             self.trace.complete()
