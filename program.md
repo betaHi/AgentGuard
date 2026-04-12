@@ -18,44 +18,39 @@
 2. Trace depth > feature breadth
 3. README/examples/analysis/viewer tell the same story
 
-## Completed Stories
-- [x] Deepen Q4: add cost-yield analysis with tests (analyze_cost_yield + 9 tests)
-- [x] Trace replay with assertion (replay_v2.py + TraceReplay + mutate_trace)
-- [x] Mermaid flow-graph (flowgraph.py + to_mermaid())
-- [x] Guard watch mode (guard.py watch())
-- [x] Error recovery example (retry, circuit breaker, graceful degradation)
-- [x] Basic trace roundtrip test (write → read)
-- [x] Thread context propagation (TraceThread + bind_current_trace_context)
+## Completed (Sprint 1)
+- [x] All P0-P4 stories from previous sprint (19 stories)
+- [x] 786 tests, 15K+ LOC, 18 examples, 11 docs
 
-## Current Stories (priority order per current-state-review)
+## Current Stories (Sprint 2: Production Hardening)
 
-### P0: Viewer ↔ Analysis semantic alignment (current-state-review §2.1)
-- [x] Viewer bottleneck sidebar: support tool-span bottlenecks, not just agent cards
-- [x] Viewer: verify every analysis finding is correctly rendered (no phantom handoffs)
+### P0: Deepen core diagnostics (current-state-review §2.1)
+- [ ] Q1 deep: bottleneck analysis should distinguish CPU-bound vs IO-bound vs waiting — add span category classification
+- [ ] Q2 deep: handoff analyzer should compute information retention ratio (bytes_out / bytes_in per handoff)
+- [ ] Q3 deep: failure propagation should build a causal chain (root → intermediate → final) with confidence scores
+- [ ] Q5 deep: decision tracker should compare "what happened" vs "what could have happened" (counterfactual analysis)
 
-### P1: SDK ergonomics for parallel (current-state-review §2.2)
-- [x] Add TracingExecutor (ThreadPoolExecutor wrapper that propagates trace context)
-- [x] Add async context propagation for asyncio.create_task
+### P1: Viewer production-grade (current-state-review §2.1, §2.4)
+- [ ] Viewer: add comparison mode — side-by-side two traces with diff highlighting
+- [ ] Viewer: bottleneck panel should show tool-level drill-down (click agent → see tool breakdown)
+- [ ] Viewer: add export to PDF/PNG for sharing diagnostics reports
 
-### P2: Docs/README consistency (current-state-review §2.3, §2.4)
-- [x] Merge getting-started.md + quickstart.md into one clear onboarding doc
-- [x] Create docs/api-reference.md with all public function signatures + examples
-- [x] Create docs/configuration.md — agentguard.json schema, CLI flags, env vars
-- [x] Audit README claims against actual stable implementation — remove overstatements
+### P2: SDK hardening (current-state-review §2.2)
+- [ ] SDK: add automatic context propagation for concurrent.futures.ProcessPoolExecutor
+- [ ] SDK: add OpenTelemetry bridge — import OTel spans into AgentGuard trace format
+- [ ] SDK: add middleware for popular frameworks (LangChain, CrewAI, AutoGen)
 
-### P3: Deepen diagnostics
-- [x] Deepen Q5: refactor analyze_decisions to ≤50 lines with extracted helpers, revert progress.txt
-- [S] Handoff: detect context truncation (compare input size vs what arrived at next agent) (SKIPPED: 3x REJECT)
+### P3: Testing & reliability
+- [ ] Add property-based tests (hypothesis) for trace serialization roundtrip
+- [ ] Add stress test: 1000-span trace with deep nesting — verify analysis doesn't degrade
+- [ ] Add fuzz test: random span attributes — verify no crashes in analysis/viewer
 
-### P4: Integration & examples
-- [x] Integration test: full record → analyze → export_otel → import → compare roundtrip
-- [x] Add example: multi-model pipeline (GPT-4 + Claude + local model, cost comparison)
-- [x] Improve error_recovery example: add timeout pattern + partial result handling
+### P4: Documentation
+- [ ] Write docs/architecture.md — system design, data model, analysis pipeline
+- [ ] Update current-state-review-zh.md with Sprint 2 findings
+- [ ] Add CONTRIBUTING.md with code standards, PR process, testing requirements
 
 ## Progress Log
 
-- 2026-04-12: Added threaded trace-context propagation helpers (threading.py)
-- 2026-04-12: Ralph Loop v7 — production-grade with thorough review + self-improvement
-- 2026-04-12: Q4 cost-yield: 9 tests added (718 total), ACCEPTED
-- 2026-04-12: Q5 decisions: implemented but needs refactor (>50 line function), SKIPPED
-- 2026-04-12: Audited all stories against existing codebase — reorganized by priority
+- 2026-04-12: Sprint 1 complete — 19 stories, 786 tests
+- 2026-04-12: Sprint 2 started — focus on production hardening, deeper diagnostics
