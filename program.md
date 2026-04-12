@@ -86,6 +86,11 @@ Focus: Make README, examples, analysis, and viewer tell the same story.
 - [ ] Add trace merge from multiple files: agentguard merge-dir <dir>
 - [ ] Improve normalize: auto-fix inconsistent timestamps (end before start)
 - [ ] Add README badges: test count, LOC count, module count
+- [ ] Upgrade evolve engine: integrate with scoring to auto-suggest improvements after each trace
+- [ ] Evolve: add knowledge base persistence (save/load learned patterns to JSON)
+- [ ] Evolve: connect evolve suggestions to viewer diagnostics panel
+- [ ] Evolve: add compare_to_best — track best trace per pipeline and detect regressions
+- [ ] Evolve: auto-generate improvement PRDs based on recurring failure patterns
 
 ### Completed Stories (previous priority: Deepen Trace Semantics)
 
