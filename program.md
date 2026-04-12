@@ -111,3 +111,14 @@ Beyond tree view — show the actual flow:
 - All new modules wired into __init__.py exports + CLI
 - CHANGELOG updated
 - Tests: 189 → 209
+
+### 2026-04-12 — Iterations 151-160: Extensions + tooling
+- Span lifecycle hooks (sdk/hooks.py)
+- Trace scoring: 5-component quality score with A-F grade (scoring.py)
+- Span annotations: structured tags + auto-annotate (annotations.py)
+- Trace aggregation: multi-trace trends and agent rankings (aggregate.py)
+- Filter DSL: composable span/trace filters + sampling (filter.py)
+- A/B testing: compare agent versions + regression detection (ab_test.py)
+- Timeline: chronological event stream (timeline.py)
+- 4 new CLI commands: score, aggregate, annotate, correlate
+- Tests: 209 → 286
