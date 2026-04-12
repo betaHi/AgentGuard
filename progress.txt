@@ -13,3 +13,4 @@
 [2026-04-12] Learned: 我们的 loop 不是 Ralph — 是单对话内手动循环，有 context anxiety 和 self-evaluation bias。
 [2026-04-12] Decision: 采用 OpenClaw sub-agent 模式 — 主 session 做 Planner+Evaluator，sub-agent 做 Generator。
 [2026-04-12 06:10] Fixed docs/examples.md: removed analyst reference from bottleneck, fixed notifier "always fails" claim, toned down README overstatements.
+[2026-04-12T06:16:21Z] Iteration 1: Fix viewer: only show handoffs confirmed by analysis layer (not inferred from sequence) — Tests: 2 failed, 704 passed in 12.41s

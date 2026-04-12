@@ -1,14 +1,17 @@
 #!/bin/bash
-# AgentGuard Ralph Loop — using OpenClaw sub-agents
+# AgentGuard Ralph Loop — 黑虎虾 🐯 as Generator
+#
+# Architecture:
+#   基围小小虾 (main) = Planner + Evaluator
+#   黑虎虾 (heihu)    = Generator (fresh context per story)
 #
 # Each iteration:
 # 1. Read program.md for next unchecked story
-# 2. Spawn a fresh sub-agent (context reset) to implement it
-# 3. Evaluate the result
-# 4. Update checklist + progress.txt
-# 5. Repeat
-#
-# Usage: ./ralph.sh [max-iterations]
+# 2. Write story spec to .story-current.md
+# 3. Spawn 黑虎虾 (fresh context) to implement it
+# 4. Verify tests pass
+# 5. Update progress.txt
+# 6. Repeat
 
 set -e
 
@@ -16,7 +19,8 @@ MAX_ITERATIONS=${1:-10}
 PROJECT_DIR="$(cd "$(dirname "$0")" && pwd)"
 ITERATION=0
 
-echo "🛡️ AgentGuard Ralph Loop (OpenClaw sub-agents)"
+echo "🛡️ AgentGuard Ralph Loop"
+echo "   Generator: 🐯 黑虎虾 (heihu agent)"
 echo "   Max iterations: $MAX_ITERATIONS"
 echo "   Project: $PROJECT_DIR"
 echo ""
@@ -36,7 +40,6 @@ while [ $ITERATION -lt $MAX_ITERATIONS ]; do
     
     echo "━━━ Iteration $ITERATION/$MAX_ITERATIONS ━━━"
     echo "📋 Story: $NEXT_STORY"
-    echo ""
     
     # Write story spec
     cat > .story-current.md << STORYEOF
@@ -45,57 +48,64 @@ while [ $ITERATION -lt $MAX_ITERATIONS ]; do
 ## Task
 $NEXT_STORY
 
-## Context
-- Project: AgentGuard (multi-agent observability framework)
+## Project
 - Dir: $PROJECT_DIR
+- Venv: source $PROJECT_DIR/.venv/bin/activate
+- Test: cd $PROJECT_DIR && python3 -m pytest tests/ -q --tb=short
 - Read CLAUDE.md for project rules
-- Read GUARDRAILS.md for constraints
 
 ## Acceptance Criteria
-- Implementation matches the story description
-- All tests pass: python3 -m pytest tests/ -q
+- Implementation matches the story description exactly
+- All tests pass (no regressions)
 - Changes committed with descriptive message
+- Minimal code changes — only what the story requires
 
-## Rules
-- Only modify files relevant to this story
-- Do NOT add new modules unless the story requires it
-- Run tests before committing
+## Do NOT
+- Add new Python modules unless the story explicitly requires it
+- Modify program.md or progress.txt
+- Change unrelated code
 STORYEOF
     
-    # Spawn sub-agent (fresh context)
-    echo "🤖 Spawning sub-agent..."
+    # Spawn 黑虎虾 (fresh context = context reset)
+    echo "🐯 Dispatching to 黑虎虾..."
     RESULT=$(openclaw agent \
-        --session-id "ralph-iter-$ITERATION" \
-        --message "You are a coding agent. Read /home/azureuser/AgentGuard/.story-current.md for your task. Read CLAUDE.md and GUARDRAILS.md for rules. Implement the story, run tests, and commit. Report what you did." \
+        --agent heihu \
+        --session-id "heihu-ralph-$ITERATION-$(date +%s)" \
+        --message "Read $PROJECT_DIR/.story-current.md for your task. Implement it, run tests, commit, and report what you did." \
         --timeout 300 \
         --json 2>&1 | grep -v "Config warnings\|plugins\|Registered")
     
+    # Show result
     echo "$RESULT" | python3 -c "
 import sys, json
 try:
     data = json.load(sys.stdin)
-    status = data.get('status', 'unknown')
     for p in data.get('result', {}).get('payloads', []):
-        print(p.get('text', '')[:500])
-    print(f'\nStatus: {status}')
-except:
-    print('Failed to parse result')
+        text = p.get('text', '')
+        # Show first 600 chars
+        print(text[:600])
+        if len(text) > 600: print('...')
+    print(f'Status: {data.get(\"status\", \"unknown\")}')
+except Exception as e:
+    print(f'Parse error: {e}')
 " 2>/dev/null
     
-    # Run tests to verify
+    # Verify tests
     echo ""
-    echo "🧪 Verifying..."
-    TEST_RESULT=$(cd "$PROJECT_DIR" && python3 -m pytest tests/ -q --tb=no 2>&1 | tail -1)
+    echo "🧪 Evaluator verifying..."
+    source "$PROJECT_DIR/.venv/bin/activate"
+    TEST_RESULT=$(python3 -m pytest tests/ -q --tb=no 2>&1 | tail -1)
     echo "   Tests: $TEST_RESULT"
     
-    # Append to progress
-    echo "[$(date -u +%Y-%m-%dT%H:%M:%SZ)] Iteration $ITERATION: $NEXT_STORY — Tests: $TEST_RESULT" >> progress.txt
+    # Log progress
+    echo "[$(date -u +%Y-%m-%dT%H:%M:%SZ)] Iter $ITERATION: $NEXT_STORY — $TEST_RESULT" >> progress.txt
     
     echo ""
     sleep 2
 done
 
 echo ""
-echo "🛡️ Ralph Loop finished after $ITERATION iterations"
-echo "   Tests: $(python3 -m pytest tests/ -q --tb=no 2>&1 | tail -1)"
+echo "━━━ Ralph Loop Complete ━━━"
+echo "   Iterations: $ITERATION"
+echo "   Tests: $(source $PROJECT_DIR/.venv/bin/activate && python3 -m pytest tests/ -q --tb=no 2>&1 | tail -1)"
 echo "   Commits: $(git log --oneline | wc -l)"
