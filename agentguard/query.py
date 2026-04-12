@@ -15,6 +15,9 @@ Usage:
     stats = store.agent_stats()
 """
 
+__all__ = ['TraceStore']
+
+
 from __future__ import annotations
 
 import json

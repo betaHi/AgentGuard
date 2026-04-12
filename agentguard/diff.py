@@ -9,6 +9,9 @@ Usage:
     print(result.to_report())
 """
 
+__all__ = ['SpanDiff', 'TraceDiff', 'diff_traces']
+
+
 from __future__ import annotations
 
 import json

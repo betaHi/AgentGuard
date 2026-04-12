@@ -27,6 +27,9 @@ Usage:
     suggestions = engine.suggest()
 """
 
+__all__ = ['Lesson', 'Reflection', 'KnowledgeBase', 'EvolutionEngine']
+
+
 from __future__ import annotations
 
 import json

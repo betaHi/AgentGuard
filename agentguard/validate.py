@@ -8,6 +8,9 @@ Catches common issues:
 - Missing required fields
 """
 
+__all__ = ['ValidationIssue', 'ValidationResult', 'validate_trace']
+
+
 from __future__ import annotations
 
 from dataclasses import dataclass, field

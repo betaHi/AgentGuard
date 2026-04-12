@@ -6,6 +6,9 @@ Export AgentGuard traces to various formats:
 - OTel-compatible format (for integration with observability platforms)
 """
 
+__all__ = ['export_jsonl', 'export_otel_spans', 'trace_statistics']
+
+
 from __future__ import annotations
 
 import json
