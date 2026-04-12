@@ -133,3 +133,60 @@ def detect_context_loss(
         "size_delta_bytes": recv_size - sent_size,
         "loss_detected": len(missing) > 0 or len(required_missing) > 0,
     }
+
+
+
+def mark_context_used(
+    handoff_span: Span,
+    used_keys: list[str],
+    received_context: Any = None,
+) -> dict:
+    """Mark which context keys were actually used by the receiving agent.
+    
+    Call this after the receiver processes the handoff to track context utilization.
+    
+    Args:
+        handoff_span: The handoff span returned by record_handoff.
+        used_keys: Keys that the receiver actually used.
+        received_context: What the receiver got (for size comparison).
+    
+    Returns:
+        Dict with: used_keys, dropped_keys, utilization_ratio
+    
+    Example:
+        h = record_handoff("collector", "analyst", context=data)
+        result = analyst.run(data)
+        mark_context_used(h, used_keys=["articles", "topic"])
+    """
+    sent_keys = handoff_span.metadata.get("handoff.context_keys", [])
+    dropped = [k for k in sent_keys if k not in used_keys]
+    extra_used = [k for k in used_keys if k not in sent_keys]
+    
+    handoff_span.context_used_keys = used_keys
+    handoff_span.context_dropped_keys = dropped
+    
+    if received_context is not None:
+        try:
+            serialized = json.dumps(received_context, default=str)
+            recv_bytes = len(serialized.encode("utf-8"))
+        except Exception:
+            recv_bytes = sys.getsizeof(received_context)
+        handoff_span.context_received = {
+            "size_bytes": recv_bytes,
+            "keys": list(received_context.keys()) if isinstance(received_context, dict) else [],
+        }
+    
+    # Utilization = fraction of sent keys that were used (capped at 1.0)
+    used_from_sent = len([k for k in used_keys if k in sent_keys])
+    utilization = used_from_sent / max(len(sent_keys), 1)
+    
+    handoff_span.metadata["handoff.used_keys"] = used_keys
+    handoff_span.metadata["handoff.dropped_keys"] = dropped
+    handoff_span.metadata["handoff.utilization"] = round(utilization, 2)
+    
+    return {
+        "used_keys": used_keys,
+        "dropped_keys": dropped,
+        "extra_used": extra_used,
+        "utilization_ratio": round(utilization, 2),
+    }

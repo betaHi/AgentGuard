@@ -76,6 +76,9 @@ class Span:
     handoff_to: Optional[str] = None        # agent_id that received the handoff
     context_passed: Optional[dict] = None   # keys/summary of context passed
     context_size_bytes: Optional[int] = None  # size of context at handoff point
+    context_received: Optional[dict] = None   # what the receiver actually got
+    context_used_keys: Optional[list] = None  # which context keys the receiver used
+    context_dropped_keys: Optional[list] = None  # keys that were sent but not used
     
     # Retry tracking [experimental]
     retry_count: int = 0               # number of retries before this span succeeded/failed
@@ -245,6 +248,9 @@ class ExecutionTrace:
                 handoff_to=span_data.get("handoff_to"),
                 context_passed=span_data.get("context_passed"),
                 context_size_bytes=span_data.get("context_size_bytes"),
+                context_received=span_data.get("context_received"),
+                context_used_keys=span_data.get("context_used_keys"),
+                context_dropped_keys=span_data.get("context_dropped_keys"),
                 caused_by=span_data.get("caused_by"),
                 failure_handled=span_data.get("failure_handled", False),
                 retry_count=span_data.get("retry_count", 0),
