@@ -30,7 +30,7 @@
 ## Current Stories (priority order per current-state-review)
 
 ### P0: Viewer ↔ Analysis semantic alignment (current-state-review §2.1)
-- [ ] Viewer bottleneck sidebar: support tool-span bottlenecks, not just agent cards
+- [x] Viewer bottleneck sidebar: support tool-span bottlenecks, not just agent cards
 - [ ] Viewer: verify every analysis finding is correctly rendered (no phantom handoffs)
 
 ### P1: SDK ergonomics for parallel (current-state-review §2.2)
