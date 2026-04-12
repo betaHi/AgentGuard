@@ -256,10 +256,6 @@ trends = engine.detect_trends()
 # → "researcher is a persistent bottleneck (seen 8 times)"
 ```
 
-```bash
-agentguard evolve --learn --suggest
-```
-
 Knowledge accumulates across runs in `.agentguard/knowledge/`. Repeated patterns increase confidence. Inspired by [A-MEM](https://github.com/agiresearch/A-mem) (Zettelkasten-style agentic memory).
 
 ### Continuous Monitoring
@@ -289,7 +285,6 @@ agentguard merge <parent.json>                    # merge distributed child trac
 agentguard validate <trace.json>                  # check trace integrity
 agentguard diff <trace_a> <trace_b>               # compare two traces
 agentguard analyze <trace.json>                   # failure + bottleneck + flow + timing + cost
-agentguard evolve --learn --suggest               # self-reflection + knowledge
 agentguard report [--dir DIR]                     # generate HTML orchestration panel
 agentguard guard [--dir DIR] [--interval 60]      # continuous monitoring
 ```
@@ -318,7 +313,7 @@ Your Agents → AgentGuard SDK → Traces (JSON) → Analysis + Evolution
                                     │
                     ┌───────────────┼───────────────┐
                     ▼               ▼               ▼
-              CLI (9 commands)  Web panel       Evolve engine
+              CLI (30+ commands)  Web panel       Evolve engine
               Guard mode       Eval/Replay     OTel export
 ```
 
@@ -329,7 +324,7 @@ See [docs/architecture.md](docs/architecture.md) for details.
 
 | Category | Features |
 |----------|----------|
-| **Instrumentation** | 7 integration styles (sync/async decorators, context managers, manual API, middleware, distributed) |
+| **Instrumentation** | 6 integration styles (sync/async decorators, context managers, manual API, middleware, distributed) |
 | **Handoff Tracking** | Context usage tracking, utilization ratio, degradation analysis, integrity scoring |
 | **Failure Analysis** | Causal chains, circuit breaker detection, blast radius, hypothetical failure |
 | **Flow Graph** | DAG visualization, parallel/sequential detection, critical path, Mermaid export |
@@ -341,10 +336,10 @@ See [docs/architecture.md](docs/architecture.md) for details.
 | **Timeline** | Chronological event stream, filtering by type/span |
 | **Trace Builder** | Fluent API for constructing test/synthetic traces |
 | **Storage** | File-based store with query, prune, and schema validation |
-| **CLI** | 21+ commands: show, list, search, eval, diff, score, aggregate, timeline, metrics, and more |
+| **CLI** | 30+ commands: show, list, search, eval, diff, score, aggregate, timeline, metrics, and more |
 | **Export** | JSON, JSONL, OTel, Prometheus text format |
 
-**400+ tests • 16K+ lines • Zero external dependencies for core**
+**750+ tests • 15K+ lines • Zero external dependencies for core**
 
 ## Install
 
