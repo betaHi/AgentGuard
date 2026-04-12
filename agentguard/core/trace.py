@@ -241,6 +241,17 @@ class ExecutionTrace:
                 output_data=span_data.get("output_data"),
                 error=span_data.get("error"),
                 metadata=span_data.get("metadata", {}),
+                handoff_from=span_data.get("handoff_from"),
+                handoff_to=span_data.get("handoff_to"),
+                context_passed=span_data.get("context_passed"),
+                context_size_bytes=span_data.get("context_size_bytes"),
+                caused_by=span_data.get("caused_by"),
+                failure_handled=span_data.get("failure_handled", False),
+                retry_count=span_data.get("retry_count", 0),
+                retry_of=span_data.get("retry_of"),
+                tags=span_data.get("tags", []),
+                token_count=span_data.get("token_count"),
+                estimated_cost_usd=span_data.get("estimated_cost_usd"),
             )
             trace.spans.append(span)
         return trace
