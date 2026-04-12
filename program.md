@@ -39,13 +39,13 @@
 
 ### P2: Docs/README consistency (current-state-review §2.3, §2.4)
 - [x] Merge getting-started.md + quickstart.md into one clear onboarding doc
-- [S] Create docs/api-reference.md with all public function signatures + examples (SKIPPED: 3x REJECT)
+- [x] Create docs/api-reference.md with all public function signatures + examples
 - [x] Create docs/configuration.md — agentguard.json schema, CLI flags, env vars
 - [x] Audit README claims against actual stable implementation — remove overstatements
 
 ### P3: Deepen diagnostics
 - [x] Deepen Q5: refactor analyze_decisions to ≤50 lines with extracted helpers, revert progress.txt
-- [S] Handoff: detect context truncation (compare input size vs what arrived at next agent) (SKIPPED: 3x REJECT)
+- [ ] Handoff: detect context truncation (compare input size vs what arrived at next agent)
 - [ ] Span duration anomaly detection: flag spans 3x slower than historical baseline
 - [ ] Viewer: context flow waterfall chart (context size at each handoff as bar)
 
