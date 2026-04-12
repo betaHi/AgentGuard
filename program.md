@@ -131,3 +131,11 @@ Beyond tree view — show the actual flow:
 - 3 more CLI commands: timeline, metrics, schema (21 total)
 - Full analysis example using all modules
 - Tests: 286 → 322
+
+### 2026-04-12 — Iterations 171-180: Robustness + tooling
+- Span tree utilities (tree.py): stats, cycles, orphans, text render
+- Trace normalization (normalize.py): orphan fix, dedup, status reconciliation
+- Rich trace comparison (comparison.py): scores + metrics + structural diff
+- Trace summarizer (summarize.py): natural language summaries
+- Agent profiling (profile.py): per-agent stats across traces
+- Tests: 322 → 358
