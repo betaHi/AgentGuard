@@ -31,7 +31,7 @@
 
 ### P0: Viewer ↔ Analysis semantic alignment (current-state-review §2.1)
 - [x] Viewer bottleneck sidebar: support tool-span bottlenecks, not just agent cards
-- [S] Viewer: verify every analysis finding is correctly rendered (no phantom handoffs) (SKIPPED: 3x REJECT)
+- [x] Viewer: verify every analysis finding is correctly rendered (no phantom handoffs)
 
 ### P1: SDK ergonomics for parallel (current-state-review §2.2)
 - [ ] Add TracingExecutor (ThreadPoolExecutor wrapper that propagates trace context)

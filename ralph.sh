@@ -167,6 +167,17 @@ except: print('GEN_ERROR')
 " 2>/dev/null)
     echo "$GEN_TEXT" | head -20 | tee -a "$LOG_FILE"
     
+    # ── AUTO-REVERT PLANNER FILES (generator should not touch these) ──
+    git checkout HEAD -- progress.txt 2>/dev/null || true
+    git checkout HEAD -- program.md 2>/dev/null || true
+    git checkout HEAD -- REVIEW.md 2>/dev/null || true
+    git checkout HEAD -- GUARDRAILS.md 2>/dev/null || true
+    # Re-add and amend if anything was reverted
+    if ! git diff --cached --quiet 2>/dev/null || ! git diff --quiet -- progress.txt program.md REVIEW.md GUARDRAILS.md 2>/dev/null; then
+        git add progress.txt program.md REVIEW.md GUARDRAILS.md 2>/dev/null || true
+        git commit --amend --no-edit 2>/dev/null || true
+    fi
+    
     # ── TESTS ──
     source "$PROJECT_DIR/.venv/bin/activate"
     TEST_RESULT=$(python3 -m pytest tests/ -q --tb=short 2>&1 | tail -3)
