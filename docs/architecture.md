@@ -1,106 +1,110 @@
 # AgentGuard Architecture
 
-## Overview
-
-AgentGuard is structured as a layered SDK with clear separation of concerns:
+## Module Map
 
 ```
-┌─────────────────────────────────────────────────────────┐
-│                    User Application                      │
-│  (your agents, tools, workflows)                        │
-└──────────────────────┬──────────────────────────────────┘
-                       │ integrates via
-                       ▼
-┌─────────────────────────────────────────────────────────┐
-│                    AgentGuard SDK                         │
-│                                                          │
-│  ┌──────────────┐  ┌───────────────┐  ┌──────────────┐ │
-│  │  Decorators   │  │Context Managers│  │ Manual API   │ │
-│  │ @record_agent │  │ AgentTrace    │  │ ManualTracer │ │
-│  │ @record_tool  │  │ ToolContext   │  │              │ │
-│  └──────┬───────┘  └──────┬────────┘  └──────┬───────┘ │
-│         └──────────────────┼─────────────────-┘         │
-│                            ▼                             │
-│  ┌──────────────────────────────────────────────────┐   │
-│  │              TraceRecorder                        │   │
-│  │  Thread-safe span collection + context stack      │   │
-│  └──────────────────────┬───────────────────────────┘   │
-│                         ▼                                │
-│  ┌──────────────────────────────────────────────────┐   │
-│  │           Core Data Models                        │   │
-│  │  ExecutionTrace  │  Span  │  SpanType             │   │
-│  └──────────────────────────────────────────────────┘   │
-└─────────────────────────┬───────────────────────────────┘
-                          │ writes
-                          ▼
-┌─────────────────────────────────────────────────────────┐
-│                 .agentguard/traces/                       │
-│                 (JSON files on disk)                      │
-└─────────────────────────┬───────────────────────────────┘
-                          │ consumed by
-                          ▼
-┌────────────┐  ┌────────────┐  ┌──────────┐  ┌─────────┐
-│  Eval      │  │  Replay    │  │  Guard   │  │  Export  │
-│  Engine    │  │  Engine    │  │  Mode    │  │  (OTel)  │
-└────────────┘  └────────────┘  └──────────┘  └─────────┘
-       │               │              │             │
-       ▼               ▼              ▼             ▼
-  eval reports    regression     alerts        JSONL/OTel
-                  reports       (stdout,       collectors
-                               file, webhook)
+agentguard/
+├── core/
+│   ├── trace.py          — ExecutionTrace + Span data model
+│   ├── config.py         — Configuration
+│   └── eval_schema.py    — Evaluation schema
+│
+├── sdk/                  — Instrumentation (7 integration styles)
+│   ├── decorators.py     — @record_agent, @record_tool
+│   ├── async_decorators  — Async versions
+│   ├── context.py        — AgentTrace, ToolContext context managers
+│   ├── manual.py         — Manual API
+│   ├── middleware.py      — Middleware/wrap pattern
+│   ├── distributed.py    — Cross-process trace propagation
+│   ├── handoff.py        — Handoff recording + context tracking
+│   ├── hooks.py          — Span lifecycle callbacks
+│   └── recorder.py       — TraceRecorder (thread-safe)
+│
+├── analysis/             — Trace analysis (Tier 1)
+│   ├── analysis.py       — 7 analysis functions
+│   ├── propagation.py    — Failure causal chains, circuit breakers
+│   ├── flowgraph.py      — DAG, phases, critical path, Mermaid
+│   ├── context_flow.py   — Compression/truncation/expansion
+│   ├── correlation.py    — Fingerprints, patterns
+│   ├── timeline.py       — Chronological event stream
+│   └── tree.py           — Span tree utilities
+│
+├── extensions/           — Built on traces (Tier 2)
+│   ├── scoring.py        — 5-component quality score (A-F)
+│   ├── annotations.py    — Structured span tags
+│   ├── aggregate.py      — Multi-trace trends
+│   ├── filter.py         — Composable query DSL
+│   ├── ab_test.py        — A/B testing
+│   ├── metrics.py        — Duration percentiles, Prometheus
+│   ├── alerts.py         — Declarative alert rules
+│   ├── sla.py            — SLA checking
+│   ├── dependency.py     — Agent dependency graph
+│   ├── profile.py        — Per-agent performance profiles
+│   ├── optimize.py       — Optimization suggestions
+│   ├── budget.py         — Token budget tracking
+│   ├── errors.py         — Error classification
+│   ├── comparison.py     — Rich trace comparison
+│   ├── diff.py           — Trace diff
+│   ├── span_diff.py      — Span-level diff
+│   └── summarize.py      — Natural language summaries
+│
+├── tools/
+│   ├── builder.py        — Fluent trace builder
+│   ├── generate.py       — Synthetic trace generator
+│   ├── templates.py      — Pipeline templates
+│   ├── store.py          — File-based storage
+│   ├── search.py         — Full-text search
+│   ├── manipulate.py     — Clone, slice, anonymize, merge
+│   ├── compress.py       — Trace compression
+│   ├── normalize.py      — Trace cleanup
+│   ├── benchmark.py      — Performance benchmarks
+│   └── importer.py       — OTel import
+│
+├── eval/                 — Rule evaluation
+│   ├── rules.py          — Built-in eval rules
+│   ├── compare.py        — Comparison evaluators
+│   └── llm.py            — LLM-based evaluation
+│
+├── web/
+│   └── viewer.py         — HTML report generator
+│
+├── cli/
+│   └── main.py           — 30 CLI commands
+│
+├── plugin.py             — Plugin registry
+├── stats.py              — Statistical utilities
+├── compat.py             — Schema versioning
+├── schema.py             — JSON Schema validation
+├── markdown.py           — Markdown export
+├── ascii_viz.py          — Terminal visualizations
+├── dashboard.py          — Dashboard data
+└── export*.py            — JSON/JSONL/OTel/CSV export
 ```
-
-## Design Principles
-
-### 1. Zero Dependencies for Core
-`agentguard/core/` and `agentguard/sdk/` use only Python stdlib.
-This means:
-- No dependency conflicts
-- Works in any Python 3.11+ environment
-- Fast import time
-
-### 2. Flat Span Storage, Tree Assembly on Read
-Spans are stored as a flat list with `parent_span_id` references.
-Tree structure is assembled on-demand via `trace.build_tree()`.
-This keeps serialization simple and allows flexible querying.
-
-### 3. File-Based, No Database
-Traces are JSON files on disk. This means:
-- Zero infrastructure required
-- Git-friendly (version control your traces)
-- Easy to inspect manually
-- Can be loaded into any tool
-
-### 4. Progressive Enhancement
-Start with decorators → add eval rules → enable guard mode.
-Each layer is independent. You don't need eval to use recording,
-and you don't need recording to use the eval engine.
-
-## Integration Points
-
-### For Agent Frameworks
-AgentGuard doesn't know about LangChain, CrewAI, or any framework.
-Integration happens at the Python function level:
-- Wrap agent functions with `@record_agent`
-- Wrap tool functions with `@record_tool`
-- Or use context managers / manual API
-
-### For Observability Platforms
-Use `export.export_otel_spans()` to convert traces to OTel format,
-then send to any OTel collector (Jaeger, Zipkin, Grafana Tempo, etc.)
-
-### For CI/CD
-Use the replay engine in your test pipeline:
-```bash
-agentguard eval <trace> --config agentguard.json
-```
-Exit code 0 = all rules pass, non-zero = failures detected.
 
 ## Data Flow
 
 ```
-Agent runs → Decorator/CM captures spans → TraceRecorder assembles trace
-  → JSON file written → eval/replay/guard/export consume it
+Your Code (agents, tools)
+    │
+    ▼ instrumentation (decorators/context managers)
+    │
+TraceRecorder (thread-safe)
+    │
+    ▼ finish_recording()
+    │
+ExecutionTrace (spans, relationships)
+    │
+    ├──▶ Analysis (scoring, flow, propagation, ...)
+    ├──▶ Export (JSON, CSV, OTel, Prometheus, HTML, Markdown)
+    ├──▶ Storage (file store, query, prune)
+    ├──▶ Monitoring (SLA, alerts, guard mode)
+    └──▶ Comparison (diff, A/B test, aggregate)
 ```
 
-Each step is independent and testable.
+## Key Design Decisions
+
+1. **Zero external dependencies** for core/ and sdk/
+2. **Thread-safe** recorder using thread-local span stacks
+3. **Flat span list** with parent_span_id (tree assembled on demand)
+4. **Analysis consumes trace** — modules are pure functions on ExecutionTrace
+5. **Viewer = single HTML file** — no server, no JS framework, just one file
