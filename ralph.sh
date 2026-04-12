@@ -131,7 +131,7 @@ $(cat .evaluator-feedback.txt 2>/dev/null || echo "None — first attempt")
 
 ## Do NOT
 - Add unrelated features
-- Modify program.md, REVIEW.md, or GUARDRAILS.md
+- Modify program.md, progress.txt, REVIEW.md, or GUARDRAILS.md (these are Planner-owned files)
 - Overstate capabilities in docs
 - Write demo-quality code
 - Import external packages in core/ or sdk/
@@ -146,9 +146,14 @@ STORYEOF
         --session-id "gen-$ITERATION-$(date +%s)" \
         --message "Read $(pwd)/.story-current.md. 
 
-IMPORTANT: Decompose the task into steps FIRST, then implement step by step.
-Quality bar: production-grade (not demo). Check GUARDRAILS.md alignment.
-Implement, test thoroughly, commit. Report: what changed, which files, which edge cases handled." \
+CRITICAL RULES:
+1. Read .story-current.md COMPLETELY — especially 'Previous Evaluator Feedback'
+2. If there is feedback, you MUST address every point. Do NOT resubmit the same code.
+3. Do NOT modify program.md or progress.txt (Planner's files — auto-REJECT)
+4. Decompose the task into steps, then implement step by step
+5. Functions must be ≤ 50 lines — extract helpers
+6. Quality bar: production-grade. Check GUARDRAILS.md alignment.
+7. Run tests, commit. Report: what changed, which files, which edge cases handled." \
         --timeout 300 \
         --json 2>&1 | grep -v "Config warnings\|plugins\|Registered")
     
