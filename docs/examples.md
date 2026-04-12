@@ -177,6 +177,27 @@ agentguard report
 - Validation gate (schema check before transform)
 - 6 agents, 6 tools, 4 handoffs
 
+
+---
+
+## Example 9: Security Scanning Pipeline
+
+**File:** [`examples/security_pipeline.py`](../examples/security_pipeline.py)
+
+**Scenario:** Automated security audit — SAST scan, dependency check, analyze findings, auto-fix exploitable issues, verify fixes.
+
+**Agents:** security-coordinator → scanner → analyzer → remediator → verifier
+
+---
+
+## Example 10: Content Creation Pipeline
+
+**File:** [`examples/content_pipeline.py`](../examples/content_pipeline.py)
+
+**Scenario:** Blog post creation — research topic, create outline, write sections, edit, publish.
+
+**Agents:** content-coordinator → researcher → outliner → writer → editor → publisher
+
 ## Creating Your Own Example
 
 To create a scenario for your agent system:
