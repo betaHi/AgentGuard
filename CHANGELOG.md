@@ -2,6 +2,43 @@
 
 All notable changes to AgentGuard will be documented in this file.
 
+
+## [Unreleased]
+
+### Added
+- **Evolution Engine** (`agentguard/evolve.py`): Self-reflection and learning
+  - `reflect()`: Extract lessons from traces (failures, bottlenecks, handoffs)
+  - `learn()`: Persist lessons to Zettelkasten-style knowledge base
+  - `suggest()`: High-confidence improvement suggestions
+  - `detect_trends()`: Recurring failure, persistent bottleneck detection
+  - Knowledge accumulates across runs, confidence increases with repetition
+- **Guard auto-learn**: `Guard(auto_learn=True)` learns from every monitored trace
+- **Trace Validator** (`agentguard/validate.py`): Check trace integrity
+  - Orphan spans, duplicate IDs, circular references, missing fields
+- **Trace Diff** (`agentguard/diff.py`): Side-by-side trace comparison
+  - Status changes, duration changes, added/removed spans
+- **Trace Query** (`agentguard/query.py`): Filter and aggregate traces
+  - TraceStore with filter by task/trigger/status/agent/duration
+  - Per-agent and per-tool statistics
+- **Health Reports** (`agentguard/health.py`): Aggregate agent health
+- **Context Flow Analysis**: Detect context loss/bloat at handoffs
+- **Bottleneck Analysis**: Critical path, agent rankings
+- **Web Panel**: Upgraded to Gantt-style timeline + sidebar + diagnostics grid
+- **CLI**: 9 commands (added validate, diff, analyze, evolve)
+- **Deterministic demo**: `random.seed(42)` for reproducible screenshots
+- 16 integration tests covering full user workflows
+
+### Changed
+- Web viewer now consumes `analysis.py` (single source of truth)
+- Handoffs in viewer only show analysis-confirmed handoffs
+- README screenshots are actual viewer output (not prototypes)
+
+### Fixed
+- Distributed trace: child processes write separate files + merge + cleanup
+- Guard: tool failures don't escalate as agent failures
+- HTML XSS: all user-controlled fields escaped
+- Viewer handoff: no longer shows unconfirmed handoffs
+
 ## [0.1.0] — 2026-04-11
 
 ### Core

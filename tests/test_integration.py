@@ -559,3 +559,66 @@ def test_e2e_evolve_workflow():
         # Knowledge persists
         engine2 = EvolutionEngine(knowledge_dir=f"{tmpdir}/kb")
         assert engine2.kb.trace_count == 3
+
+
+# ──────────────────────────────────────────────────────
+# Test 15: README Quick Start works exactly as documented
+# ──────────────────────────────────────────────────────
+
+def test_readme_quick_start():
+    """The exact code from README Quick Start section works."""
+    
+    # === From README: Option 1: Decorators ===
+    from agentguard import record_agent, record_tool
+    from agentguard.sdk.recorder import init_recorder, finish_recording
+    
+    @record_tool(name="web_search")
+    def search(query: str) -> list:
+        return [{"title": f"Result: {query}", "url": "https://example.com"}]
+
+    @record_agent(name="researcher", version="v1.3")
+    def research(topic: str) -> dict:
+        results = search(topic)
+        return {"results": results}
+
+    with tempfile.TemporaryDirectory() as tmpdir:
+        init_recorder(task="Daily Report", trigger="cron", output_dir=f"{tmpdir}/traces")
+        research("AI agents")
+        trace = finish_recording()
+        
+        # Verify it actually worked
+        assert trace.task == "Daily Report"
+        assert len(trace.spans) == 2
+        assert trace.spans[0].name == "researcher"
+        assert trace.spans[1].name == "web_search"
+        
+        # Trace file exists
+        files = list(Path(f"{tmpdir}/traces").glob("*.json"))
+        assert len(files) == 1
+        
+        # Can be loaded back
+        loaded = ExecutionTrace.from_json(files[0].read_text())
+        assert loaded.trace_id == trace.trace_id
+
+
+# ──────────────────────────────────────────────────────
+# Test 16: Full coding pipeline e2e with evolve
+# ──────────────────────────────────────────────────────
+
+def test_coding_pipeline_full_cycle():
+    """The coding pipeline example runs and produces valid trace + analysis + evolve."""
+    import subprocess, sys
+    
+    with tempfile.TemporaryDirectory() as tmpdir:
+        # Run the actual example
+        result = subprocess.run(
+            [sys.executable, "examples/coding_pipeline.py"],
+            capture_output=True, text=True,
+            env={**__import__('os').environ, "PYTHONPATH": "/tmp/AgentGuard"},
+            cwd="/tmp/AgentGuard",
+            timeout=30,
+        )
+        
+        assert result.returncode == 0, f"Pipeline failed: {result.stderr}"
+        assert "Result:" in result.stdout
+        assert "Self-Reflection" in result.stdout

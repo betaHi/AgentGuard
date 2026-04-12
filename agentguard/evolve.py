@@ -290,6 +290,30 @@ class EvolutionEngine:
     
 
     
+
+    
+    def agent_performance_history(self) -> dict[str, list[dict]]:
+        """Get per-agent performance across all learned traces.
+        
+        Returns dict keyed by agent name with list of:
+        {duration_ms, status, trace_id, timestamp}
+        """
+        history: dict[str, list[dict]] = {}
+        
+        for key, lesson in self.kb.lessons.items():
+            agent = lesson.agent
+            if agent not in history:
+                history[agent] = []
+            history[agent].append({
+                "category": lesson.category,
+                "observation": lesson.observation,
+                "confidence": lesson.confidence,
+                "occurrences": lesson.occurrences,
+                "last_seen": lesson.last_seen,
+            })
+        
+        return history
+
     def detect_trends(self, window: int = 10) -> list[dict]:
         """Detect improving/degrading trends across recent traces.
         
