@@ -1,8 +1,9 @@
 #!/bin/bash
 # AgentGuard Ralph Loop v6
 #
-# Generator: 🐯 黑虎虾 (heihu) — fresh context per story
-# Evaluator: 🔱 罗氏虾 (luoshi) — Code Review specialist, persistent session
+# Agent IDs (heihu=generator, luoshi=reviewer) are OpenClaw internal config.
+# Generator: 🐯 generator agent — fresh context per story
+# Evaluator: 🔱 reviewer agent — Code Review specialist, persistent session
 # Evolve: every 5 iterations
 # Recovery: session IDs saved to .ralph-state.json
 #
@@ -30,7 +31,7 @@ if [ -f "$STATE_FILE" ]; then
 fi
 
 echo "🛡️ AgentGuard Ralph Loop v6" | tee -a "$LOG_FILE"
-echo "   🐯 Generator: 黑虎虾 | 🔱 Evaluator: 罗氏虾" | tee -a "$LOG_FILE"
+echo "   Generator + Evaluator agents" | tee -a "$LOG_FILE"
 echo "   Max: $MAX_ITERATIONS iter / $MAX_HOURS hours" | tee -a "$LOG_FILE"
 echo "   Started: $(date -u) (iter $ITERATION)" | tee -a "$LOG_FILE"
 echo "" | tee -a "$LOG_FILE"
@@ -111,12 +112,12 @@ $(cat .evaluator-feedback.txt 2>/dev/null || echo "None")
 - Overstate capabilities
 STORYEOF
     
-    # ── GENERATOR: 黑虎虾 (fresh context) ──
+    # ── GENERATOR: generator (fresh context) ──
     ITER_START=$(date +%s)
     echo "🐯 Generator..." | tee -a "$LOG_FILE"
     
     GEN_RESULT=$(openclaw agent \
-        --agent heihu \
+        --agent heihu  # generator agent ID \
         --session-id "heihu-$ITERATION-$(date +%s)" \
         --message "Read $PROJECT_DIR/.story-current.md. Implement, test, commit. Report what changed." \
         --timeout 300 \
@@ -136,16 +137,16 @@ except: print('GEN_ERROR')
     TEST_RESULT=$(python3 -m pytest tests/ -q --tb=no 2>&1 | tail -1)
     echo "🧪 Tests: $TEST_RESULT" | tee -a "$LOG_FILE"
     
-    # ── EVALUATOR: 罗氏虾 (persistent session — remembers context) ──
-    echo "🔱 Evaluator (罗氏虾)..." | tee -a "$LOG_FILE"
+    # ── EVALUATOR: reviewer (persistent session — remembers context) ──
+    echo "🔱 Evaluator (reviewer)..." | tee -a "$LOG_FILE"
     
     DIFF_SUMMARY=$(git diff HEAD~1 --stat 2>/dev/null | tail -5)
     DIFF_CONTENT=$(git diff HEAD~1 -- "*.py" 2>/dev/null | head -100)
     
     EVAL_RESULT=$(openclaw agent \
-        --agent luoshi \
+        --agent luoshi  # reviewer agent ID \
         --session-id "luoshi-ralph-eval" \
-        --message "You are 罗氏虾 🔱, AgentGuard code reviewer.
+        --message "You are reviewer 🔱, AgentGuard code reviewer.
 
 FIRST: Read $PROJECT_DIR/REVIEW.md for review criteria and project context.
 

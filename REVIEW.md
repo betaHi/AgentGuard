@@ -1,6 +1,6 @@
 # AgentGuard Code Review Criteria
 
-> 罗氏虾 🔱 reads this before every review. This is the single source of truth for what "good" means.
+> The reviewer agent reads this before every review. This is the single source of truth for what "good" means.
 
 ## Project Identity
 AgentGuard = **multi-agent orchestration diagnostics tool** (NOT generic LLM observability).
@@ -15,7 +15,7 @@ Every change should help answer at least one of these:
 
 If a change doesn't serve any of these, it's probably feature sprawl.
 
-## Known Issues to Watch (from 大大虾 review)
+## Known Issues to Watch (from maintainer review)
 - Viewer must NOT show handoffs that aren't confirmed by analysis layer
 - Bottleneck must NOT identify coordinator/container nodes as bottleneck
 - Trace status must correctly handle: handled failure ≠ trace failed

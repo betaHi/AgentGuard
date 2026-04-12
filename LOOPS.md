@@ -13,7 +13,7 @@
 │  └── Sub-agent orchestration                │
 │                                             │
 │  ┌───────────────────────────────────────┐  │
-│  │  Main Session (基围小小虾 🦐)          │  │
+│  │  Main Session (Planner Agent)          │  │
 │  │  Role: Planner + Evaluator            │  │
 │  │  ├── Reads program.md (priorities)    │  │
 │  │  ├── Decomposes into stories          │  │
@@ -33,7 +33,7 @@
 │  │  └── Reports back completion          │  │
 │  └───────────────────────────────────────┘  │
 │                                             │
-│  大大虾 (Human)                              │
+│  Maintainer (Human)                              │
 │  ├── Sets direction (program.md)            │
 │  ├── Code review (current-state-review)     │
 │  ├── Course correction via chat             │
@@ -47,7 +47,7 @@
 |--------|-------------------|-------------------|----------|
 | Harness | bash script | Custom Python | OpenClaw |
 | Generator | Claude Code CLI (fresh per iteration) | Generator agent | Sub-agent (fresh context) |
-| Evaluator | typecheck + pytest | Separate Evaluator agent | Main session + 大大虾 review |
+| Evaluator | typecheck + pytest | Separate Evaluator agent | Main session + Maintainer review |
 | Planner | PRD → prd.json | Planner agent | Main session reads program.md |
 | State | git + progress.txt + prd.json | Structured artifacts | git + program.md + memory/*.md |
 | Context reset | New CLI instance per iteration | New agent per phase | New sub-agent per story |
@@ -79,7 +79,7 @@
 | `CLAUDE.md` | Instructions for generator agents | prompt.md |
 | `GUARDRAILS.md` | Lines that must not be crossed | — |
 | `memory/*.md` | Daily notes, intermediate state | progress.txt |
-| `docs/*-review-zh.md` | 大大虾's evaluations | — |
+| `docs/*-review-zh.md` | Maintainer's evaluations | — |
 | Git history | All code changes | Same |
 
 ## Failure Modes & Mitigations
@@ -90,11 +90,11 @@
 
 ### Self-Evaluation Bias
 **Problem**: Generator agent rates own work too highly (Anthropic finding).
-**Mitigation**: Main session evaluates sub-agent output. 大大虾 provides external review.
+**Mitigation**: Main session evaluates sub-agent output. Maintainer provides external review.
 
 ### Lateral Drift
 **Problem**: Agent keeps adding modules instead of deepening (happened to us).
-**Mitigation**: program.md enforces "Trace depth > feature breadth". 大大虾 course corrects.
+**Mitigation**: program.md enforces "Trace depth > feature breadth". Maintainer course corrects.
 
 ### State Loss Between Sessions
 **Problem**: New session loses all context from previous work.
@@ -104,7 +104,7 @@
 
 1. **Compaction < Context Reset**: Summarizing old context helps, but a fresh agent with a structured handoff is better (matches Anthropic's finding).
 2. **Binary story completion matters**: "Is this done? yes/no" prevents drift. Our early iterations lacked this.
-3. **Human review is the strongest evaluator**: 大大虾's code reviews caught semantic issues (trace status, bottleneck logic) that automated tests missed.
+3. **Human review is the strongest evaluator**: Maintainer's code reviews caught semantic issues (trace status, bottleneck logic) that automated tests missed.
 4. **Direction documents > conversation history**: program.md and review docs carry more signal than 300 turns of chat.
 
 ---
@@ -143,7 +143,7 @@ Define criteria that the evaluator (main session) checks:
 - Does it match the story spec exactly?
 - Does it avoid introducing new modules? (unless story says so)
 - Does it align with GUARDRAILS.md?
-- Would 大大虾's review pass it?
+- Would Maintainer's review pass it?
 
 #### 4. Structured handoff format (from Anthropic)
 When passing work between sessions or sub-agents:
@@ -178,21 +178,21 @@ tmux session "ralph" (crash-proof)
         ├── 读 program.md → 找 - [ ] story
         ├── 写 .story-current.md (story spec + project goals + evaluator feedback)
         │
-        ├── 🐯 黑虎虾 (Generator)
+        ├── Generator: Generator Agent
         │   ├── openclaw agent --agent heihu --session-id "heihu-N-timestamp"
         │   ├── 全新 context（context reset）
         │   ├── 读 .story-current.md + CLAUDE.md
         │   └── 写代码 → pytest → commit
         │
-        ├── 🔱 罗氏虾 (Evaluator)  
+        ├── Reviewer: Reviewer Agent  
         │   ├── openclaw agent --agent luoshi --session-id "luoshi-ralph-eval"
         │   ├── 持久 session（记住历史 review 上下文）
-        │   ├── 读 REVIEW.md（review 依据 — 大大虾标准 + GUARDRAILS）
+        │   ├── 读 REVIEW.md（review 依据 — Maintainer标准 + GUARDRAILS）
         │   ├── 看实际 code diff
         │   └── ACCEPT 或 REJECT（带具体修复建议）
         │
         ├── ACCEPT → 标记 story 完成
-        ├── REJECT → 保存 feedback → 下轮黑虎虾看到
+        ├── REJECT → 保存 feedback → 下轮Generator看到
         │
         ├── 🧬 Evolve (每 5 轮)
         │   └── evolve.learn() 从最近 trace 累积知识
@@ -202,9 +202,9 @@ tmux session "ralph" (crash-proof)
 ```
 
 ### Review 依据
-罗氏虾的 review 标准写在 `REVIEW.md`，包含：
+Reviewer的 review 标准写在 `REVIEW.md`，包含：
 - GUARDRAILS.md 的 5 个核心诊断问题
-- 大大虾 current-state-review 指出的已知问题
+- Maintainer current-state-review 指出的已知问题
 - 具体 checklist（Must Pass / Should Pass / Red Flags）
 - ACCEPT/REJECT 格式要求
 
