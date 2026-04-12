@@ -17,7 +17,7 @@ from typing import Any, Optional
 
 from agentguard.core.trace import ExecutionTrace, Span, SpanType, SpanStatus
 
-__all__ = ['FailureNode', 'FailureAnalysis', 'analyze_failures', 'HandoffInfo', 'FlowAnalysis', 'analyze_flow', 'BottleneckReport', 'analyze_bottleneck', 'ContextFlowPoint', 'ContextFlowReport', 'analyze_context_flow', 'analyze_retries', 'analyze_cost', 'analyze_cost_yield', 'CostYieldEntry', 'CostYieldReport', 'DecisionRecord', 'DecisionAnalysis', 'analyze_decisions', 'analyze_timing']
+__all__ = ['FailureNode', 'FailureAnalysis', 'analyze_failures', 'HandoffInfo', 'FlowAnalysis', 'analyze_flow', 'BottleneckReport', 'analyze_bottleneck', 'ContextFlowPoint', 'ContextFlowReport', 'analyze_context_flow', 'analyze_retries', 'analyze_cost', 'analyze_cost_yield', 'CostYieldEntry', 'CostYieldReport', 'DecisionRecord', 'DecisionAnalysis', 'analyze_decisions', 'DurationAnomaly', 'DurationAnomalyReport', 'detect_duration_anomalies', 'analyze_timing']
 
 
 @dataclass
@@ -1009,6 +1009,147 @@ def analyze_decisions(trace: ExecutionTrace) -> DecisionAnalysis:
         total_decisions=total,
         decisions_leading_to_failure=failures,
         decision_quality_score=quality,
+    )
+
+
+@dataclass
+class DurationAnomaly:
+    """A span flagged as anomalously slow compared to baseline."""
+    span_name: str
+    span_type: str
+    duration_ms: float
+    baseline_ms: float
+    ratio: float  # duration / baseline
+    severity: str  # "warning" (3x) or "critical" (10x)
+
+    def to_dict(self) -> dict[str, Any]:
+        return {
+            "span_name": self.span_name,
+            "span_type": self.span_type,
+            "duration_ms": round(self.duration_ms, 1),
+            "baseline_ms": round(self.baseline_ms, 1),
+            "ratio": round(self.ratio, 1),
+            "severity": self.severity,
+        }
+
+
+@dataclass
+class DurationAnomalyReport:
+    """Duration anomaly detection results."""
+    anomalies: list[DurationAnomaly]
+    total_spans_checked: int
+    anomaly_count: int
+
+    def to_dict(self) -> dict[str, Any]:
+        return {
+            "total_spans_checked": self.total_spans_checked,
+            "anomaly_count": self.anomaly_count,
+            "anomalies": [a.to_dict() for a in self.anomalies],
+        }
+
+    def to_report(self) -> str:
+        if not self.anomalies:
+            return f"# Duration Anomalies\n\nNo anomalies ({self.total_spans_checked} spans checked)."
+        lines = [
+            "# Duration Anomalies", "",
+            f"{self.anomaly_count} anomalies in {self.total_spans_checked} spans:", "",
+        ]
+        for a in sorted(self.anomalies, key=lambda x: -x.ratio):
+            icon = "\U0001f534" if a.severity == "critical" else "\U0001f7e1"
+            lines.append(
+                f"{icon} **{a.span_name}** ({a.span_type}): "
+                f"{a.duration_ms:.0f}ms vs {a.baseline_ms:.0f}ms baseline "
+                f"({a.ratio:.1f}x)"
+            )
+        return "\n".join(lines)
+
+
+def _compute_baseline(
+    reference_traces: list[ExecutionTrace],
+) -> dict[str, float]:
+    """Compute per-span-name average duration from reference traces.
+
+    Args:
+        reference_traces: Historical traces to derive baselines from.
+
+    Returns:
+        Dict mapping span name to average duration in ms.
+    """
+    totals: dict[str, list[float]] = {}
+    for trace in reference_traces:
+        for span in trace.spans:
+            if span.duration_ms is not None and span.duration_ms > 0:
+                totals.setdefault(span.name, []).append(span.duration_ms)
+    return {
+        name: sum(durs) / len(durs)
+        for name, durs in totals.items()
+    }
+
+
+def detect_duration_anomalies(
+    trace: ExecutionTrace,
+    baseline: Optional[dict[str, float]] = None,
+    reference_traces: Optional[list[ExecutionTrace]] = None,
+    threshold: float = 3.0,
+    critical_threshold: float = 10.0,
+) -> DurationAnomalyReport:
+    """Flag spans that are significantly slower than their historical baseline.
+
+    Answers GUARDRAILS Q1/Q5: identifies performance degradation at span
+    level. A span is flagged when its duration exceeds the baseline by
+    the given threshold multiplier.
+
+    Args:
+        trace: The current trace to check.
+        baseline: Pre-computed baselines {span_name: avg_ms}. If None,
+            computed from reference_traces.
+        reference_traces: Historical traces to compute baseline from.
+            Ignored if baseline is provided.
+        threshold: Multiplier for "warning" level (default 3x).
+        critical_threshold: Multiplier for "critical" level (default 10x).
+
+    Returns:
+        DurationAnomalyReport with flagged spans.
+    """
+    if baseline is None and reference_traces:
+        baseline = _compute_baseline(reference_traces)
+    if baseline is None:
+        baseline = {}
+
+    anomalies: list[DurationAnomaly] = []
+    checked = 0
+
+    for span in trace.spans:
+        if span.duration_ms is None or span.duration_ms <= 0:
+            continue
+        if span.name not in baseline:
+            continue
+        checked += 1
+        base = baseline[span.name]
+        if base <= 0:
+            continue
+        ratio = span.duration_ms / base
+
+        if ratio >= critical_threshold:
+            severity = "critical"
+        elif ratio >= threshold:
+            severity = "warning"
+        else:
+            continue
+
+        anomalies.append(DurationAnomaly(
+            span_name=span.name,
+            span_type=span.span_type.value,
+            duration_ms=span.duration_ms,
+            baseline_ms=base,
+            ratio=ratio,
+            severity=severity,
+        ))
+
+    return DurationAnomalyReport(
+        anomalies=anomalies,
+        total_spans_checked=checked,
+        anomaly_count=len(anomalies),
     )
 
 def analyze_timing(trace: ExecutionTrace) -> dict:
