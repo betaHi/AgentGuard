@@ -44,7 +44,7 @@
 - [x] Audit README claims against actual stable implementation — remove overstatements
 
 ### P3: Deepen diagnostics
-- [ ] Deepen Q5: refactor analyze_decisions to ≤50 lines with extracted helpers, revert progress.txt
+- [x] Deepen Q5: refactor analyze_decisions to ≤50 lines with extracted helpers, revert progress.txt
 - [ ] Handoff: detect context truncation (compare input size vs what arrived at next agent)
 - [ ] Span duration anomaly detection: flag spans 3x slower than historical baseline
 - [ ] Viewer: context flow waterfall chart (context size at each handoff as bar)
