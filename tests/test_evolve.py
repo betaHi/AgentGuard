@@ -133,3 +133,15 @@ def test_detect_trends():
         assert len(trends) >= 1
         recurring = [t for t in trends if t["type"] == "recurring_failure"]
         assert len(recurring) >= 1
+
+
+def test_agent_performance_history():
+    """Performance history tracks across learns."""
+    with tempfile.TemporaryDirectory() as tmpdir:
+        engine = EvolutionEngine(knowledge_dir=f"{tmpdir}/kb")
+        for _ in range(3):
+            engine.learn(_make_trace_with_failure())
+        
+        history = engine.agent_performance_history()
+        assert len(history) >= 1
+        assert any(len(v) >= 1 for v in history.values())
