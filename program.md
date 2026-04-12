@@ -178,3 +178,9 @@ Beyond tree view — show the actual flow:
 - Schema compatibility + migration (compat.py)
 - Statistical analysis utilities (stats.py): descriptive, outliers, trends
 - Complete multi-agent observability framework
+
+### 2026-04-12 — Iterations 220-230
+- Schema compatibility + migration (compat.py)
+- Statistical analysis (stats.py)
+- ASCII visualization (ascii_viz.py): Gantt, status summary, distribution
+- Tests: 480 → 507
