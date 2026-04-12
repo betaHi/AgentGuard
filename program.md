@@ -147,3 +147,15 @@ Beyond tree view — show the actual flow:
 - Alert rules engine (alerts.py): declarative rules, severity, batch
 - README feature table
 - Tests: 358 → 418
+
+### 🎯 2026-04-12 — ITERATION 200 MILESTONE
+- 200 iterations | 447 tests | 134 commits | 18.3K LOC
+- 58 Python modules in agentguard/ package
+- Agent dependency graph (dependency.py)
+- SLA checker (sla.py)
+- Trace generator for benchmarking (generate.py)
+- Benchmark harness — 13-module perf suite (benchmark.py)
+- Full integration test (23 modules on complex trace)
+- Extended edge case tests (empty/large/malformed/unicode/deep)
+- Span-level diff (span_diff.py)
+- Alert rules engine (alerts.py)
