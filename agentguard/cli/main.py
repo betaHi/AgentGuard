@@ -271,6 +271,55 @@ def cmd_merge(args):
         print(f"  Child files cleaned up")
 
 
+def cmd_merge_dir(args):
+    """Merge all trace files in a directory into a single trace."""
+    dir_path = Path(args.dir)
+    if not dir_path.exists():
+        print(f"{C.RED}Error: Directory not found: {args.dir}{C.RESET}", file=sys.stderr)
+        sys.exit(1)
+
+    files = sorted(dir_path.glob("*.json"), key=lambda f: f.stat().st_mtime)
+    if not files:
+        print(f"{C.YELLOW}No trace files found in {args.dir}{C.RESET}")
+        return
+
+    # Load all traces
+    traces = []
+    for f in files:
+        try:
+            data = json.loads(f.read_text(encoding="utf-8"))
+            traces.append(ExecutionTrace.from_dict(data))
+        except Exception as e:
+            print(f"  {C.YELLOW}⚠ Skipping {f.name}: {e}{C.RESET}")
+
+    if not traces:
+        print(f"{C.YELLOW}No valid traces found in {args.dir}{C.RESET}")
+        return
+
+    # Merge: use first trace as base, append spans from the rest
+    merged = traces[0]
+    for t in traces[1:]:
+        for span in t.spans:
+            span.trace_id = merged.trace_id
+            merged.spans.append(span)
+
+    # Update duration to cover all spans
+    if merged.ended_at and len(traces) > 1:
+        latest_end = max(
+            (t.ended_at for t in traces if t.ended_at),
+            default=merged.ended_at,
+        )
+        merged.ended_at = latest_end
+
+    # Write merged trace
+    output = Path(args.output)
+    output.parent.mkdir(parents=True, exist_ok=True)
+    output.write_text(merged.to_json(), encoding="utf-8")
+
+    print(f"  {C.GREEN}✓{C.RESET} Merged {len(traces)} traces ({len(merged.spans)} total spans)")
+    print(f"  {C.DIM}Output:{C.RESET} {output}")
+
+
 def cmd_validate(args):
     """Validate trace integrity."""
     from agentguard.validate import validate_trace
@@ -616,6 +665,113 @@ def cmd_compare(args):
 
 
 
+def cmd_init(args):
+    """Scaffold a new AgentGuard project with default config and directories."""
+    traces_dir = Path(".agentguard/traces")
+    config_file = Path("agentguard.json")
+
+    created = []
+
+    # Create traces directory
+    if not traces_dir.exists():
+        traces_dir.mkdir(parents=True, exist_ok=True)
+        created.append(str(traces_dir))
+
+    # Create default config
+    if not config_file.exists():
+        default_config = {
+            "traces_dir": ".agentguard/traces",
+            "report_output": ".agentguard/report.html",
+            "agents": [],
+        }
+        config_file.write_text(json.dumps(default_config, indent=2) + "\n", encoding="utf-8")
+        created.append(str(config_file))
+    else:
+        print(f"  {C.YELLOW}⚠ {config_file} already exists, skipping{C.RESET}")
+
+    if created:
+        print(f"\n  {C.GREEN}🛡️  AgentGuard initialized!{C.RESET}")
+        for f in created:
+            print(f"  {C.GREEN}+{C.RESET} {f}")
+        print(f"\n  Next steps:")
+        print(f"    1. Add @record_agent / @record_tool decorators to your code")
+        print(f"    2. Run your agents")
+        print(f"    3. agentguard list")
+        print()
+    else:
+        print(f"\n  {C.DIM}Already initialized — nothing to do.{C.RESET}\n")
+
+
+def cmd_doctor(args):
+    """Check AgentGuard installation health and environment."""
+    import platform
+
+    print(f"\n  {C.BOLD}🛡️  AgentGuard Doctor{C.RESET}")
+    print(f"  {'─' * 50}")
+
+    all_ok = True
+
+    # 1. Python version
+    py_ver = platform.python_version()
+    py_ok = tuple(int(x) for x in py_ver.split(".")[:2]) >= (3, 11)
+    icon = f"{C.GREEN}✓{C.RESET}" if py_ok else f"{C.RED}✗{C.RESET}"
+    if not py_ok:
+        all_ok = False
+    print(f"  {icon} Python {py_ver} {'(>= 3.11 required)' if not py_ok else ''}")
+
+    # 2. AgentGuard importable
+    try:
+        from agentguard import __version__
+        print(f"  {C.GREEN}✓{C.RESET} AgentGuard {__version__}")
+    except ImportError as e:
+        print(f"  {C.RED}✗{C.RESET} AgentGuard import failed: {e}")
+        all_ok = False
+
+    # 3. Core modules
+    core_modules = [
+        ("agentguard.core.trace", "Trace schema"),
+        ("agentguard.sdk.decorators", "SDK decorators"),
+        ("agentguard.sdk.context", "SDK context managers"),
+        ("agentguard.sdk.distributed", "Distributed tracing"),
+        ("agentguard.analysis", "Analysis engine"),
+        ("agentguard.web.viewer", "HTML viewer"),
+    ]
+    for mod_name, label in core_modules:
+        try:
+            __import__(mod_name)
+            print(f"  {C.GREEN}✓{C.RESET} {label} ({mod_name})")
+        except ImportError as e:
+            print(f"  {C.RED}✗{C.RESET} {label} ({mod_name}): {e}")
+            all_ok = False
+
+    # 4. Traces directory
+    traces_dir = Path(".agentguard/traces")
+    if traces_dir.exists():
+        trace_count = len(list(traces_dir.glob("*.json")))
+        print(f"  {C.GREEN}✓{C.RESET} Traces directory ({trace_count} traces)")
+    else:
+        print(f"  {C.YELLOW}⚠{C.RESET} Traces directory not found (run: agentguard init)")
+
+    # 5. Config file
+    config_path = Path("agentguard.json")
+    if config_path.exists():
+        try:
+            json.loads(config_path.read_text(encoding="utf-8"))
+            print(f"  {C.GREEN}✓{C.RESET} Config file (agentguard.json)")
+        except json.JSONDecodeError as e:
+            print(f"  {C.RED}✗{C.RESET} Config file has invalid JSON: {e.args[0]}")
+            all_ok = False
+    else:
+        print(f"  {C.YELLOW}⚠{C.RESET} Config file not found (run: agentguard init)")
+
+    # Summary
+    if all_ok:
+        print(f"\n  {C.GREEN}All checks passed!{C.RESET}\n")
+    else:
+        print(f"\n  {C.RED}Some checks failed. See above for details.{C.RESET}\n")
+        sys.exit(1)
+
+
 def cmd_version(args):
     """Show AgentGuard version."""
     from agentguard import __version__
@@ -653,6 +809,9 @@ def main():
     )
     sub = parser.add_subparsers(dest="command")
     
+    # init
+    sub.add_parser("init", help="Initialize AgentGuard in current directory")
+
     # show
     p = sub.add_parser("show", help="Display a trace file")
     p.add_argument("file", help="Path to trace JSON file")
@@ -666,6 +825,9 @@ def main():
     p.add_argument("file", help="Path to trace JSON file")
     p.add_argument("--config", help="Path to config file (agentguard.json)")
     
+    # doctor
+    sub.add_parser("doctor", help="Check installation health")
+
     # version
     sub.add_parser("version", help="Show version")
     
@@ -686,6 +848,11 @@ def main():
     p.add_argument("file", help="Parent trace file")
     p.add_argument("--keep", action="store_true", help="Keep child files after merge")
     
+    # merge-dir
+    p = sub.add_parser("merge-dir", help="Merge all traces in a directory into one")
+    p.add_argument("dir", help="Directory containing trace JSON files")
+    p.add_argument("--output", default=".agentguard/merged.json", help="Output file path")
+
     # validate
     p = sub.add_parser("validate", help="Validate trace integrity")
     p.add_argument("file", help="Path to trace JSON file")
@@ -795,7 +962,7 @@ def main():
     
     args = parser.parse_args()
     
-    cmds = {"show": cmd_show, "list": cmd_list, "search": cmd_search, "eval": cmd_eval, "merge": cmd_merge, "validate": cmd_validate, "diff": cmd_diff, "analyze": cmd_analyze, "propagation": cmd_propagation, "flowgraph": cmd_flowgraph, "context-flow": cmd_context_flow, "span-diff": cmd_span_diff, "sla": cmd_sla, "dependencies": cmd_dependencies, "benchmark": cmd_benchmark, "generate": cmd_generate, "summarize": cmd_summarize, "tree": cmd_tree, "compare": cmd_compare, "timeline": cmd_timeline, "metrics": cmd_metrics, "schema": cmd_schema, "score": cmd_score, "aggregate": cmd_aggregate, "annotate": cmd_annotate, "correlate": cmd_correlate, "version": cmd_version, "report": cmd_report, "guard": cmd_guard}
+    cmds = {"init": cmd_init, "doctor": cmd_doctor, "show": cmd_show, "list": cmd_list, "search": cmd_search, "eval": cmd_eval, "merge": cmd_merge, "merge-dir": cmd_merge_dir, "validate": cmd_validate, "diff": cmd_diff, "analyze": cmd_analyze, "propagation": cmd_propagation, "flowgraph": cmd_flowgraph, "context-flow": cmd_context_flow, "span-diff": cmd_span_diff, "sla": cmd_sla, "dependencies": cmd_dependencies, "benchmark": cmd_benchmark, "generate": cmd_generate, "summarize": cmd_summarize, "tree": cmd_tree, "compare": cmd_compare, "timeline": cmd_timeline, "metrics": cmd_metrics, "schema": cmd_schema, "score": cmd_score, "aggregate": cmd_aggregate, "annotate": cmd_annotate, "correlate": cmd_correlate, "version": cmd_version, "report": cmd_report, "guard": cmd_guard}
     if args.command in cmds:
         cmds[args.command](args)
     else:

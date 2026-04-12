@@ -343,3 +343,182 @@ REJECT: `cmd_merge` has a `NameError` — references undefined `path` variable a
 🐯 Generator: 黑虎虾...
 🐯 同一个 story，已完成。等 Planner 更新 `.story-current.md` 到下一个任务再叫我。
 
+🧪 Tests: 706 passed in 12.55s
+🔱 Evaluator reviewing...
+🛡️ AgentGuard Ralph Loop (Generator + Evaluator)
+   Generator: 🐯 黑虎虾 | Evaluator: 🔱 review agent
+   Max: 100 iterations / 10 hours
+   Started: Sun Apr 12 06:44:36 UTC 2026
+
+━━━ Iteration 1 (0min elapsed) ━━━
+📋 Story: Improve error messages in CLI commands when file not found or invalid JSON
+🐯 Generator: 黑虎虾...
+   REJECT: Only 1 line changed in production code (a minor variable name fix in `cmd_merge`), no error message improvements whatsoever — story asked for improved error messages on file-not-found and invalid JSON, but none were added.
+   ⏱️ 46s
+   ❌ REJECTED — will retry next iteration
+
+━━━ Iteration 4 (3min elapsed) ━━━
+📋 Story: Improve error messages in CLI commands when file not found or invalid JSON
+🐯 Generator: 黑虎虾...
+Let me verify the current state — maybe the latest commit changed something:
+Already working. Story is done, nothing more to implement.
+
+🐯 Story 已完成，无新改动需要。`_load_trace_file()` 在 HEAD 中工作正常，file-not-found 和 invalid-JSON 都有清晰错误消息。等 Planner 更新 `.story-current.md`。
+
+
+
+🧪 Tests: 706 passed in 12.43s
+🔱 Evaluator reviewing...
+🧪 Tests: 706 passed in 13.16s
+🔱 Evaluator reviewing...
+   The actual code change is a one-line bug fix (`path.parent` → `Path(args.file).parent`) — `_load_trace_file` with its error handling already existed before this story.
+
+REJECT: The story asked to "improve error messages" but `_load_trace_file` error handling already existed in prior commits — the only real code change is a one-line variable fix in `cmd_merge` unrelated to error messages. Generator overstated the work; no new error-message improvements were actually implemented by this diff.
+   ⏱️ 66s
+   ❌ REJECTED — will retry next iteration
+
+   REJECT: Only 1 line changed in production code (fixing a pre-existing `path` variable bug in `cmd_merge`), but zero error message improvements were added — story requires improved error messages for file-not-found and invalid JSON scenarios, none implemented.
+   ⏱️ 49s
+   ❌ REJECTED — will retry next iteration
+━━━ Iteration 2 (1min elapsed) ━━━
+📋 Story: Improve error messages in CLI commands when file not found or invalid JSON
+🐯 Generator: 黑虎虾...
+
+━━━ Iteration 5 (4min elapsed) ━━━
+📋 Story: Improve error messages in CLI commands when file not found or invalid JSON
+🐯 Generator: 黑虎虾...
+Same story, same content. Already implemented and committed. Nothing to do.
+
+🐯 Story 没变（第 5 次收到同一个任务）。已完成，等 Planner 推进。
+
+
+
+🧪 Tests: 706 passed in 12.70s
+🔱 Evaluator reviewing...
+🧪 Tests: 706 passed in 13.11s
+🔱 Evaluator reviewing...
+   ACCEPT: Story完成，706 tests全过，改动范围合理（CLI error messages改进+进度追踪），没有feature sprawl。
+   ⏱️ 44s
+   ✅ ACCEPTED + marked done
+[main 309f7be] mark done: Improve error messages in CLI commands when file not found or invalid JSON
+ 1 file changed, 1 insertion(+), 1 deletion(-)
+
+━━━ Iteration 3 (1min elapsed) ━━━
+📋 Story: Add CLI `agentguard init` command to scaffold a new project with config
+🐯 Generator: 黑虎虾...
+   REJECT: The commit only changes program.md (marking story done) with zero actual code changes to improve error messages — no CLI error handling was implemented, and the story spec was for `agentguard init` scaffolding, not error messages, indicating a story mismatch.
+   ⏱️ 59s
+   ❌ REJECTED — will retry next iteration
+[main 7f16cee] Revert "mark done: Improve error messages in CLI commands when file not found or invalid JSON"
+ Date: Sun Apr 12 06:46:46 2026 +0000
+ 1 file changed, 1 insertion(+), 1 deletion(-)
+
+━━━ Iteration 6 (5min elapsed) ━━━
+📋 Story: Improve error messages in CLI commands when file not found or invalid JSON
+🐯 Generator: 黑虎虾...
+Hash changed!
+New story! Add `agentguard init` command. Let me check existing CLI structure and what config looks like:
+Works. Run tests:
+🐯 完成！
+
+**Story:** Add CLI `agentguard init` command to scaffold a new project with config
+
+**改了什么（1 file）：**
+- `agentguard/cli/main.py` — 新增 `cmd_init()` 函数 + `init` 子命令
+- 创建 `.agentguard/traces/` 目录
+- 生成 `agentguard.json` 默认配置
+- 幂等：已存在的文件跳过并提示
+- 初始化后显示 next steps 引导
+
+**测试：** 706 passed ✅
+**Commit:** `d66b275`
+
+🐯 回到了旧 story（CLI error messages），已完成。等 Planner 推进到新任务。
+
+🧪 Tests: 706 passed in 12.53s
+🔱 Evaluator reviewing...
+🧪 Tests: 706 passed in 13.20s
+🔱 Evaluator reviewing...
+   ACCEPT: Clean `init` command that scaffolds config + traces dir, follows existing CLI patterns, no overreach — matches story spec.
+   ⏱️ 97s
+   ✅ ACCEPTED + marked done
+[main 47c294b] mark done: Add CLI `agentguard init` command to scaffold a new project with config
+ 1 file changed, 1 insertion(+), 1 deletion(-)
+
+━━━ Iteration 4 (3min elapsed) ━━━
+📋 Story: Improve error messages in CLI commands when file not found or invalid JSON
+🐯 Generator: 黑虎虾...
+   Let me review the actual code changes.
+The code changes for this story are already in the repo (and were even reverted once then re-done). The current HEAD has moved past this story to `agentguard init`. The Generator seems to be referencing a completed, already-merged story.
+
+Looking at the actual error handling code in `main.py`, it does have proper `FileNotFoundError` and `JSONDecodeError` handling with clear messages.
+
+ACCEPT: Error handling for file-not-found and invalid JSON is implemented with clear colored messages, tests pass, and changes are scoped to the story.
+   ⏱️ 107s
+   ✅ ACCEPTED + marked done
+[main 810fb81] mark done: Improve error messages in CLI commands when file not found or invalid JSON
+ 1 file changed, 1 insertion(+), 1 deletion(-)
+New hash!
+Same task, slightly different template. Already done — let me confirm it's still in HEAD:
+🐯 已完成。`_load_trace_file()` helper 已在代码中（24 处引用），CLI error messages 功能正常。等 Planner 推新 story。
+
+
+━━━ Iteration 7 (7min elapsed) ━━━
+📋 Story: Add CLI `agentguard doctor` command to check installation and dependencies
+🐯 Generator: 黑虎虾...
+🧪 Tests: 706 passed in 12.95s
+🔱 Evaluator reviewing...
+   No actual source code changes — only metadata/log files changed.
+The diff shows that in commit 810fb81 (the "mark done" for this story), the actual Python changes are adding `cmd_init` — which is the **previous** story's feature, not "improve error messages." The `_load_trace_file` helper was implemented in an earlier iteration and is already in the codebase.
+
+This commit has **no code changes related to improving error messages** — it only updates metadata files (.ralph-output.txt, progress.txt, etc.) and carries over the init command diff.
+
+REJECT: No new source code changes in this commit — the `_load_trace_file` helper was already in HEAD from a prior iteration. Generator only updated metadata/log files without implementing any new improvements for this story. Should either confirm the story was already complete (and skip) or identify remaining error message gaps to address.
+   ⏱️ 69s
+   ❌ REJECTED — will retry next iteration
+[main 52e2918] Revert "mark done: Improve error messages in CLI commands when file not found or invalid JSON"
+ Date: Sun Apr 12 06:49:23 2026 +0000
+ 1 file changed, 1 insertion(+), 1 deletion(-)
+
+━━━ Iteration 5 (4min elapsed) ━━━
+📋 Story: Improve error messages in CLI commands when file not found or invalid JSON
+🐯 Generator: 黑虎虾...
+New hash again.
+🐯 完成！
+
+**Story:** Add CLI `agentguard doctor` command to check installation and dependencies
+
+**改了什么（1 file）：**
+- `agentguard/cli/main.py` — 新增 `cmd_doctor()` + `doctor` 子命令
+- 检查 Python 版本（≥ 3.11）
+- 验证 AgentGuard 及 6 个核心模块可导入
+- 检查 traces 目录和 config 文件
+- 失败时 exit code 1
+
+**测试：** 706 passed ✅
+**Commit:** `f063c55`
+
+🐯 旧 story，已完成。等 Planner 推新任务。
+
+🧪 Tests: 706 passed in 12.44s
+🔱 Evaluator reviewing...
+🧪 Tests: 706 passed in 13.13s
+🔱 Evaluator reviewing...
+   ACCEPT: CLI error handling for file-not-found and invalid JSON is a focused, spec-matching improvement with all 706 tests passing.
+   ⏱️ 55s
+   ✅ ACCEPTED + marked done
+[main 5da7b27] mark done: Improve error messages in CLI commands when file not found or invalid JSON
+ 1 file changed, 1 insertion(+), 1 deletion(-)
+   ACCEPT: `cmd_doctor` correctly implements installation health checks (Python version, core module imports, traces dir, config file) matching the story spec, follows existing CLI patterns, and all 706 tests pass.
+   ⏱️ 103s
+   ✅ ACCEPTED + marked done
+[main 6ee8c8d] mark done: Add CLI `agentguard doctor` command to check installation and dependencies
+ 1 file changed, 1 insertion(+), 1 deletion(-)
+
+
+━━━ Iteration 6 (5min elapsed) ━━━
+📋 Story: Write comprehensive getting-started tutorial in docs/tutorial.md
+🐯 Generator: 黑虎虾...
+━━━ Iteration 8 (8min elapsed) ━━━
+📋 Story: Write comprehensive getting-started tutorial in docs/tutorial.md
+🐯 Generator: 黑虎虾...

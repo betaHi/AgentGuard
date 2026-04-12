@@ -16,7 +16,7 @@ from typing import Optional
 
 from agentguard.core.trace import ExecutionTrace, Span
 
-__all__ = ['export_jsonl', 'export_otel_spans', 'trace_statistics']
+__all__ = ['export_jsonl', 'export_otel_spans', 'export_otel', 'trace_statistics']
 
 
 def export_jsonl(trace: ExecutionTrace, filepath: str) -> None:
@@ -110,6 +110,136 @@ def export_otel_spans(trace: ExecutionTrace) -> list[dict]:
         otel_spans.append(otel_span)
     
     return otel_spans
+
+
+
+def export_otel(trace: ExecutionTrace, filepath: Optional[str] = None) -> dict:
+    """Export trace to OpenTelemetry JSON format (resourceSpans envelope).
+
+    Produces the standard OTel JSON structure that can be imported back
+    via ``importer.import_otel()`` or sent to any OTel-compatible collector.
+
+    Uses nanosecond Unix timestamps and attribute list format per the
+    OTel specification.
+
+    Args:
+        trace: The execution trace to export.
+        filepath: Optional file path to write JSON output.
+
+    Returns:
+        Dict in OTel ``resourceSpans`` format.
+    """
+    from datetime import datetime, timezone
+
+    def _iso_to_unix_nano(iso: Optional[str]) -> int:
+        if not iso:
+            return 0
+        try:
+            dt = datetime.fromisoformat(iso)
+            return int(dt.timestamp() * 1e9)
+        except (ValueError, TypeError):
+            return 0
+
+    def _attrs_to_otel(attributes: dict) -> list[dict]:
+        """Convert flat dict to OTel attribute list format."""
+        result = []
+        for k, v in attributes.items():
+            if isinstance(v, bool):
+                result.append({"key": k, "value": {"boolValue": v}})
+            elif isinstance(v, int):
+                result.append({"key": k, "value": {"intValue": str(v)}})
+            elif isinstance(v, float):
+                result.append({"key": k, "value": {"doubleValue": v}})
+            elif isinstance(v, list):
+                str_vals = [{"stringValue": str(item)} for item in v]
+                result.append({"key": k, "value": {"arrayValue": {"values": str_vals}}})
+            else:
+                result.append({"key": k, "value": {"stringValue": str(v)}})
+        return result
+
+    otel_spans = []
+    trace_id_hex = trace.trace_id.replace("-", "")[:32].ljust(32, "0")
+
+    for span in trace.spans:
+        attributes = {
+            "agentguard.span_type": span.span_type.value,
+            "agentguard.task": trace.task,
+        }
+
+        if span.span_type.value == "agent":
+            attributes["gen_ai.operation.name"] = "invoke_agent"
+            attributes["gen_ai.agent.name"] = span.name
+            ver = span.metadata.get("agent_version")
+            if ver:
+                attributes["gen_ai.agent.version"] = ver
+        elif span.span_type.value == "tool":
+            attributes["gen_ai.operation.name"] = "execute_tool"
+            attributes["gen_ai.tool.name"] = span.name
+        elif span.span_type.value == "llm_call":
+            attributes["gen_ai.operation.name"] = "chat"
+            model = span.metadata.get("model")
+            if model:
+                attributes["gen_ai.request.model"] = model
+        elif span.span_type.value == "handoff":
+            attributes["agentguard.handoff.from"] = span.handoff_from or ""
+            attributes["agentguard.handoff.to"] = span.handoff_to or ""
+            if span.context_size_bytes is not None:
+                attributes["agentguard.handoff.context_size_bytes"] = span.context_size_bytes
+
+        if span.error:
+            attributes["error.message"] = span.error
+
+        for k, v in span.metadata.items():
+            if k not in ("agent_version", "model"):
+                attr_key = f"agentguard.{k}" if not k.startswith("agentguard.") else k
+                attributes[attr_key] = v
+
+        span_id_hex = span.span_id.replace("-", "")[:16].ljust(16, "0")
+        parent_hex = ""
+        if span.parent_span_id:
+            parent_hex = span.parent_span_id.replace("-", "")[:16].ljust(16, "0")
+
+        status_code = 1 if span.status.value == "completed" else 2  # 1=Ok, 2=Error
+
+        otel_span = {
+            "traceId": trace_id_hex,
+            "spanId": span_id_hex,
+            "parentSpanId": parent_hex,
+            "name": f"{span.span_type.value}:{span.name}",
+            "kind": "INTERNAL",
+            "startTimeUnixNano": _iso_to_unix_nano(span.started_at),
+            "endTimeUnixNano": _iso_to_unix_nano(span.ended_at),
+            "attributes": _attrs_to_otel(attributes),
+            "status": {
+                "code": status_code,
+                "message": span.error or "",
+            },
+        }
+        otel_spans.append(otel_span)
+
+    result = {
+        "resourceSpans": [{
+            "resource": {
+                "attributes": _attrs_to_otel({
+                    "service.name": "agentguard",
+                    "agentguard.trace_id": trace.trace_id,
+                    "agentguard.task": trace.task,
+                    "agentguard.trigger": trace.trigger,
+                }),
+            },
+            "scopeSpans": [{
+                "scope": {"name": "agentguard", "version": "0.1.0"},
+                "spans": otel_spans,
+            }],
+        }],
+    }
+
+    if filepath:
+        path = Path(filepath)
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_text(json.dumps(result, indent=2, ensure_ascii=False), encoding="utf-8")
+
+    return result
 
 
 def trace_statistics(trace: ExecutionTrace) -> dict:

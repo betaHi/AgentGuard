@@ -83,19 +83,35 @@ def _grade(score: float) -> str:
         return "F"
 
 
+# Default component weights (must sum to 1.0)
+DEFAULT_WEIGHTS: dict[str, float] = {
+    "success_rate": 0.30,
+    "performance": 0.20,
+    "context_integrity": 0.20,
+    "resilience": 0.15,
+    "efficiency": 0.15,
+}
+
+
 def score_trace(
     trace: ExecutionTrace,
     expected_duration_ms: Optional[float] = None,
+    weights: Optional[dict[str, float]] = None,
 ) -> TraceScore:
     """Score a trace on multiple quality dimensions.
     
     Args:
         trace: The execution trace to score.
         expected_duration_ms: Optional expected duration for performance scoring.
+        weights: Custom component weights. Keys are component names
+            (``"success_rate"``, ``"performance"``, ``"context_integrity"``,
+            ``"resilience"``, ``"efficiency"``). Values are floats that should
+            sum to 1.0. Missing keys fall back to ``DEFAULT_WEIGHTS``.
     
     Returns:
         TraceScore with overall score, grade, and component breakdown.
     """
+    w = {**DEFAULT_WEIGHTS, **(weights or {})}
     components = []
     
     # 1. Success Rate (weight: 0.30)
@@ -111,7 +127,7 @@ def score_trace(
         success_detail = f"{completed}/{total_spans} spans completed ({failed} failed/running)"
     
     components.append(ScoreComponent(
-        name="Success Rate", score=success_score, weight=0.30,
+        name="Success Rate", score=success_score, weight=w["success_rate"],
         details=success_detail,
     ))
     
@@ -134,7 +150,7 @@ def score_trace(
         perf_detail = "No duration data"
     
     components.append(ScoreComponent(
-        name="Performance", score=perf_score, weight=0.20,
+        name="Performance", score=perf_score, weight=w["performance"],
         details=perf_detail,
     ))
     
@@ -153,7 +169,7 @@ def score_trace(
         ctx_detail = "No handoffs recorded (neutral)"
     
     components.append(ScoreComponent(
-        name="Context Integrity", score=ctx_score, weight=0.20,
+        name="Context Integrity", score=ctx_score, weight=w["context_integrity"],
         details=ctx_detail,
     ))
     
@@ -178,7 +194,7 @@ def score_trace(
         res_detail = "No failures (perfect resilience)"
     
     components.append(ScoreComponent(
-        name="Resilience", score=res_score, weight=0.15,
+        name="Resilience", score=res_score, weight=w["resilience"],
         details=res_detail,
     ))
     
@@ -207,7 +223,7 @@ def score_trace(
         eff_detail += f", +{parallel_bonus:.0f} parallelism bonus"
     
     components.append(ScoreComponent(
-        name="Efficiency", score=eff_score, weight=0.15,
+        name="Efficiency", score=eff_score, weight=w["efficiency"],
         details=eff_detail,
     ))
     

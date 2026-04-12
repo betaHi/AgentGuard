@@ -64,6 +64,29 @@ def normalize_trace(trace: ExecutionTrace) -> NormalizationResult:
             span.parent_span_id = None
             changes.append(f"Orphan span '{span.name}' promoted to root")
     
+
+    # 2b. Fix inconsistent timestamps (end before start)
+    for span in trace.spans:
+        if span.started_at and span.ended_at:
+            try:
+                start_dt = datetime.fromisoformat(span.started_at)
+                end_dt = datetime.fromisoformat(span.ended_at)
+                if end_dt < start_dt:
+                    # Swap them — most likely a serialization error
+                    span.started_at, span.ended_at = span.ended_at, span.started_at
+                    changes.append(
+                        f"Swapped timestamps on span '{span.name}' "
+                        f"(end was before start)"
+                    )
+            except (ValueError, TypeError):
+                pass
+        elif span.started_at and not span.ended_at and span.status in (
+            SpanStatus.COMPLETED, SpanStatus.FAILED
+        ):
+            # Span is done but has no end time — set to start time
+            span.ended_at = span.started_at
+            changes.append(f"Set missing ended_at on completed span '{span.name}'")
+
     # 3. Deduplicate spans (same span_id)
     seen_ids: set[str] = set()
     deduped: list[Span] = []

@@ -38,6 +38,7 @@ from pathlib import Path
 from typing import Any, Optional
 
 from agentguard.core.trace import ExecutionTrace, Span, SpanType, SpanStatus
+from agentguard.scoring import score_trace
 from agentguard.analysis import (
     analyze_failures, analyze_flow, analyze_bottleneck, analyze_context_flow,
     FailureAnalysis, FlowAnalysis,
@@ -117,6 +118,7 @@ class KnowledgeBase:
     lessons: dict[str, Lesson] = field(default_factory=dict)  # key = category:agent:observation_hash
     trace_count: int = 0
     last_updated: str = ""
+    best_scores: dict[str, dict] = field(default_factory=dict)  # key = task, value = {score, trace_id, ...}
 
     def to_dict(self) -> dict:
         return {
@@ -124,6 +126,7 @@ class KnowledgeBase:
             "last_updated": self.last_updated,
             "lesson_count": len(self.lessons),
             "lessons": {k: v.to_dict() for k, v in self.lessons.items()},
+            "best_scores": self.best_scores,
         }
 
     @classmethod
@@ -131,6 +134,7 @@ class KnowledgeBase:
         kb = cls(
             trace_count=data.get("trace_count", 0),
             last_updated=data.get("last_updated", ""),
+            best_scores=data.get("best_scores", {}),
         )
         for k, v in data.get("lessons", {}).items():
             kb.lessons[k] = Lesson(**{f: v[f] for f in Lesson.__dataclass_fields__ if f in v})
@@ -321,31 +325,54 @@ class EvolutionEngine:
 
     
     def compare_to_best(self, current_trace: ExecutionTrace) -> dict:
-        """Compare current trace metrics against historical best.
-        
-        Returns improvement/regression signal for key metrics.
+        """Compare current trace against the historical best for this pipeline.
+
+        Tracks the best score per task (pipeline name). Returns whether the
+        current trace is an improvement, regression, or stable compared to
+        the best recorded run.
+
+        Args:
+            current_trace: The trace to compare.
+
+        Returns:
+            Dict with trend, current_score, best_score, delta, and details.
         """
-        from agentguard.analysis import analyze_failures, analyze_bottleneck
-        
-        current_f = analyze_failures(current_trace)
-        current_bn = analyze_bottleneck(current_trace) if current_trace.agent_spans else None
-        
-        # Compare against knowledge base patterns
-        historical_issues = len(self.kb.lessons)
-        current_issues = len(self.reflect(current_trace).lessons)
-        
-        trend = "stable"
-        if current_issues < historical_issues * 0.5:
-            trend = "improving"
-        elif current_issues > historical_issues * 1.5 and historical_issues > 0:
-            trend = "degrading"
-        
+        current_score = score_trace(current_trace)
+        task_key = current_trace.task or "__default__"
+
+        best = self.kb.best_scores.get(task_key)
+        best_overall = best["score"] if best else None
+
+        # Update best if current is better
+        if best_overall is None or current_score.overall > best_overall:
+            self.kb.best_scores[task_key] = {
+                "score": round(current_score.overall, 1),
+                "grade": current_score.grade,
+                "trace_id": current_trace.trace_id,
+                "timestamp": datetime.now(timezone.utc).isoformat(),
+            }
+            self._save_kb()
+
+        if best_overall is None:
+            trend = "first_run"
+            delta = 0.0
+        else:
+            delta = current_score.overall - best_overall
+            if delta > 5:
+                trend = "improving"
+            elif delta < -10:
+                trend = "regression"
+            else:
+                trend = "stable"
+
         return {
             "trend": trend,
-            "current_issues": current_issues,
-            "historical_avg_issues": historical_issues / max(self.kb.trace_count, 1),
-            "resilience": current_f.resilience_score,
-            "bottleneck": current_bn.bottleneck_span if current_bn else "N/A",
+            "current_score": round(current_score.overall, 1),
+            "current_grade": current_score.grade,
+            "best_score": best_overall,
+            "best_trace_id": best["trace_id"] if best else None,
+            "delta": round(delta, 1),
+            "task": task_key,
         }
 
     def detect_trends(self, window: int = 10) -> list[dict]:
@@ -395,6 +422,111 @@ class EvolutionEngine:
                 })
         
         return sorted(trends, key=lambda t: {"high": 0, "medium": 1, "low": 2}.get(t["severity"], 3))
+
+
+    def generate_prd(self, min_occurrences: int = 3) -> str:
+        """Auto-generate an improvement PRD from recurring failure patterns.
+
+        Args:
+            min_occurrences: Minimum times a pattern must recur to be included.
+
+        Returns:
+            Markdown-formatted PRD string.
+        """
+        recurring = [l for l in self.kb.lessons.values() if l.occurrences >= min_occurrences]
+        if not recurring:
+            return (
+                "# Improvement PRD\n\n"
+                f"No recurring patterns (threshold: {min_occurrences}+).\n"
+                f"Analyzed {self.kb.trace_count} traces, {len(self.kb.lessons)} lessons."
+            )
+
+        by_cat: dict[str, list[Lesson]] = {}
+        for l in recurring:
+            by_cat.setdefault(l.category, []).append(l)
+        for cat in by_cat:
+            by_cat[cat].sort(key=lambda l: l.confidence * l.occurrences, reverse=True)
+
+        prio = {"failure": "P0", "bottleneck": "P1", "handoff": "P1", "score": "P2"}
+        icons = {"failure": "\U0001f534", "bottleneck": "\U0001f422", "handoff": "\U0001f500", "score": "\U0001f4ca"}
+
+        lines = [
+            "# AgentGuard Improvement PRD", "",
+            f"> From {self.kb.trace_count} traces, {len(recurring)} recurring patterns.", "",
+            "## Executive Summary", "",
+            f"{len(recurring)} recurring issues across {len(set(l.agent for l in recurring))} agents.", "",
+        ]
+        n = 0
+        for cat, lessons in sorted(by_cat.items(), key=lambda kv: {"failure": 0, "bottleneck": 1, "handoff": 2}.get(kv[0], 3)):
+            icon = icons.get(cat, "\u2022")
+            lines.append(f"## {icon} {cat.title()} ({prio.get(cat, 'P3')})")
+            lines.append("")
+            for l in lessons:
+                n += 1
+                lines.append(f"### {n}. {l.agent}")
+                lines.append(f"- **Problem:** {l.observation}")
+                lines.append(f"- **Frequency:** {l.occurrences}x (confidence: {l.confidence:.0%})")
+                lines.append(f"- **Fix:** {l.suggestion}")
+                lines.append("")
+
+        best_val = max((b.get("score", 0) for b in self.kb.best_scores.values()), default="N/A")
+        lines.extend(["## Success Criteria", "",
+            "- [ ] Zero recurring unhandled failures",
+            "- [ ] Bottleneck agents show latency improvement",
+            f"- [ ] Trace score above 80/100 (best: {best_val})", ""])
+        return "\n".join(lines)
+
+    def auto_apply(self, trace: ExecutionTrace, min_confidence: float = 0.8, dry_run: bool = True) -> dict:
+        """Generate and optionally apply high-confidence config patches.
+
+        Args:
+            trace: Current trace to analyze.
+            min_confidence: Threshold for suggestions.
+            dry_run: If True, return patches without writing.
+
+        Returns:
+            Dict with patches, scores, and status.
+        """
+        suggestions = self.suggest(min_confidence=min_confidence)
+        if not suggestions:
+            return {"status": "no_suggestions", "patches": []}
+
+        patches = []
+        for s in suggestions:
+            patch = {"agent": s.agent, "category": s.category, "confidence": s.confidence,
+                     "occurrences": s.occurrences, "suggestion": s.suggestion}
+            if s.category == "failure":
+                patch["config"] = {"retry_policy": {"max_retries": 3, "backoff_ms": 1000}, "fallback": True}
+            elif s.category == "bottleneck":
+                patch["config"] = {"timeout_ms": 30000, "parallel": True, "cache": True}
+            elif s.category == "handoff":
+                patch["config"] = {"validate_context": True, "required_keys": []}
+            else:
+                patch["config"] = {}
+            patches.append(patch)
+
+        sc = score_trace(trace)
+        cmp = self.compare_to_best(trace)
+        result = {"status": "dry_run" if dry_run else "applied", "patches": patches,
+                  "patch_count": len(patches), "current_score": sc.overall,
+                  "current_grade": sc.grade, "best_score": cmp.get("best_score"), "trend": cmp["trend"]}
+
+        if not dry_run:
+            cp = Path("agentguard.json")
+            cfg = {}
+            if cp.exists():
+                try: cfg = json.loads(cp.read_text(encoding="utf-8"))
+                except: pass
+            ac = {a.get("name", ""): a for a in cfg.get("agents", [])}
+            for p in patches:
+                nm = p["agent"]
+                if nm not in ac: ac[nm] = {"name": nm}
+                ac[nm].update(p["config"])
+            cfg["agents"] = list(ac.values())
+            cfg["_auto_applied"] = datetime.now(timezone.utc).isoformat()
+            cp.write_text(json.dumps(cfg, indent=2, ensure_ascii=False) + "\n", encoding="utf-8")
+            result["config_path"] = str(cp)
+        return result
 
     def summary(self) -> str:
         """Generate a human-readable summary of accumulated knowledge."""

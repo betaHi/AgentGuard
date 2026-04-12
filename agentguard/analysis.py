@@ -361,7 +361,14 @@ class BottleneckReport:
             "",
         ]
         for i, a in enumerate(self.agent_rankings):
-            lines.append(f"{i+1}. **{a['name']}** — {a['duration_ms']:.0f}ms ({a['pct']:.0f}%)")
+            own_ms = a.get("own_duration_ms", a["duration_ms"])
+            own_pct = a.get("own_pct", a["pct"])
+            container = " (container)" if a.get("is_container") else ""
+            lines.append(
+                f"{i+1}. **{a['name']}**{container} — "
+                f"total: {a['duration_ms']:.0f}ms ({a['pct']:.0f}%) · "
+                f"self: {own_ms:.0f}ms ({own_pct:.0f}%)"
+            )
         return "\n".join(lines)
 
 

@@ -157,5 +157,6 @@ def test_compare_to_best():
         engine.learn(trace)
         
         comparison = engine.compare_to_best(trace)
-        assert comparison["trend"] in ["stable", "improving", "degrading"]
-        assert 0 <= comparison["resilience"] <= 1
+        assert comparison["trend"] in ["stable", "improving", "degrading", "first_run", "regression"]
+        assert "current_score" in comparison
+        assert "best_score" in comparison

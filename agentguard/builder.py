@@ -103,6 +103,60 @@ class TraceBuilder:
         self._spans.append(span)
         return self
     
+    def parallel(self, *agents: dict) -> TraceBuilder:
+        """Add multiple agent spans that execute in parallel (overlapping times).
+
+        Each agent dict accepts the same kwargs as ``agent()``. All spans
+        share the same start time; the cursor advances by the longest
+        duration.
+
+        Args:
+            *agents: Dicts with agent kwargs, e.g.
+                ``{"name": "a", "duration_ms": 500}``.
+
+        Returns:
+            self for chaining.
+
+        Example::
+
+            builder.parallel(
+                {"name": "searcher", "duration_ms": 1000},
+                {"name": "fetcher", "duration_ms": 800},
+            )
+        """
+        start = self._cursor
+        max_dur = 0
+        parent_id = self._stack[-1] if self._stack else None
+
+        for agent_kwargs in agents:
+            name = agent_kwargs.pop("name")
+            duration_ms = agent_kwargs.pop("duration_ms", 1000)
+            status = agent_kwargs.pop("status", "completed")
+            error = agent_kwargs.pop("error", None)
+
+            end = start + timedelta(milliseconds=duration_ms)
+            span = Span(
+                span_type=SpanType.AGENT,
+                name=name,
+                status=SpanStatus(status),
+                parent_span_id=parent_id,
+                started_at=start.isoformat(),
+                ended_at=end.isoformat(),
+                error=error,
+                input_data=agent_kwargs.pop("input_data", None),
+                output_data=agent_kwargs.pop("output_data", None),
+                tags=agent_kwargs.pop("tags", []),
+                token_count=agent_kwargs.pop("token_count", None),
+                estimated_cost_usd=agent_kwargs.pop("cost_usd", None),
+            )
+            if error and status == "failed":
+                span.status = SpanStatus.FAILED
+            self._spans.append(span)
+            max_dur = max(max_dur, duration_ms)
+
+        self._cursor = start + timedelta(milliseconds=max_dur)
+        return self
+
     def end(self) -> TraceBuilder:
         """Pop the current nesting level (end the current agent)."""
         if self._stack:
