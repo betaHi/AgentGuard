@@ -146,6 +146,37 @@ agentguard report
 
 ---
 
+
+---
+
+## Example 7: Customer Support Pipeline
+
+**File:** [`examples/support_pipeline.py`](../examples/support_pipeline.py)
+
+**Scenario:** Customer sends a billing dispute. Agents classify intent, search knowledge base, generate response, and check escalation rules.
+
+**Agents:** support-coordinator → classifier → knowledge-retriever → responder → escalation-checker
+
+**What this demonstrates:**
+- Intent classification → knowledge retrieval → response generation flow
+- Escalation decision with email notification
+- 5 agents, 5 tools, 3 handoffs
+
+---
+
+## Example 8: Data ETL Pipeline
+
+**File:** [`examples/data_pipeline.py`](../examples/data_pipeline.py)
+
+**Scenario:** Monthly transaction data processing — extract CSV, validate schema, clean/aggregate, load to database, generate report.
+
+**Agents:** data-coordinator → extractor → validator → transformer → loader → reporter
+
+**What this demonstrates:**
+- Linear pipeline with strict ordering
+- Validation gate (schema check before transform)
+- 6 agents, 6 tools, 4 handoffs
+
 ## Creating Your Own Example
 
 To create a scenario for your agent system:
