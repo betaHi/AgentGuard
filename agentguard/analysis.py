@@ -526,6 +526,7 @@ class ContextFlowPoint:
     size_delta_bytes: int = 0
     anomaly: str = ""  # "loss", "bloat", "compression", "truncation", "ok"
     truncation_detail: str = ""  # description if truncation detected
+    retention_ratio: Optional[float] = None  # bytes_received / bytes_sent (1.0 = perfect)
 
     def to_dict(self) -> dict:
         return {
@@ -534,6 +535,7 @@ class ContextFlowPoint:
             "keys_lost": self.keys_lost, "size_delta_bytes": self.size_delta_bytes,
             "anomaly": self.anomaly,
             "truncation_detail": self.truncation_detail,
+            "retention_ratio": round(self.retention_ratio, 3) if self.retention_ratio is not None else None,
         }
 
 
@@ -545,11 +547,18 @@ class ContextFlowReport:
     points: list[ContextFlowPoint]
     anomalies: list[ContextFlowPoint]  # points with loss or bloat
     
+    @property
+    def avg_retention_ratio(self) -> Optional[float]:
+        """Average information retention across all handoffs with data."""
+        ratios = [p.retention_ratio for p in self.points if p.retention_ratio is not None]
+        return sum(ratios) / len(ratios) if ratios else None
+
     def to_dict(self) -> dict:
         return {
             "handoff_count": self.handoff_count,
             "total_context_bytes": self.total_context_bytes,
             "anomaly_count": len(self.anomalies),
+            "avg_retention_ratio": round(self.avg_retention_ratio, 3) if self.avg_retention_ratio is not None else None,
             "points": [p.to_dict() for p in self.points],
         }
     
@@ -571,6 +580,10 @@ class ContextFlowReport:
                 lines.append(f"   ⚠ Context grew by {p.size_delta_bytes:,}B")
             if p.anomaly == "truncation" and p.truncation_detail:
                 lines.append(f"   ✂ Truncated: {p.truncation_detail}")
+            if p.retention_ratio is not None:
+                pct = p.retention_ratio * 100
+                icon = "\u2705" if pct >= 90 else "\u26a0" if pct >= 50 else "\u274c"
+                lines.append(f"   {icon} Retention: {pct:.0f}%")
         return "\n".join(lines)
 
 
@@ -633,10 +646,19 @@ def analyze_context_flow(trace: ExecutionTrace) -> ContextFlowReport:
         ctx_keys = hs.metadata.get("handoff.context_keys", [])
         ctx_size = hs.context_size_bytes or hs.metadata.get("handoff.context_size_bytes", 0)
         
+        # Compute retention if receiver size is available
+        recv_size = 0
+        recv_info = hs.context_received
+        if isinstance(recv_info, dict):
+            recv_size = recv_info.get("size_bytes", 0)
+        retention = recv_size / ctx_size if ctx_size > 0 and recv_size > 0 else None
+
         points.append(ContextFlowPoint(
             from_agent=fr, to_agent=to,
             keys_sent=ctx_keys, size_bytes=ctx_size,
+            size_received_bytes=recv_size,
             anomaly="ok",
+            retention_ratio=retention,
         ))
     
     # Method 2: If no explicit handoffs, infer from sequential agents
@@ -679,6 +701,8 @@ def analyze_context_flow(trace: ExecutionTrace) -> ContextFlowReport:
                 if is_trunc:
                     anomaly = "truncation"
 
+                retention = r_size / s_size if s_size > 0 else None
+
                 points.append(ContextFlowPoint(
                     from_agent=sender.name, to_agent=receiver.name,
                     keys_sent=s_keys, size_bytes=s_size,
@@ -686,6 +710,7 @@ def analyze_context_flow(trace: ExecutionTrace) -> ContextFlowReport:
                     keys_lost=lost, size_delta_bytes=delta,
                     anomaly=anomaly,
                     truncation_detail=trunc_desc if is_trunc else "",
+                    retention_ratio=retention,
                 ))
     
     total_bytes = sum(p.size_bytes for p in points)
