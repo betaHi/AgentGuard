@@ -172,3 +172,9 @@ Beyond tree view — show the actual flow:
 - Enhanced export (export_v2.py): CSV/TSV/table for pandas
 - Trace search (search.py): full-text, regex, multi-field
 - Tests: 467 → 480
+
+### 🎯 2026-04-12 — 500+ TESTS MILESTONE (iteration 226)
+- 226 iterations | 502 tests | 146 commits | 19.7K LOC | 64 modules
+- Schema compatibility + migration (compat.py)
+- Statistical analysis utilities (stats.py): descriptive, outliers, trends
+- Complete multi-agent observability framework
