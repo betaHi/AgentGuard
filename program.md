@@ -21,7 +21,7 @@
 ## Current Stories
 
 - [x] Deepen Q4: add cost-yield analysis — compare token spend per agent vs output quality
-- [ ] Deepen Q5: add orchestration decision tracking — record why coordinator chose agent A over B
+- [S] Deepen Q5: add orchestration decision tracking — record why coordinator chose agent A over B (SKIPPED: 3x REJECT)
 - [ ] Add trace replay with assertion: replay golden trace and verify properties hold
 - [ ] Viewer: add mini flow-graph (Mermaid SVG) in diagnostics panel
 - [ ] Viewer: add context flow waterfall — context size at each handoff as bar chart
