@@ -40,7 +40,7 @@
 ### P2: Docs/README consistency (current-state-review §2.3, §2.4)
 - [x] Merge getting-started.md + quickstart.md into one clear onboarding doc
 - [S] Create docs/api-reference.md with all public function signatures + examples (SKIPPED: 3x REJECT)
-- [ ] Create docs/configuration.md — agentguard.json schema, CLI flags, env vars
+- [x] Create docs/configuration.md — agentguard.json schema, CLI flags, env vars
 - [ ] Audit README claims against actual stable implementation — remove overstatements
 
 ### P3: Deepen diagnostics
