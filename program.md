@@ -20,7 +20,7 @@
 
 ## Current Stories
 
-- [ ] Deepen Q4: add cost-yield analysis — compare token spend per agent vs output quality
+- [x] Deepen Q4: add cost-yield analysis — compare token spend per agent vs output quality
 - [ ] Deepen Q5: add orchestration decision tracking — record why coordinator chose agent A over B
 - [ ] Add trace replay with assertion: replay golden trace and verify properties hold
 - [ ] Viewer: add mini flow-graph (Mermaid SVG) in diagnostics panel
