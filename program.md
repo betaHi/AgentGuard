@@ -262,3 +262,11 @@ Beyond tree view — show the actual flow:
 - JSON view panel in viewer
 - Print-friendly + responsive CSS
 - Tests: 623 → 641
+
+### 🎯 2026-04-12 — ITERATION 320
+- **704 tests** | 209 commits | 24K LOC | 75 modules
+- Context budget tracking (budget.py)
+- Robustness matrix: 15 modules × 3 trace types = 45 tests
+- 20 CLI commands tested end-to-end
+- Architecture documentation
+- Benchmark: all modules < 0.3ms per trace
