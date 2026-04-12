@@ -205,3 +205,48 @@ class TestViewerParallel:
         html = trace_to_html_string(trace)
         assert "score-" in html  # score-a, score-b, etc.
         assert "/100" in html
+
+
+class TestViewerDiagnostics:
+    """Verify diagnostics panels contain expected data."""
+    
+    def test_cost_panel_shows_tokens(self):
+        """Cost panel should show token count."""
+        from agentguard.builder import TraceBuilder
+        from agentguard.web.viewer import trace_to_html_string
+        
+        trace = (TraceBuilder("cost test")
+            .agent("llm_agent", token_count=5000, cost_usd=0.15)
+                .llm_call("gpt4", token_count=4000, cost_usd=0.12)
+            .end()
+            .build())
+        
+        html = trace_to_html_string(trace)
+        assert "5,000" in html or "9,000" in html  # token count formatted
+    
+    def test_diagnostics_grid_exists(self):
+        """Diagnostics section should be in output."""
+        from agentguard.builder import TraceBuilder
+        from agentguard.web.viewer import trace_to_html_string
+        
+        trace = (TraceBuilder("diag test")
+            .agent("a", duration_ms=2000)
+                .tool("t1", duration_ms=1000)
+            .end()
+            .agent("b", duration_ms=3000)
+            .end()
+            .build())
+        
+        html = trace_to_html_string(trace)
+        assert "Orchestration Diagnostics" in html
+        assert "Failure Propagation" in html
+        assert "Bottleneck" in html
+        assert "Handoff Flow" in html
+    
+    def test_empty_trace_no_crash(self):
+        """Generating HTML for empty trace should not crash."""
+        from agentguard.web.viewer import trace_to_html_string
+        from agentguard.core.trace import ExecutionTrace
+        
+        html = trace_to_html_string(ExecutionTrace(task="empty"))
+        assert "AgentGuard" in html
