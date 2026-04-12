@@ -293,6 +293,28 @@ Your Agents → AgentGuard SDK → Traces (JSON) → Analysis + Evolution
 
 See [docs/architecture.md](docs/architecture.md) for details.
 
+
+## Key Features
+
+| Category | Features |
+|----------|----------|
+| **Instrumentation** | 7 integration styles (sync/async decorators, context managers, manual API, middleware, distributed) |
+| **Handoff Tracking** | Context usage tracking, utilization ratio, degradation analysis, integrity scoring |
+| **Failure Analysis** | Causal chains, circuit breaker detection, blast radius, hypothetical failure |
+| **Flow Graph** | DAG visualization, parallel/sequential detection, critical path, Mermaid export |
+| **Context Flow** | Compression/truncation events, bandwidth analysis, bottleneck detection |
+| **Correlation** | Span fingerprinting, failure-handoff causality, pattern detection |
+| **Scoring** | 5-component quality score (A-F grade), performance benchmarking |
+| **Profiling** | Per-agent stats across traces, error patterns, interaction mapping |
+| **A/B Testing** | Compare agent versions, regression detection |
+| **Timeline** | Chronological event stream, filtering by type/span |
+| **Trace Builder** | Fluent API for constructing test/synthetic traces |
+| **Storage** | File-based store with query, prune, and schema validation |
+| **CLI** | 21+ commands: show, list, search, eval, diff, score, aggregate, timeline, metrics, and more |
+| **Export** | JSON, JSONL, OTel, Prometheus text format |
+
+**400+ tests • 16K+ lines • Zero external dependencies for core**
+
 ## Install
 
 ```bash
