@@ -52,8 +52,8 @@ planner ──[handoff: plan]──► code-searcher ──[handoff: context]─
 
 - **Up to 6 explicit handoffs** with context size tracking
 - **Graceful fallback:** vector_search may fail → keyword_search takes over
-- **Unhandled failure:** notifier always fails (Slack rate limit), coordinator catches it
-- **Bottleneck:** LLM calls in code-generator and analyst are the slow spans
+- **Unhandled failure:** notifier may fail (Slack rate limit simulation), creating an unhandled tail failure
+- **Bottleneck:** LLM calls (especially in code-generator) are typically the slowest spans
 - **Conditional flow:** deployer only runs if review approved AND tests passed
 - **Resilience varies:** depends on which tools fail in each run (some randomness)
 

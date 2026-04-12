@@ -12,3 +12,4 @@
 [2026-04-12] Learned: 大大虾的 code review (current-state-review-zh.md) 比 700 个测试更能发现真正的语义问题。
 [2026-04-12] Learned: 我们的 loop 不是 Ralph — 是单对话内手动循环，有 context anxiety 和 self-evaluation bias。
 [2026-04-12] Decision: 采用 OpenClaw sub-agent 模式 — 主 session 做 Planner+Evaluator，sub-agent 做 Generator。
+[2026-04-12 06:10] Fixed docs/examples.md: removed analyst reference from bottleneck, fixed notifier "always fails" claim, toned down README overstatements.

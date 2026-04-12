@@ -67,8 +67,8 @@ coding-pipeline (coordinator)
 └── notifier         — sends Slack notifications (may fail)
 ```
 
-8 agents, 11 tools, 6 handoffs, real failures, real fallbacks.
-This is the kind of pipeline behind Cursor, Copilot Workspace, and Claude Code.
+8 agents, 11 tools, 6 handoffs, simulated failures with fallback patterns.
+Modeled after the kind of pipeline behind Cursor, Copilot Workspace, and Claude Code.
 
 ### Example: Parallel Research Pipeline (`examples/parallel_pipeline.py`)
 
