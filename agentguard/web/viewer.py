@@ -381,10 +381,16 @@ def _render_gantt_rows(span: Span, depth: int, trace_start: str, dur_total: floa
         err_left = min(left_pct + width_pct + 1, 95)
         err_html = f'<div class="g-err" style="left:{err_left}%">⚠ {_esc(span.error)[:40]}</div>'
     
+    # Retry indicator
+    retry_html = ""
+    if span.retry_count > 0:
+        retry_left = min(left_pct + width_pct + 1, 95)
+        retry_html = f'<div class="g-ann" style="left:{retry_left}%;color:var(--yl)">🔄×{span.retry_count}</div>'
+    
     par_cls = " parallel" if (parallel_ids and span.span_id in parallel_ids) else ""
     rows.append(f'''<div class="g-row{par_cls}" style="{opacity}">
 <div class="g-lbl" style="padding-left:{depth*16}px"><span class="icon">{icon}</span><span class="nm">{_esc(span.name)}</span>{ver_html}</div>
-<div class="g-bar-area"><div class="g-bar {bar_cls}" style="left:{left_pct:.1f}%;width:{max(width_pct,0.5):.1f}%">{dur_s}</div>{err_html}</div>
+<div class="g-bar-area"><div class="g-bar {bar_cls}" style="left:{left_pct:.1f}%;width:{max(width_pct,0.5):.1f}%">{dur_s}</div>{err_html}{retry_html}</div>
 </div>''')
     
     # Render children
