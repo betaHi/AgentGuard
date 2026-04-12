@@ -10,6 +10,8 @@ Usage:
 
 from __future__ import annotations
 
+import asyncio
+
 from typing import Any, Optional
 from agentguard.core.trace import Span, SpanType
 from agentguard.sdk.recorder import get_recorder
@@ -349,3 +351,44 @@ class TracingExecutor:
 
     def __exit__(self, exc_type: Any, exc_val: Any, exc_tb: Any) -> None:
         self.shutdown(wait=True)
+
+
+
+def traced_task(
+    coro: Any,
+    name: Optional[str] = None,
+) -> "asyncio.Task[Any]":
+    """Create an asyncio task with trace context propagation.
+
+    Wraps ``asyncio.create_task()`` to capture the current span stack
+    and restore it inside the task coroutine, so spans created in the
+    task are correctly parented.
+
+    Without this, ``asyncio.create_task(my_agent())`` loses the parent
+    span context because the task runs in a fresh coroutine frame.
+
+    Args:
+        coro: The coroutine to schedule as a task.
+        name: Optional task name (passed to ``asyncio.create_task``).
+
+    Returns:
+        An ``asyncio.Task`` with trace context propagated.
+
+    Example::
+
+        async def pipeline():
+            task_a = traced_task(agent_a(), name="agent-a")
+            task_b = traced_task(agent_b(), name="agent-b")
+            return await asyncio.gather(task_a, task_b)
+    """
+    recorder = get_recorder()
+    parent_context = recorder.capture_context()
+
+    async def _wrapped() -> Any:
+        recorder.restore_context(parent_context)
+        return await coro
+
+    kwargs: dict[str, Any] = {}
+    if name is not None:
+        kwargs["name"] = name
+    return asyncio.create_task(_wrapped(), **kwargs)
