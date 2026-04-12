@@ -314,6 +314,36 @@ class EvolutionEngine:
         
         return history
 
+
+    
+    def compare_to_best(self, current_trace: ExecutionTrace) -> dict:
+        """Compare current trace metrics against historical best.
+        
+        Returns improvement/regression signal for key metrics.
+        """
+        from agentguard.analysis import analyze_failures, analyze_bottleneck
+        
+        current_f = analyze_failures(current_trace)
+        current_bn = analyze_bottleneck(current_trace) if current_trace.agent_spans else None
+        
+        # Compare against knowledge base patterns
+        historical_issues = len(self.kb.lessons)
+        current_issues = len(self.reflect(current_trace).lessons)
+        
+        trend = "stable"
+        if current_issues < historical_issues * 0.5:
+            trend = "improving"
+        elif current_issues > historical_issues * 1.5 and historical_issues > 0:
+            trend = "degrading"
+        
+        return {
+            "trend": trend,
+            "current_issues": current_issues,
+            "historical_avg_issues": historical_issues / max(self.kb.trace_count, 1),
+            "resilience": current_f.resilience_score,
+            "bottleneck": current_bn.bottleneck_span if current_bn else "N/A",
+        }
+
     def detect_trends(self, window: int = 10) -> list[dict]:
         """Detect improving/degrading trends across recent traces.
         

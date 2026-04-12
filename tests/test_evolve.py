@@ -145,3 +145,17 @@ def test_agent_performance_history():
         history = engine.agent_performance_history()
         assert len(history) >= 1
         assert any(len(v) >= 1 for v in history.values())
+
+
+def test_compare_to_best():
+    """compare_to_best returns improvement signal."""
+    with tempfile.TemporaryDirectory() as tmpdir:
+        engine = EvolutionEngine(knowledge_dir=f"{tmpdir}/kb")
+        
+        trace = _make_trace_with_failure()
+        engine.learn(trace)
+        engine.learn(trace)
+        
+        comparison = engine.compare_to_best(trace)
+        assert comparison["trend"] in ["stable", "improving", "degrading"]
+        assert 0 <= comparison["resilience"] <= 1
