@@ -162,6 +162,16 @@ body{{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',system-ui,monospac
 .ff-h{{background:var(--yl-bg);color:var(--yl);}} .ff-u{{background:var(--rd-bg);color:var(--rd);}}
 .empty{{text-align:center;padding:60px;color:var(--dim);}}
 .ft{{text-align:center;padding:12px;color:var(--dim);font-size:10px;border-top:1px solid var(--bd);margin-top:14px;}}
+.zoom-bar{{display:flex;align-items:center;gap:6px;margin-bottom:8px;}}
+.zoom-btn{{background:var(--sf);border:1px solid var(--bd);color:var(--tx);border-radius:4px;padding:2px 8px;font-size:12px;cursor:pointer;font-family:monospace;}}
+.zoom-btn:hover{{background:var(--bd);color:var(--br);}}
+.zoom-level{{font-size:10px;color:var(--dim);min-width:40px;text-align:center;}}
+.tl-wrap{{overflow-x:auto;position:relative;}}
+.tl-inner{{min-width:100%;transition:min-width 0.2s ease;}}
+.tl-axis{{display:flex;padding:0 0 4px 180px;position:relative;height:18px;}}
+.tl-axis .tick-mark{{position:absolute;top:0;font-size:9px;color:var(--dim);transform:translateX(-50%);}}
+.tl-axis .tick-line{{position:absolute;top:14px;width:1px;height:4px;background:var(--bd);transform:translateX(-50%);}}
+@media print
 @media print{{body{{background:#fff;color:#000;}}.top-bar,.sidebar{{background:#f5f5f5;}}.main{{background:#fff;}}
 .ag-card,.d-box{{border-color:#ddd;background:#fafafa;}}.g-bar.ok{{background:#28a745;}}.g-bar.err{{background:#dc3545;}}
 .badge,.score-badge{{print-color-adjust:exact;-webkit-print-color-adjust:exact;}}}}
@@ -216,6 +226,15 @@ document.querySelectorAll(".g-row").forEach(function(row){{
 document.addEventListener("keydown",function(e){{
   if(e.key==="Escape")document.querySelectorAll(".g-detail").forEach(function(d){{d.remove();}});
 }});
+var _zoomLevel=100;
+function zoomGantt(dir){{
+  if(dir===0){{_zoomLevel=100;}}
+  else{{_zoomLevel=Math.max(50,Math.min(400,_zoomLevel+(dir*50)));}}
+  var el=document.getElementById("gantt-inner");
+  if(el){{el.style.minWidth=_zoomLevel+"%";}}
+  var lbl=document.getElementById("zoom-pct");
+  if(lbl){{lbl.textContent=_zoomLevel+"%";}}
+}}
 </script>
 </body></html>'''
 
@@ -249,6 +268,15 @@ document.querySelectorAll(".g-row").forEach(function(row){{
 document.addEventListener("keydown",function(e){{
   if(e.key==="Escape")document.querySelectorAll(".g-detail").forEach(function(d){{d.remove();}});
 }});
+var _zoomLevel=100;
+function zoomGantt(dir){
+  if(dir===0){_zoomLevel=100;}
+  else{_zoomLevel=Math.max(50,Math.min(400,_zoomLevel+(dir*50)));}
+  var el=document.getElementById("gantt-inner");
+  if(el){el.style.minWidth=_zoomLevel+"%";}
+  var lbl=document.getElementById("zoom-pct");
+  if(lbl){lbl.textContent=_zoomLevel+"%";}
+}
 </script>
 </body></html>'''
 
@@ -333,11 +361,23 @@ def _build_gantt(trace: ExecutionTrace, flow, dur_total: float) -> str:
                     parallel_span_ids.add(a.span_id)
                     parallel_span_ids.add(b.span_id)
     
-    # Time axis
-    steps = 6
+    # Time axis with labeled tick marks
+    steps = 8
     step_ms = dur_total / steps
-    ticks = "".join(f'<div class="tick">{int(i*step_ms)}ms</div>' for i in range(steps + 1))
-    header = f'<div class="tl-header">{ticks}</div>'
+    tick_marks = []
+    for i in range(steps + 1):
+        ms = i * step_ms
+        pct = (i / steps) * 100
+        if ms < 1000:
+            label = f"{int(ms)}ms"
+        else:
+            label = f"{ms/1000:.1f}s"
+        left = f"calc({pct:.1f}%)"
+        tick_marks.append(
+            f'<span class="tick-mark" style="left:{pct:.1f}%">{label}</span>'
+            f'<span class="tick-line" style="left:{pct:.1f}%"></span>'
+        )
+    header = f'<div class="tl-axis">{"".join(tick_marks)}</div>'
     
     # Build span tree for rendering
     span_map = {s.span_id: s for s in trace.spans}
@@ -358,7 +398,16 @@ def _build_gantt(trace: ExecutionTrace, flow, dur_total: float) -> str:
     for root in roots:
         rows.extend(_render_gantt_rows(root, 0, trace_start, dur_total, children_map, span_map, handoff_pairs, parallel_span_ids))
     
-    return header + "\n" + "\n".join(rows)
+    zoom_bar = (
+        '<div class="zoom-bar">'
+        '<button class="zoom-btn" onclick="zoomGantt(-1)" title="Zoom out">−</button>'
+        '<span class="zoom-level" id="zoom-pct">100%</span>'
+        '<button class="zoom-btn" onclick="zoomGantt(1)" title="Zoom in">+</button>'
+        '<button class="zoom-btn" onclick="zoomGantt(0)" title="Reset zoom">⟲</button>'
+        '</div>'
+    )
+    inner = header + "\n" + "\n".join(rows)
+    return f'{zoom_bar}<div class="tl-wrap"><div class="tl-inner" id="gantt-inner">{inner}</div></div>'
 
 
 def _render_gantt_rows(span: Span, depth: int, trace_start: str, dur_total: float,
