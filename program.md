@@ -72,7 +72,7 @@ Focus: Make README, examples, analysis, and viewer tell the same story.
 - [x] Add type stubs (py.typed marker + complete type hints) for core/trace.py
 - [x] Improve viewer Gantt chart: add zoom controls and time axis labels
 - [x] Add viewer dark theme polish: consistent colors, better contrast ratios
-- [ ] Add viewer: show agent version badges in timeline
+- [x] Add viewer: show agent version badges in timeline
 - [ ] Improve error messages in CLI commands when file not found or invalid JSON
 - [ ] Add CLI `agentguard init` command to scaffold a new project with config
 - [ ] Add CLI `agentguard doctor` command to check installation and dependencies
