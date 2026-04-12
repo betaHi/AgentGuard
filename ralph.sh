@@ -139,6 +139,7 @@ STORYEOF
     
     # ── GENERATOR (agent: heihu) ──
     ITER_START=$(date +%s)
+    BASELINE_COMMIT=$(git rev-parse HEAD)
     echo "🔧 Generator..." | tee -a "$LOG_FILE"
     
     GEN_RESULT=$(openclaw agent \
@@ -175,8 +176,22 @@ except: print('GEN_ERROR')
     # ── REVIEWER (agent: luoshi) (full diff, design doc alignment) ──
     echo "🔍 Reviewer..." | tee -a "$LOG_FILE"
     
-    DIFF_STAT=$(git diff HEAD~1 --stat 2>/dev/null)
-    DIFF_FULL=$(git diff HEAD~1 -- "*.py" "*.md" 2>/dev/null | head -300)
+    # Diff against baseline (before generator ran), not HEAD~1
+    DIFF_STAT=$(git diff $BASELINE_COMMIT --stat 2>/dev/null)
+    DIFF_FULL=$(git diff $BASELINE_COMMIT -- "*.py" 2>/dev/null | head -300)
+    
+    # If no changes, generator did nothing
+    if [ -z "$DIFF_STAT" ]; then
+        echo "   ⚠️ Generator made no changes" | tee -a "$LOG_FILE"
+        REJECT_COUNT=$((REJECT_COUNT + 1))
+        echo "   ❌ NO CHANGES ($REJECT_COUNT/$MAX_REJECTS)" | tee -a "$LOG_FILE"
+        echo "Generator did not produce any code changes. Implement the story from scratch." > .evaluator-feedback.txt
+        echo "[$(date -u +%Y-%m-%dT%H:%M:%SZ)] Iter $ITERATION (0s): $NEXT_STORY — NO CHANGES" >> progress.txt
+        git add -A && git push 2>/dev/null || true
+        save_state
+        sleep 2
+        continue
+    fi
     
     EVAL_RESULT=$(openclaw agent \
         --agent luoshi \
