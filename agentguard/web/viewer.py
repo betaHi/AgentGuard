@@ -16,7 +16,7 @@ from pathlib import Path
 from typing import Any
 
 from agentguard.core.trace import ExecutionTrace, Span, SpanType, SpanStatus
-from agentguard.analysis import analyze_failures, analyze_flow, analyze_bottleneck, analyze_context_flow
+from agentguard.analysis import analyze_failures, analyze_flow, analyze_bottleneck, analyze_context_flow, analyze_retries, analyze_cost
 
 def _try_evolve(trace):
     """Try to get evolution suggestions if knowledge exists."""
@@ -76,7 +76,9 @@ def _build_full_html(traces: list[ExecutionTrace]) -> str:
     timeline = _build_gantt(primary, flow, dur_total)
     
     # Build diagnostics grid
-    diagnostics = _build_diagnostics(failures, bn, flow, ctx)
+    retries = analyze_retries(primary)
+    cost = analyze_cost(primary)
+    diagnostics = _build_diagnostics(failures, bn, flow, ctx, retries, cost)
     
     # Trace selector (if multiple traces)
     trace_count = len(traces)
@@ -334,7 +336,7 @@ def _build_suggestions_panel(trace) -> str:
         items.append(f'<div class="item">{icon} <b>{_esc(s.agent)}</b> ({s.confidence:.0%}): {_esc(s.suggestion[:60])}</div>')
     return f'<div class="d-box" style="grid-column:1/-1"><h4>🧠 Learned Suggestions</h4><div class="items">{chr(10).join(items)}</div></div>'
 
-def _build_diagnostics(failures, bn, flow, ctx) -> str:
+def _build_diagnostics(failures, bn, flow, ctx, retries=None, cost=None) -> str:
     # Failure panel
     fail_items = []
     for rc in failures.root_causes:
