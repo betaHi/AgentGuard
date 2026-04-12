@@ -175,41 +175,41 @@ This eliminates context anxiety and self-evaluation bias.
 tmux session "ralph" (crash-proof)
   └── ralph.sh (bash loop, timer, state recovery)
         │
-        ├── 读 program.md → 找 - [ ] story
-        ├── 写 .story-current.md (story spec + project goals + evaluator feedback)
+        ├── read program.md → find next unchecked story
+        ├── write .story-current.md (story spec + goals + feedback)
         │
         ├── Generator: Generator Agent
         │   ├── openclaw agent --agent heihu --session-id "heihu-N-timestamp"
-        │   ├── 全新 context（context reset）
-        │   ├── 读 .story-current.md + CLAUDE.md
-        │   └── 写代码 → pytest → commit
+        │   ├── fresh context (context reset)
+        │   ├── read .story-current.md + CLAUDE.md
+        │   └── write code → pytest → commit
         │
         ├── Reviewer: Reviewer Agent  
         │   ├── openclaw agent --agent luoshi --session-id "luoshi-ralph-eval"
-        │   ├── 持久 session（记住历史 review 上下文）
-        │   ├── 读 REVIEW.md（review 依据 — Maintainer标准 + GUARDRAILS）
-        │   ├── 看实际 code diff
-        │   └── ACCEPT 或 REJECT（带具体修复建议）
+        │   ├── persistent session (remembers review history)
+        │   ├── read REVIEW.md (review criteria — Maintainer standards + GUARDRAILS)
+        │   ├── review actual code diff
+        │   └── ACCEPT or REJECT (with specific fix suggestions)
         │
-        ├── ACCEPT → 标记 story 完成
-        ├── REJECT → 保存 feedback → 下轮Generator看到
+        ├── ACCEPT → mark story done
+        ├── REJECT → save feedback → Generator sees it next iteration
         │
-        ├── 🧬 Evolve (每 5 轮)
-        │   └── evolve.learn() 从最近 trace 累积知识
+        ├── 🧬 Evolve (every 5 iterations)
+        │   └── evolve.learn() accumulate knowledge from recent traces
         │
-        ├── save .ralph-state.json（断点恢复）
+        ├── save .ralph-state.json（checkpoint recovery）
         └── git push
 ```
 
-### Review 依据
-Reviewer的 review 标准写在 `REVIEW.md`，包含：
-- GUARDRAILS.md 的 5 个核心诊断问题
-- Maintainer current-state-review 指出的已知问题
-- 具体 checklist（Must Pass / Should Pass / Red Flags）
-- ACCEPT/REJECT 格式要求
+### Review Criteria Source
+Reviewer's review criteria defined in `REVIEW.md`, containing:
+- GUARDRAILS.md 's 5 core diagnostic questions
+- Maintainer current-state-review identified issues
+- concrete checklist (Must Pass / Should Pass / Red Flags)
+- ACCEPT/REJECT format requirements
 
-### 防中断机制
-1. **tmux** — 进程独立于所有 session
-2. **.ralph-state.json** — 每次迭代保存断点，重启自动恢复
-3. **progress.txt** — append-only 经验记录
-4. **git history** — 所有代码变更持久化
+### Crash Protection
+1. **tmux** — process independent of all sessions
+2. **.ralph-state.json** — checkpoint saved each iteration, auto-resume on restart
+3. **progress.txt** — append-only lessons log
+4. **git history** — all code changes persisted
