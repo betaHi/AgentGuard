@@ -77,6 +77,10 @@ class Span:
     context_passed: Optional[dict] = None   # keys/summary of context passed
     context_size_bytes: Optional[int] = None  # size of context at handoff point
     
+    # Retry tracking [experimental]
+    retry_count: int = 0               # number of retries before this span succeeded/failed
+    retry_of: Optional[str] = None     # span_id of the original attempt (if this is a retry)
+    
     # Failure propagation tracking [experimental]
     caused_by: Optional[str] = None         # span_id of the root cause failure
     failure_handled: bool = False           # True if error was caught (try/except)

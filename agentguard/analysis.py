@@ -546,3 +546,42 @@ def analyze_context_flow(trace: ExecutionTrace) -> ContextFlowReport:
         points=points,
         anomalies=anomalies,
     )
+
+
+def analyze_retries(trace: ExecutionTrace) -> dict:
+    """Detect retry patterns in a trace.
+    
+    Identifies spans that were retried (same name under same parent,
+    first failed then succeeded).
+    """
+    parent_children: dict[str, list[Span]] = {}
+    for s in trace.spans:
+        if s.parent_span_id:
+            parent_children.setdefault(s.parent_span_id, []).append(s)
+    
+    retries = []
+    for parent_id, children in parent_children.items():
+        # Group by name
+        by_name: dict[str, list[Span]] = {}
+        for c in children:
+            by_name.setdefault(c.name, []).append(c)
+        
+        for name, spans in by_name.items():
+            if len(spans) >= 2:
+                # Multiple spans with same name under same parent = likely retry
+                failed = [s for s in spans if s.status == SpanStatus.FAILED]
+                succeeded = [s for s in spans if s.status == SpanStatus.COMPLETED]
+                if failed and succeeded:
+                    retries.append({
+                        "name": name,
+                        "attempts": len(spans),
+                        "failures": len(failed),
+                        "final_status": "succeeded" if succeeded else "failed",
+                        "parent": parent_id,
+                    })
+    
+    return {
+        "retry_count": len(retries),
+        "retries": retries,
+        "total_wasted_attempts": sum(r["failures"] for r in retries),
+    }

@@ -195,3 +195,28 @@ def test_context_flow_report():
     report = analyze_context_flow(trace)
     text = report.to_report()
     assert "Context Flow" in text
+
+
+def test_retry_analysis():
+    """Detect retry patterns."""
+    from agentguard.analysis import analyze_retries
+    
+    trace = ExecutionTrace(task="retry-test")
+    parent = Span(name="agent", span_type=SpanType.AGENT)
+    
+    # First attempt fails
+    attempt1 = Span(name="api_call", span_type=SpanType.TOOL, parent_span_id=parent.span_id)
+    attempt1.fail("timeout")
+    
+    # Retry succeeds
+    attempt2 = Span(name="api_call", span_type=SpanType.TOOL, parent_span_id=parent.span_id)
+    attempt2.complete(output="ok")
+    
+    parent.complete()
+    for s in [parent, attempt1, attempt2]:
+        trace.add_span(s)
+    trace.complete()
+    
+    result = analyze_retries(trace)
+    assert result["retry_count"] == 1
+    assert result["total_wasted_attempts"] == 1
