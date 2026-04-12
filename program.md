@@ -47,34 +47,28 @@ The most valuable code in this repo is NOT the rule engine. It is:
 
 These must be kept clean, well-documented, and zero-dependency.
 
-## Current Priority: Deepen Trace Semantics
+## Current Priority: Semantic Alignment (from 大大虾 review)
 
-The next iterations should focus on making the trace richer, not adding more commands.
+Focus: Make README, examples, analysis, and viewer tell the same story.
 
-### Handoff Events
-When agent A passes work to agent B, capture:
-- What context was passed
-- What context was lost
-- Duration of the handoff
-- Whether the receiving agent used the context
+### Stories (binary: done or not)
 
-### Failure Propagation Analysis
-Given a trace with failures:
-- Which span was the root cause?
-- Did the failure propagate or get caught?
-- What was the blast radius (how many downstream spans affected)?
+- [x] Fix trace status: handled failures don't mark trace as FAILED
+- [x] Fix bottleneck: exclude coordinator containers, rank by own work time
+- [x] Add parallel agent examples (parallel_pipeline.py, parallel_coding.py)
+- [x] Thread safety verification (20 concurrent agents)
+- [ ] Align docs/examples.md descriptions with actual example behavior
+- [ ] Remove "real failures, real fallbacks" overstatement from README
+- [ ] Fix viewer: only show handoffs confirmed by analysis layer (not inferred from sequence)
+- [ ] Make subprocess example a true cross-process trace (not inline simulation)
+- [ ] Stabilize coding_pipeline output so diagnostics match documentation every run
 
-### Context Flow
-Track how information flows between agents:
-- Context size at each handoff point
-- Context compression/truncation events
-- Whether downstream agents received sufficient context
+### Completed Stories (previous priority: Deepen Trace Semantics)
 
-### Multi-Agent Flow Graph
-Beyond tree view — show the actual flow:
-- Parallel vs sequential execution
-- Agent dependencies
-- Critical path analysis
+- [x] Handoff context tracking: mark_context_used(), utilization ratio
+- [x] Failure propagation: causal chains, circuit breakers, blast radius
+- [x] Context flow: compression/truncation/expansion, bandwidth
+- [x] Flow graph: DAG, phases, parallel detection, critical path, Mermaid
 
 ## Design Rules
 
