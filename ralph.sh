@@ -118,13 +118,19 @@ This is NOT a demo. Every function must handle real failure modes.
 - Functions ≤ 50 lines
 - Deterministic examples (fixed seeds)
 
+## MANDATORY: Design Document Alignment
+Before writing ANY code, you MUST:
+1. Read GUARDRAILS.md — state which Q# (Q1-Q5) this story serves
+2. Read docs/current-state-review-zh.md — state which section is relevant
+3. If your code contradicts either document, STOP and reconsider
+
 ## Task Decomposition
 Before writing code, decompose this story into concrete steps:
-1. What exactly needs to change?
-2. Which files need modification?
-3. What edge cases exist?
-4. What tests are needed?
-5. How does this align with the 5 Questions in GUARDRAILS.md?
+1. Which GUARDRAILS Question does this serve? (Q1-Q5 or infra/docs)
+2. What exactly needs to change?
+3. Which files need modification?
+4. What edge cases exist?
+5. What tests are needed?
 
 ## Previous Evaluator Feedback
 $(cat .evaluator-feedback.txt 2>/dev/null || echo "None — first attempt")
@@ -151,10 +157,18 @@ CRITICAL RULES:
 1. Read .story-current.md COMPLETELY — especially 'Previous Evaluator Feedback'
 2. If there is feedback, you MUST address every point. Do NOT resubmit the same code.
 3. Do NOT modify program.md or progress.txt (Planner's files — auto-REJECT)
-4. Decompose the task into steps, then implement step by step
-5. Functions must be ≤ 50 lines — extract helpers
-6. Quality bar: production-grade. Check GUARDRAILS.md alignment.
-7. Run tests, commit. Report: what changed, which files, which edge cases handled." \
+4. Read GUARDRAILS.md — identify which of the 5 Questions this story serves
+5. Read docs/current-state-review-zh.md — check known issues and priorities
+6. Decompose the task: what files, what edge cases, what tests
+7. Functions must be ≤ 50 lines — extract helpers
+8. Quality bar: production-grade, NOT demo
+9. Run tests, commit.
+
+YOUR OUTPUT MUST INCLUDE:
+- GUARDRAILS alignment: which Q# (Q1-Q5) this serves, or 'infra/docs'
+- current-state-review: which section is relevant
+- Task decomposition: concrete steps before coding
+- What changed, which edge cases handled" \
         --timeout 300 \
         --json 2>&1 | grep -v "Config warnings\|plugins\|Registered")
     
