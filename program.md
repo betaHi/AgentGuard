@@ -9,7 +9,7 @@
 
 ### P1: Context Flow false positives in parallel pipelines
 - [x] Fix: parallel_pipeline.py context flow reports truncation between parallel agents (web_researcher → academic_researcher: -85%) — these are independent parallel agents, NOT a handoff chain. Context flow should only analyze actual handoff pairs, not sequential siblings
-- [ ] Test: parallel pipeline context flow should NOT report truncation between independent parallel agents
+- [x] Test: parallel pipeline context flow should NOT report truncation between independent parallel agents
 
 ### P2: deep_analysis_demo duration is 0ms
 - [ ] Fix: deep_analysis_demo.py — TraceBuilder-constructed spans have 0ms duration because timestamps aren't set. TraceBuilder.add_agent/add_tool should accept duration_ms parameter and auto-set started_at/ended_at
