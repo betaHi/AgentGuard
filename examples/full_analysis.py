@@ -3,6 +3,9 @@
 This creates a realistic multi-agent pipeline trace using the fluent builder,
 then runs every analysis module to demonstrate the complete toolkit.
 """
+import sys, os
+sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+
 
 from agentguard.builder import TraceBuilder
 from agentguard.scoring import score_trace

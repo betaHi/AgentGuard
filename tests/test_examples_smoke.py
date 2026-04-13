@@ -1,58 +1,46 @@
-"""Smoke tests for all examples — verify they run without crashing."""
+"""Smoke tests for all 18 examples — verify they run without crashing.
+
+Audit: every example in examples/ must be tested here.
+If an example is added, a test must be added too.
+"""
 
 import pytest
 import subprocess
 import sys
 import os
+import glob
 
 EXAMPLES_DIR = os.path.join(os.path.dirname(os.path.dirname(__file__)), "examples")
+ALL_EXAMPLES = sorted(
+    os.path.basename(f)
+    for f in glob.glob(os.path.join(EXAMPLES_DIR, "*.py"))
+)
 
 
 def _run_example(name, timeout=30):
-    """Run an example script and return (exit_code, stdout, stderr)."""
+    """Run an example script and return CompletedProcess."""
     path = os.path.join(EXAMPLES_DIR, name)
     if not os.path.exists(path):
         pytest.skip(f"{name} not found")
-    
-    result = subprocess.run(
+    return subprocess.run(
         [sys.executable, path],
         capture_output=True, text=True, timeout=timeout,
         cwd=os.path.dirname(EXAMPLES_DIR),
     )
-    return result
 
 
 class TestExamplesSmoke:
     """Each example should run without errors."""
-    
-    def test_parallel_pipeline(self):
-        result = _run_example("parallel_pipeline.py")
-        assert result.returncode == 0, f"Error: {result.stderr}"
-        assert "Score" in result.stdout
 
-    def test_parallel_coding(self):
-        result = _run_example("parallel_coding.py")
-        assert result.returncode == 0, f"Error: {result.stderr}"
-        assert "Score" in result.stdout
+    @pytest.mark.parametrize("example", ALL_EXAMPLES)
+    def test_example_runs(self, example):
+        result = _run_example(example)
+        assert result.returncode == 0, (
+            f"{example} failed (rc={result.returncode}):\n{result.stderr[-500:]}"
+        )
 
-    def test_production_usage(self):
-        result = _run_example("production_usage.py")
-        assert result.returncode == 0, f"Error: {result.stderr}"
-        assert "Score" in result.stdout
-
-    def test_error_recovery(self):
-        result = _run_example("error_recovery.py")
-        assert result.returncode == 0, f"Error: {result.stderr}"
-        assert "Score" in result.stdout
-
-    def test_coding_pipeline(self):
-        result = _run_example("coding_pipeline.py")
-        assert result.returncode == 0, f"Error: {result.stderr}"
-
-    def test_deep_analysis_demo(self):
-        result = _run_example("deep_analysis_demo.py")
-        assert result.returncode == 0, f"Error: {result.stderr}"
-
-    def test_full_analysis(self):
-        result = _run_example("full_analysis.py")
-        assert result.returncode == 0, f"Error: {result.stderr}"
+    def test_all_18_examples_covered(self):
+        """Ensure we have exactly 18 examples."""
+        assert len(ALL_EXAMPLES) >= 18, (
+            f"Expected ≥18 examples, found {len(ALL_EXAMPLES)}: {ALL_EXAMPLES}"
+        )

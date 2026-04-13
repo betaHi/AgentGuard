@@ -1,3 +1,6 @@
+import sys, os
+sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+
 """Minimal AgentGuard example — instrument two agents in 10 lines."""
 from agentguard import record_agent, record_tool
 from agentguard.sdk.recorder import init_recorder, finish_recording

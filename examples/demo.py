@@ -2,6 +2,9 @@
 
 Shows how to instrument a multi-agent system with minimal code changes.
 """
+import sys, os
+sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+
 
 import time
 import random
