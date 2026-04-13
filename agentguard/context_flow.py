@@ -260,12 +260,27 @@ def _detect_transitions(
     return transitions, bandwidth
 
 
+# SDK/decorator noise keys that appear in input/output due to argument passing,
+# not real context transfer. Excluded from transition analysis to avoid
+# false positives in context loss/gain reporting.
+_SDK_NOISE_KEYS: frozenset[str] = frozenset({
+    "args", "kwargs", "self", "cls",
+    "_args", "_kwargs", "__args__", "__kwargs__",
+    "func_args", "func_kwargs",
+})
+
+
 def _build_transition(
     a_info: dict, b_info: dict,
 ) -> tuple[ContextTransition, ContextBandwidth | None]:
-    """Build a single transition + optional bandwidth from sender→receiver IO."""
+    """Build a single transition + optional bandwidth from sender→receiver IO.
+
+    Filters out SDK noise keys (args, kwargs, self, cls) that appear
+    from decorator argument passing, not real context transfer.
+    """
     out_size, in_size = a_info["out_size"], b_info["in_size"]
-    out_keys, in_keys = set(a_info["out_keys"]), set(b_info["in_keys"])
+    out_keys = set(a_info["out_keys"]) - _SDK_NOISE_KEYS
+    in_keys = set(b_info["in_keys"]) - _SDK_NOISE_KEYS
     keys_removed = list(out_keys - in_keys)
     keys_added = list(in_keys - out_keys)
     delta = in_size - out_size
