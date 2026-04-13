@@ -12,7 +12,7 @@
 - [x] Test: parallel pipeline context flow should NOT report truncation between independent parallel agents
 
 ### P2: deep_analysis_demo duration is 0ms
-- [ ] Fix: deep_analysis_demo.py — TraceBuilder-constructed spans have 0ms duration because timestamps aren't set. TraceBuilder.add_agent/add_tool should accept duration_ms parameter and auto-set started_at/ended_at
+- [x] Fix: deep_analysis_demo.py — TraceBuilder-constructed spans have 0ms duration because timestamps aren't set. TraceBuilder.add_agent/add_tool should accept duration_ms parameter and auto-set started_at/ended_at
 - [ ] Test: TraceBuilder with duration_ms produces spans with correct timestamps
 
 ### P3: Correlation analysis always empty on single trace
