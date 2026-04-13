@@ -39,7 +39,7 @@
 - [x] Test: trace with 0 spans (empty trace through full pipeline)
 - [x] Test: trace with duplicate agent names (same agent called multiple times)
 - [x] Test: trace with circular handoffs (A→B→A)
-- [ ] Test: Unicode agent names, emoji in metadata, very long strings
+- [x] Test: Unicode agent names, emoji in metadata, very long strings
 - [ ] Test: concurrent recording from multiple threads simultaneously
 
 ## Progress Log
