@@ -20,7 +20,7 @@
 - [x] Test: correlation analysis on a complex single trace returns at least basic patterns
 
 ### P4: Screenshot generation script
-- [ ] Create scripts/generate_screenshots.py — Playwright script to regenerate all 8 README screenshots from live HTML report + CLI output. Should be runnable with `python scripts/generate_screenshots.py`. Document in CONTRIBUTING.md
+- [x] Create scripts/generate_screenshots.py — Playwright script to regenerate all 8 README screenshots from live HTML report + CLI output. Should be runnable with `python scripts/generate_screenshots.py`. Document in CONTRIBUTING.md
 
 ### P5: Review all examples output quality
 - [ ] Review: run ALL 20 examples, verify each produces correct non-zero metrics, no misleading output
