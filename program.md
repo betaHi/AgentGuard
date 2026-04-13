@@ -7,7 +7,7 @@
 - [x] Fix: ruff lint — done manually by planner (3066 errors fixed, all checks passed)
 - [x] Fix: ruff remaining manual fixes — done with autofix pass (all resolved)
 - [x] Fix: consolidate 3 redundant example test files (test_examples_smoke.py, test_examples_no_misleading.py, test_examples_integration.py) into one test_examples.py with parametrized checks. Currently running all examples 3x (~3min wasted). Single file, all 4 check types (exit code, output, no traceback, no import error)
-- [ ] Fix: remove duplicate modules — merge export_v2.py into export.py (keep best of both), merge replay_v2.py into replay.py (keep best of both). Update all imports. Remove _v2 files. No functionality loss
+- [x] Fix: remove duplicate modules — merge export_v2.py into export.py (keep best of both), merge replay_v2.py into replay.py (keep best of both). Update all imports. Remove _v2 files. No functionality loss
 
 ### Phase 2: Code Architecture (>50-line function refactoring)
 
