@@ -24,5 +24,5 @@
 
 ### P5: Review all examples output quality
 - [x] Review: run ALL 20 examples, verify each produces correct non-zero metrics, no misleading output
-- [ ] Fix any examples that show incorrect/misleading data
+- [x] Fix any examples that show incorrect/misleading data
 - [ ] Test: add integration test that runs all examples and checks exit code 0 + output sanity
