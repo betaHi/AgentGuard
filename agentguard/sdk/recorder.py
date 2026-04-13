@@ -96,17 +96,19 @@ class TraceRecorder:
     def push_span(self, span: Span) -> None:
         """Add a span to the trace and push it onto the context stack.
 
-        If this trace was sampled out, the span is silently skipped.
+        If this trace was sampled out, the span is NOT added to the trace
+        but the stack is still maintained for correct current_span_id tracking.
         """
-        if not self._sampled:
-            return
-        self.trace.add_span(span)
+        if self._sampled:
+            self.trace.add_span(span)
         self._span_stack.append(span.span_id)
 
     def pop_span(self, span: Span) -> None:
-        """Pop a span from the context stack."""
-        if not self._sampled:
-            return
+        """Pop a span from the context stack.
+
+        Always maintains stack regardless of sampling, so parent tracking
+        stays correct for nested decorators.
+        """
         stack = self._span_stack
         if stack and stack[-1] == span.span_id:
             stack.pop()
