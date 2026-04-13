@@ -27,7 +27,7 @@
 
 ### P2: Examples tell real stories
 - [x] Audit all 18 examples: run each, capture output, verify README/docs descriptions match actual output
-- [ ] Add example: debugging a real failure — trace shows agent B failed because agent A dropped context key "user_id"
+- [x] Add example: debugging a real failure — trace shows agent B failed because agent A dropped context key "user_id"
 - [ ] Add example: performance optimization — trace shows parallel pipeline is 3x faster than sequential, with cost comparison
 
 ### P3: SDK real-world readiness
