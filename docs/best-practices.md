@@ -66,3 +66,36 @@
 9. **OpenClaw log cap breaks JSON parsing** — `[openclaw] log file size cap reached` prefix corrupts `--json` output. Filter it with grep.
 
 10. **Gitignored files get re-tracked** — When a generator agent creates or modifies a gitignored file, `git add -A` re-tracks it. Keep dev tooling in the repo or use `git add --ignore-errors`.
+
+---
+
+## Sprint 3 Lessons (Production Hardening)
+
+### SDK Design: Fail-Open by Default
+- **Observability code must NEVER break user code.** All decorator wrappers use try/except with `return None` on failure. If recording fails, the decorated function still runs.
+- **Sampling must be per-trace, not per-span.** Per-span sampling creates corrupted partial traces with broken parent-child relationships. The sampling decision is made once in `TraceRecorder.__init__`, and all spans in the trace follow it.
+- **Maintain internal state even when sampled out.** The span stack (`current_span_id`) must work regardless of sampling, otherwise nested decorators break. Only skip `trace.add_span()`, not stack maintenance.
+
+### Viewer: Pure HTML5 Over JavaScript
+- **Use `<details>`/`<summary>` for collapsible panels** — no JavaScript required, works in all browsers.
+- **Client-side search/filter with live input events** — avoid re-rendering, just toggle `display:none` on rows.
+- **Don't duplicate JS blocks** — when inserting code into templates, verify no copy-paste duplication (caught by evaluator).
+- **Verify HTML inputs actually render** — JS referencing `getElementById` is useless if the elements aren't in the template.
+
+### Analysis: Detect What Matters
+- **False bottleneck detection (Q1):** An agent with high wall time but ≤20% own work is waiting on dependencies, not doing work. Report both the false bottleneck and the real one.
+- **Context transformation tracking (Q2):** Don't just check if keys exist — detect summarization (string shrunk >50%), filtering (list shortened), type changes, and key renames.
+- **Recoverable vs fatal severity (Q3):** Contained failures are recoverable. Deep cascades + trace failure = fatal. This distinction drives prioritization.
+- **Custom cost models (Q4):** Hardcoded token-based costing doesn't work for all teams. Accept `cost_fn` and `yield_fn` callables.
+- **Agent selection suggestions (Q5):** Build per-agent performance profiles from the trace itself, then suggest better alternatives for failed decisions.
+
+### Testing: Adversarial Input
+- **Test with malformed data:** reversed timestamps, orphan spans, duplicate IDs, self-referencing parents, null values. Every analysis function must handle these gracefully.
+- **Mutation testing:** Clone a trace, change one value, verify analysis output changes. This proves analysis is data-sensitive, not returning static results.
+- **Test at scale:** 50-100 agents in a single trace. Verify HTML stays under 1MB, all agents appear, performance stays reasonable.
+- **Thread safety:** Concurrent recording with 50 threads must not corrupt span stacks or deadlock.
+
+### Production Configuration
+- **`agentguard.configure()` as single entry point** — output_dir, max_trace_size_mb, sampling_rate, auto_truncate, log_level. Partial updates preserve other settings. Invalid values raise immediately.
+- **Trace size limits:** Warn at 10MB, truncate span data fields at 100KB each. Recursive truncation for strings, dicts, lists. Always non-mutating (return copy).
+- **Batch export:** Accumulate traces in a thread-safe buffer, flush at batch_size threshold. Reduces I/O from N writes to N/batch_size writes.
