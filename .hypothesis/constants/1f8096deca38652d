@@ -1,0 +1,4 @@
+# file: /home/azureuser/AgentGuard/agentguard/schema.py
+# hypothesis_version: 6.151.12
+
+['$schema', '0.1.0', 'agent', 'array', 'boolean', 'caused_by', 'completed', 'context_dropped_keys', 'context_passed', 'context_received', 'context_size_bytes', 'context_used_keys', 'duration_ms', 'ended_at', 'enum', 'error', 'estimated_cost_usd', 'failed', 'failure_handled', 'handoff', 'handoff_from', 'handoff_to', 'input_data', 'integer', 'items', 'llm_call', 'metadata', 'minLength', 'minimum', 'name', 'null', 'number', 'object', 'output_data', 'parent_span_id', 'properties', 'required', 'retry_count', 'retry_of', 'running', 'span_id', 'span_type', 'spans', 'started_at', 'status', 'string', 'tags', 'task', 'timeout', 'title', 'token_count', 'tool', 'trace_id', 'trigger', 'type', 'version']

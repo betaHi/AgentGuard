@@ -1,0 +1,4 @@
+# file: /home/azureuser/AgentGuard/agentguard/search.py
+# hypothesis_version: 6.151.12
+
+[100, 'error', 'field', 'hit_count', 'hits', 'input_data', 'match', 'metadata', 'name', 'output_data', 'query', 'span_id', 'span_name', 'spans_searched', 'tag', 'tags', 'trace_id', 'traces_searched']

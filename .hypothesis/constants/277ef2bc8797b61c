@@ -1,0 +1,4 @@
+# file: /home/azureuser/AgentGuard/agentguard/correlation.py
+# hypothesis_version: 6.151.12
+
+[0.2, 0.3, 0.5, 1.0, 1000, 5000, 'agent', 'avg_duration_ms', 'causal', 'confidence', 'correlations', 'count', 'description', 'duration_ms', 'error', 'event_a', 'event_b', 'explanation', 'failure', 'fingerprint', 'fingerprints', 'from', 'handoff', 'handoff.utilization', 'has_children', 'has_error', 'has_handoff', 'has_retry', 'input_keys', 'name', 'output_keys', 'parent', 'pattern_key', 'patterns', 'repeated_failure', 'retry_storm', 'slow_agent', 'span_id', 'spans', 'status', 'structural', 'temporal', 'to', 'type', '⏱️', '🏗️', '📎', '🔗']

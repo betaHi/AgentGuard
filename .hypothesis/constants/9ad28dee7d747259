@@ -1,0 +1,4 @@
+# file: /home/azureuser/AgentGuard/agentguard/diff.py
+# hypothesis_version: 6.151.12
+
+[0.1, 0.2, 100, '# Trace Diff Report', '## Changes', '## Spans Added', '## Spans Removed', 'SpanDiff', 'TraceDiff', 'added', 'after', 'after_bytes', 'before', 'before_bytes', 'bottleneck_shift', 'changed', 'changes', 'compression_ratio', 'critical_path', 'data_volume', 'delta_bytes', 'diff_traces', 'diffs', 'duration_after_ms', 'duration_before_ms', 'duration_ms', 'edges', 'error', 'execution_mode', 'field', 'flow_a', 'flow_b', 'graph_a', 'graph_b', 'improved', 'improvements', 'max_parallelism', 'name', 'names', 'neutral', 'nodes', 'nodes_added', 'nodes_removed', 'parallelism', 'phase_count', 'phases', 'regressed', 'regressions', 'removed', 'sequential_fraction', 'status', 'trace_a', 'trace_b', 'truncation_events', 'type', 'verdict', '📈', '📉', '🔄']

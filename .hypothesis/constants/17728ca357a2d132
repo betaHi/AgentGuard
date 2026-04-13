@@ -1,0 +1,4 @@
+# file: /home/azureuser/AgentGuard/agentguard/query.py
+# hypothesis_version: 6.151.12
+
+['*.json', '.agentguard/traces', 'TraceStore', 'avg_duration_ms', 'calls', 'durations', 'error_types', 'errors', 'executions', 'max_duration_ms', 'success_rate', 'successes', 'tags', 'utf-8']

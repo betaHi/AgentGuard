@@ -1,0 +1,4 @@
+# file: /home/azureuser/AgentGuard/agentguard/tree.py
+# hypothesis_version: 6.151.12
+
+['(empty trace)', 'avg_fan_out', 'depth', 'leaf_count', 'node_count', 'orphan_count', 'root_count', 'width', '⏰', '✅', '❌', '❓', '🔄']

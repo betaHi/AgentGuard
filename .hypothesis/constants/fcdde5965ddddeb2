@@ -1,0 +1,4 @@
+# file: /home/azureuser/AgentGuard/agentguard/dashboard.py
+# hypothesis_version: 6.151.12
+
+[0.7, 0.95, 'agent_leaderboard', 'avg_duration_ms', 'cost_usd', 'critical', 'degraded', 'duration_ms', 'grade', 'health', 'healthy', 'insufficient_data', 'recent_traces', 'score', 'span_count', 'status', 'success_rate', 'task', 'top_errors', 'total_cost_usd', 'trace_count', 'trace_id', 'trend', 'unknown']

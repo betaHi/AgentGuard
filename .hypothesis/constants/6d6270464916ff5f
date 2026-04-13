@@ -1,0 +1,4 @@
+# file: /home/azureuser/AgentGuard/agentguard/profile.py
+# hypothesis_version: 6.151.12
+
+[0.95, 100, '## Common Errors', '## Hands off to:', 'avg_duration_ms', 'common_errors', 'handoff_from', 'handoff_to', 'invocations', 'name', 'p95_duration_ms', 'success_rate', 'total_cost_usd', 'total_tokens']

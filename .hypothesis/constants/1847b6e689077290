@@ -1,0 +1,4 @@
+# file: /home/azureuser/AgentGuard/agentguard/timeline.py
+# hypothesis_version: 6.151.12
+
+['Duration: unknown', 'T', 'context_change', 'context_size_bytes', 'details', 'duration_ms', 'error', 'event_count', 'event_type', 'events', 'failure', 'from', 'handled', 'handoff', 'input_keys', 'output_keys', 'retry', 'retry_count', 'retry_of', 'span_end', 'span_id', 'span_name', 'span_start', 'span_type', 'timestamp', 'to', 'trace_id', '⏹️', '▶️', '💥', '📎', '📦', '🔀', '🔄']

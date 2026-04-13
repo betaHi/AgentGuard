@@ -1,0 +1,4 @@
+# file: /home/azureuser/AgentGuard/agentguard/compat.py
+# hypothesis_version: 6.151.12
+
+['0.1.0', '0.2.0', 'agent', 'compatible', 'context_dropped_keys', 'context_received', 'context_used_keys', 'current_version', 'handoff', 'issues', 'llm_call', 'name', 'needs_migration', 'schema_version', 'span_id', 'span_type', 'spans', 'tool']

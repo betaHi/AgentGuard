@@ -1,0 +1,4 @@
+# file: /home/azureuser/AgentGuard/agentguard/builder.py
+# hypothesis_version: 6.151.12
+
+[500, 1000, 2000, 'completed', 'cost_usd', 'duration_ms', 'error', 'failed', 'handoff.context_keys', 'input_data', 'llm_call', 'manual', 'name', 'output_data', 'status', 'tags', 'token_count']

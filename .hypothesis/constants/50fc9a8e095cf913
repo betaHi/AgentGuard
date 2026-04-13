@@ -1,0 +1,4 @@
+# file: /home/azureuser/AgentGuard/agentguard/sla.py
+# hypothesis_version: 6.151.12
+
+['above', 'actual', 'below', 'checks_run', 'constraint', 'cost_usd', 'duration_ms', 'error', 'error_rate', 'max', 'max_cost', 'max_duration', 'max_error_rate', 'message', 'min_score', 'min_success_rate', 'name', 'operator', 'pass_rate', 'passed', 'score', 'severity', 'success_rate', 'threshold', 'total_violations', 'traces_checked', 'traces_failed', 'traces_passed', 'violations', 'warning', '✅ PASSED', '❌ FAILED', '🔴', '🟡']

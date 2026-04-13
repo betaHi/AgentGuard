@@ -1,0 +1,4 @@
+# file: /home/azureuser/AgentGuard/agentguard/store.py
+# hypothesis_version: 6.151.12
+
+[100, '*.json', '.agentguard/traces', 'ended_at', 'span_count', 'spans', 'started_at', 'status', 'task', 'trace_id', 'unknown']

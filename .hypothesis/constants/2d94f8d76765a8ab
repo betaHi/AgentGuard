@@ -1,0 +1,4 @@
+# file: /home/azureuser/AgentGuard/agentguard/metrics.py
+# hypothesis_version: 6.151.12
+
+[0.0, 100, 'agent_count', 'agent_duration', 'avg_ms', 'count', 'error_rate', 'handoff_count', 'inf', 'max_ms', 'min_ms', 'overall_duration', 'p50_ms', 'p90_ms', 'p99_ms', 'retry_rate', 'span_count', 'success_rate', 'tool_count', 'tool_duration', 'total_context_bytes', 'total_cost_usd', 'total_ms', 'total_tokens', 'trace_id']

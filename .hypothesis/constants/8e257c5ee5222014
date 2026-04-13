@@ -1,0 +1,4 @@
+# file: /home/azureuser/AgentGuard/agentguard/integrations/langchain.py
+# hypothesis_version: 6.151.12
+
+[500, 'chain_type', 'framework', 'generations', 'id', 'input', 'kwargs', 'langchain', 'model', 'model_name', 'name', 'output', 'prompts', 'tool_name', 'unknown', 'unknown_tool']

@@ -1,0 +1,4 @@
+# file: /home/azureuser/AgentGuard/agentguard/export_v2.py
+# hypothesis_version: 6.151.12
+
+['"', '""', ',', 'context_size_bytes', 'cost_usd', 'duration_ms', 'ended_at', 'error', 'handoff_from', 'handoff_to', 'name', 'parent_span_id', 'retry_count', 'span_id', 'span_type', 'started_at', 'status', 'tags', 'task', 'token_count', 'trace_id']

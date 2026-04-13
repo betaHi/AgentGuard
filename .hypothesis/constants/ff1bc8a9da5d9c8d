@@ -1,0 +1,4 @@
+# file: /home/azureuser/AgentGuard/agentguard/comparison.py
+# hypothesis_version: 6.151.12
+
+['Cost', 'Depth change', 'Root count change', 'Spans', 'Spans added', 'Spans removed', 'Success Rate', 'Tokens', 'a', 'b', 'delta', 'grades', 'metric_deltas', 'scores', 'structural_changes', 'summary', 'trace_a', 'trace_b', '➡️ Similar quality', '📈 Slight improvement']

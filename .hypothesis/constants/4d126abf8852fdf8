@@ -1,0 +1,4 @@
+# file: /home/azureuser/AgentGuard/agentguard/annotations.py
+# hypothesis_version: 6.151.12
+
+['agent', 'author', 'by_category', 'by_severity', 'category', 'completed', 'context', 'correctness', 'critical', 'custom', 'data', 'error', 'failed', 'info', 'link', 'message', 'performance', 'quality', 'related_span_id', 'security', 'severity', 'spans_annotated', 'system', 'timestamp', 'total', 'warning']

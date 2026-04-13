@@ -1,0 +1,4 @@
+# file: /home/azureuser/AgentGuard/agentguard/manipulate.py
+# hypothesis_version: 6.151.12
+
+['<email>', '<ip>', '[\\w.-]+@[\\w.-]+', 'merged']

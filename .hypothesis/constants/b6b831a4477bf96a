@@ -1,0 +1,4 @@
+# file: /home/azureuser/AgentGuard/agentguard/flowgraph.py
+# hypothesis_version: 6.151.12
+
+[1000, '## Execution Phases', '([{}])', '-->', '[{}]', 'agent', 'critical_path', 'critical_path_ms', 'dependencies', 'dependents', 'duration_ms', 'edges', 'failed', 'from', 'graph TD', 'handoff', 'is_parallel', 'max_parallelism', 'name', 'nodes', 'parallelism', 'parent_child', 'phase_id', 'phases', 'sequential', 'sequential_fraction', 'span_id', 'spans', 'status', 'to', 'type', '⚡ parallel', '➡️ sequential']

@@ -1,0 +1,4 @@
+# file: /home/azureuser/AgentGuard/agentguard/compress.py
+# hypothesis_version: 6.151.12
+
+[100, '_keys', '_type', 'aggressive', 'compressed_bytes', 'failure_handled', 'input_data', 'light', 'original_bytes', 'output_data', 'ratio', 'retry_count', 'savings_pct', 'spans', 'standard', 'started_at']
