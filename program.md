@@ -19,7 +19,7 @@
 - [x] SDK: add sampling — record only N% of traces in production (configurable)
 - [x] SDK: add span annotations — user can attach arbitrary key-value metadata to spans
 - [x] SDK: add trace correlation ID — link related traces across service boundaries
-- [ ] SDK: add batch export — accumulate spans and flush periodically (reduce I/O)
+- [x] SDK: add batch export — accumulate spans and flush periodically (reduce I/O)
 
 ### P3: Advanced testing
 - [ ] Test: replay a trace, mutate one agent's timing, verify analysis changes correctly
