@@ -282,97 +282,126 @@ class FlowAnalysis:
         }
 
 
+def _extract_handoffs(
+    trace: ExecutionTrace,
+    children_map: dict[str, list[Span]],
+) -> list[HandoffInfo]:
+    """Extract handoffs from explicit HANDOFF spans or infer from agent sequence.
+
+    Prefers explicit HANDOFF spans (from record_handoff instrumentation).
+    Falls back to inferring handoffs from sequential agent children
+    under the same parent.
+    """
+    import json as _json_flow
+
+    handoff_spans = [s for s in trace.spans if s.span_type == SpanType.HANDOFF]
+    if handoff_spans:
+        return _handoffs_from_explicit(handoff_spans)
+    return _handoffs_from_sequence(children_map, _json_flow)
+
+
+def _handoffs_from_explicit(handoff_spans: list[Span]) -> list[HandoffInfo]:
+    """Build HandoffInfo list from explicit HANDOFF spans."""
+    handoffs = []
+    for hs in handoff_spans:
+        fr = hs.handoff_from or hs.metadata.get("handoff.from", "")
+        to = hs.handoff_to or hs.metadata.get("handoff.to", "")
+        ctx_keys = hs.metadata.get("handoff.context_keys", [])
+        ctx_size = hs.context_size_bytes or hs.metadata.get("handoff.context_size_bytes", 0)
+        handoffs.append(HandoffInfo(
+            from_agent=fr, to_agent=to, context_keys=ctx_keys,
+            context_size_bytes=ctx_size, duration_ms=hs.duration_ms,
+        ))
+    return handoffs
+
+
+def _handoffs_from_sequence(
+    children_map: dict[str, list[Span]],
+    json_mod: Any,
+) -> list[HandoffInfo]:
+    """Infer handoffs from sequential agent spans under the same parent."""
+    handoffs = []
+    for _parent_id, children in children_map.items():
+        agent_children = [c for c in children if c.span_type == SpanType.AGENT]
+        if len(agent_children) < 2:
+            continue
+        sorted_agents = sorted(agent_children, key=lambda s: s.started_at or "")
+        for i in range(len(sorted_agents) - 1):
+            src, dst = sorted_agents[i], sorted_agents[i + 1]
+            ctx_bytes = len(json_mod.dumps(src.output_data or {}, default=str).encode())
+            ctx_keys = list((src.output_data or {}).keys()) if isinstance(src.output_data, dict) else []
+            handoffs.append(HandoffInfo(
+                from_agent=src.name, to_agent=dst.name,
+                context_keys=ctx_keys, context_size_bytes=ctx_bytes,
+            ))
+    return handoffs
+
+
+def _find_critical_path(
+    trace: ExecutionTrace,
+    span_map: dict[str, Span],
+    children_map: dict[str, list[Span]],
+) -> tuple[list[str], float]:
+    """Find the longest execution chain from root to leaf.
+
+    Returns:
+        (path_names, total_duration_ms) for the critical path.
+    """
+    def _longest(span_id: str) -> tuple[list[str], float]:
+        span = span_map.get(span_id)
+        if not span:
+            return [], 0
+        kids = children_map.get(span_id, [])
+        if not kids:
+            return [span.name], span.duration_ms or 0
+        best_path, best_dur = [], 0.0
+        for child in kids:
+            p, d = _longest(child.span_id)
+            if d > best_dur:
+                best_path, best_dur = p, d
+        return [span.name] + best_path, span.duration_ms or 0
+
+    roots = [s for s in trace.spans
+             if s.parent_span_id is None or s.parent_span_id not in span_map]
+    crit_path, crit_dur = [], 0.0
+    for root in roots:
+        path, dur = _longest(root.span_id)
+        if dur > crit_dur:
+            crit_path, crit_dur = path, dur
+    return crit_path, crit_dur
+
+
+def _detect_parallel_groups(
+    children_map: dict[str, list[Span]],
+) -> list[list[str]]:
+    """Detect groups of agents that execute under the same parent.
+
+    Simplified heuristic: 2+ agent children under the same parent
+    are considered a parallel group.
+    """
+    groups = []
+    for _parent_id, children in children_map.items():
+        agents = [c for c in children if c.span_type == SpanType.AGENT]
+        if len(agents) >= 2:
+            groups.append([c.name for c in agents])
+    return groups
+
+
 def analyze_flow(trace: ExecutionTrace) -> FlowAnalysis:
     """Analyze the execution flow of a multi-agent trace.
 
-    Identifies:
-    - Handoffs between agents (from explicit HANDOFF spans, or inferred from sequence as fallback)
-    - Critical path (longest execution chain)
-    - Parallel execution groups
+    Identifies handoffs between agents, the critical path (longest
+    execution chain), and parallel execution groups.
     """
     span_map = {s.span_id: s for s in trace.spans}
     children_map: dict[str, list[Span]] = {}
-
     for s in trace.spans:
         if s.parent_span_id:
             children_map.setdefault(s.parent_span_id, []).append(s)
 
-    # Detect handoffs: prefer explicit HANDOFF spans, fall back to sequence inference
-    import json as _json_flow
-    handoffs = []
-    handoff_spans = [s for s in trace.spans if s.span_type == SpanType.HANDOFF]
-
-    if handoff_spans:
-        # Method 1: Use explicit HANDOFF spans (confirmed by instrumentation)
-        for hs in handoff_spans:
-            fr = hs.handoff_from or hs.metadata.get("handoff.from", "")
-            to = hs.handoff_to or hs.metadata.get("handoff.to", "")
-            ctx_keys = hs.metadata.get("handoff.context_keys", [])
-            ctx_size = hs.context_size_bytes or hs.metadata.get("handoff.context_size_bytes", 0)
-            handoffs.append(HandoffInfo(
-                from_agent=fr,
-                to_agent=to,
-                context_keys=ctx_keys,
-                context_size_bytes=ctx_size,
-                duration_ms=hs.duration_ms,
-            ))
-    else:
-        # Method 2: Infer from sequential agent spans under same parent
-        for _parent_id, children in children_map.items():
-            agent_children = [c for c in children if c.span_type == SpanType.AGENT]
-            if len(agent_children) >= 2:
-                sorted_agents = sorted(agent_children, key=lambda s: s.started_at or "")
-                for i in range(len(sorted_agents) - 1):
-                    from_agent = sorted_agents[i]
-                    to_agent = sorted_agents[i + 1]
-                    ctx_bytes = len(_json_flow.dumps(from_agent.output_data or {}, default=str).encode())
-                    ctx_keys = list((from_agent.output_data or {}).keys()) if isinstance(from_agent.output_data, dict) else []
-                    handoffs.append(HandoffInfo(
-                        from_agent=from_agent.name,
-                        to_agent=to_agent.name,
-                        context_keys=ctx_keys,
-                        context_size_bytes=ctx_bytes,
-                    ))
-
-    # Critical path: find the longest chain from root to leaf
-    def find_longest_path(span_id: str) -> tuple[list[str], float]:
-        span = span_map.get(span_id)
-        if not span:
-            return [], 0
-
-        children = children_map.get(span_id, [])
-        if not children:
-            return [span.name], span.duration_ms or 0
-
-        best_path = []
-        best_duration = 0
-        for child in children:
-            child_path, child_dur = find_longest_path(child.span_id)
-            if child_dur > best_duration:
-                best_path = child_path
-                best_duration = child_dur
-
-        return [span.name] + best_path, (span.duration_ms or 0)
-
-    # Find roots
-    roots = [s for s in trace.spans if s.parent_span_id is None or s.parent_span_id not in span_map]
-
-    critical_path = []
-    critical_duration = 0
-    for root in roots:
-        path, dur = find_longest_path(root.span_id)
-        if dur > critical_duration:
-            critical_path = path
-            critical_duration = dur
-
-    # Detect parallel groups
-    parallel_groups = []
-    for _parent_id, children in children_map.items():
-        agent_children = [c for c in children if c.span_type == SpanType.AGENT]
-        if len(agent_children) >= 2:
-            # Check if any overlap in time
-            # Simplified: if they share same parent, consider them a group
-            parallel_groups.append([c.name for c in agent_children])
+    handoffs = _extract_handoffs(trace, children_map)
+    critical_path, critical_duration = _find_critical_path(trace, span_map, children_map)
+    parallel_groups = _detect_parallel_groups(children_map)
 
     return FlowAnalysis(
         agent_count=len(trace.agent_spans),
