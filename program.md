@@ -23,7 +23,7 @@
 ### P1: Viewer ↔ Analysis full alignment
 - [x] HTML viewer: diagnostics panel should render ALL analysis outputs (bottleneck, flow, failures, cost-yield, decisions) — verify no analysis result is missing from viewer
 - [x] HTML viewer: add trace metadata header (task name, total duration, agent count, span count, overall status)
-- [ ] CLI: `agentguard analyze` should output structured JSON matching exactly what viewer renders
+- [S] CLI: `agentguard analyze` should output structured JSON matching exactly what viewer renders (SKIPPED: 3x REJECT)
 
 ### P2: Examples tell real stories
 - [ ] Audit all 18 examples: run each, capture output, verify README/docs descriptions match actual output

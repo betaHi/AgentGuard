@@ -15,3 +15,4 @@
 [2026-04-13T00:14:39Z] Iter 10 (0s): Stress test: generate 1000-span trace, verify analyze_bottleneck/flow/failures complete in <5s — NO CHANGES
 [2026-04-13T00:18:17Z] Iter 14 (0s): CONTRIBUTING.md enhancement: add architecture overview, PR review criteria — NO CHANGES
 [2026-04-13T00:49:27Z] Iter 6 (0s): Q4: cost-yield should identify the "most wasteful" agent (highest cost, lowest output quality) with actionable recommendation — NO CHANGES
+[2026-04-13T01:05:12Z] Iter 14 (0s): CLI: `agentguard analyze` should output structured JSON matching exactly what viewer renders — NO CHANGES
