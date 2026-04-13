@@ -50,6 +50,8 @@ def llm_plan(task_description: str) -> dict:
         ],
         "estimated_files": 3,
         "complexity": "medium",
+        "tokens_used": random.randint(800, 1500),
+        "cost_usd": round(random.uniform(0.008, 0.015), 4),
     }
 
 @record_tool(name="codebase_search")
@@ -88,6 +90,7 @@ def llm_generate_code(spec: dict, context: list) -> dict:
             {"path": "src/models/trace.py", "action": "modify", "lines": 5},
         ],
         "tokens_used": random.randint(2000, 4000),
+        "cost_usd": round(random.uniform(0.02, 0.06), 4),
     }
 
 @record_tool(name="llm_review_code")
@@ -105,6 +108,8 @@ def llm_review_code(code_diff: dict) -> dict:
         "approved": len([i for i in issues if i["severity"] == "error"]) == 0,
         "issues": issues,
         "score": 0.85 if not issues else 0.6,
+        "tokens_used": random.randint(1000, 2000),
+        "cost_usd": round(random.uniform(0.01, 0.02), 4),
     }
 
 @record_tool(name="run_tests")
