@@ -326,7 +326,11 @@ See [docs/architecture.md](docs/architecture.md) for details.
 |----------|----------|
 | **Instrumentation** | 6 integration styles (sync/async decorators, context managers, manual API, middleware, distributed) |
 | **Handoff Tracking** | Context usage tracking, utilization ratio, degradation analysis, integrity scoring |
-| **Failure Analysis** | Causal chains, circuit breaker detection, blast radius, hypothetical failure |
+| **Context Transforms** | Summarization detection, filtering, type changes, key renames across handoffs |
+| **Failure Analysis** | Causal chains, circuit breaker detection, blast radius, recoverable vs fatal severity |
+| **Bottleneck** | Critical path analysis, false bottleneck detection (agent waiting on deps vs doing work) |
+| **Cost-Yield** | Per-agent cost/yield ratio, custom cost functions, waste detection, recommendations |
+| **Decisions** | Orchestration decision quality scoring, optimal agent suggestions from trace history |
 | **Flow Graph** | DAG visualization, parallel/sequential detection, critical path, Mermaid export |
 | **Context Flow** | Compression/truncation events, bandwidth analysis, bottleneck detection |
 | **Correlation** | Span fingerprinting, failure-handoff causality, pattern detection |
@@ -335,11 +339,14 @@ See [docs/architecture.md](docs/architecture.md) for details.
 | **A/B Testing** | Compare agent versions, regression detection |
 | **Timeline** | Chronological event stream, filtering by type/span |
 | **Trace Builder** | Fluent API for constructing test/synthetic traces |
+| **SDK** | Fail-open decorators, per-trace sampling, span annotations, correlation IDs, batch export |
+| **Production** | , trace size limits (10MB warn, 100KB/field truncation), batch I/O |
+| **Viewer** | Interactive HTML: collapsible panels, search/filter by name/status/duration, 9 diagnostic panels |
 | **Storage** | File-based store with query, prune, and schema validation |
-| **CLI** | 30+ commands: show, list, search, eval, diff, score, aggregate, timeline, metrics, and more |
+| **CLI** | 33 commands: show, analyze, diff, summary, score, aggregate, timeline, metrics, and more |
 | **Export** | JSON, JSONL, OTel, Prometheus text format |
 
-**750+ tests • 15K+ lines • Zero external dependencies for core**
+**1170+ tests • 20 examples • Zero external dependencies for core**
 
 ## Install
 
