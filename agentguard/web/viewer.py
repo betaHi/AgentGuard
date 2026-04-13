@@ -689,38 +689,50 @@ def _build_context_waterfall(ctx) -> str:
     )
 
 
-def _build_diagnostics(failures, bn, flow, ctx, retries=None, cost=None, error_report=None,
-                       cost_yield=None, decisions=None, propagation=None) -> str:
-    # Failure panel
-    fail_items = []
+def _panel_failures(failures) -> str:
+    """Build failure propagation panel HTML."""
+    items = []
     for rc in failures.root_causes:
         cls = "ff-h" if rc.was_handled else "ff-u"
         label = "handled" if rc.was_handled else "unhandled"
-        fail_items.append(f'<div class="item"><span class="ff-node {cls}">{_esc(rc.span_name)} · {label}</span></div>')
-    fail_html = "\n".join(fail_items) if fail_items else '<div class="item" style="color:var(--gn)">No failures</div>'
-
+        items.append(f'<div class="item"><span class="ff-node {cls}">{_esc(rc.span_name)} · {label}</span></div>')
+    fail_html = "\n".join(items) if items else '<div class="item" style="color:var(--gn)">No failures</div>'
     res_color = "var(--gn)" if failures.resilience_score >= 0.8 else ("var(--yl)" if failures.resilience_score >= 0.5 else "var(--rd)")
+    return f"""<details class="d-box" open>
+<summary><h4>🔴 Failure Propagation</h4></summary>
+<div class="d-body">
+<div class="val" style="color:{res_color}">{failures.resilience_score:.0%} resilience</div>
+<div class="det">{failures.total_failed_spans} failed · {failures.handled_count} handled · {failures.unhandled_count} unhandled</div>
+<div class="items">{fail_html}</div>
+</div></details>"""
 
-    # Bottleneck panel
-    bn_items = []
-    if bn:
-        for a in bn.agent_rankings[:5]:
-            max(a["pct"], 2)
-            color = "var(--yl)" if a["name"] == bn.bottleneck_span else ("var(--rd)" if a["status"] == "failed" else "var(--gn)")
-            bn_items.append(f'<div class="item"><span style="color:{color}">{_esc(a["name"])}</span> <span style="color:var(--dim)">{a["duration_ms"]:.0f}ms ({a["pct"]:.0f}%)</span></div>')
-    bn_html = "\n".join(bn_items) if bn_items else ""
 
-    # Handoff panel
+def _panel_bottleneck(bn) -> str:
+    """Build bottleneck panel HTML."""
+    if not bn:
+        return ""
+    items = []
+    for a in bn.agent_rankings[:5]:
+        color = "var(--yl)" if a["name"] == bn.bottleneck_span else ("var(--rd)" if a["status"] == "failed" else "var(--gn)")
+        items.append(f'<div class="item"><span style="color:{color}">{_esc(a["name"])}</span> <span style="color:var(--dim)">{a["duration_ms"]:.0f}ms ({a["pct"]:.0f}%)</span></div>')
+    bn_html = "\n".join(items)
+    return f"""<details class="d-box" open>
+<summary><h4>🐢 Bottleneck</h4></summary>
+<div class="d-body">
+<div class="val">{_esc(bn.bottleneck_span)}</div>
+<div class="det">{bn.bottleneck_duration_ms:.0f}ms ({bn.bottleneck_pct:.0f}%)</div>
+<div class="items">{bn_html}</div>
+</div></details>"""
+
+
+def _panel_handoffs(flow, ctx) -> str:
+    """Build handoff flow + critical path + context anomalies panel HTML."""
     ho_items = []
     for h in flow.handoffs:
         ctx_str = f"{h.context_size_bytes:,}B" if h.context_size_bytes else "?"
         ho_items.append(f'<div class="item">{_esc(h.from_agent)} → {_esc(h.to_agent)} <span class="ctx-badge">{ctx_str}</span></div>')
     ho_html = "\n".join(ho_items) if ho_items else '<div class="item" style="color:var(--dim)">No handoffs detected</div>'
-
-    # Critical path
     cp = " → ".join(flow.critical_path[:6]) if flow.critical_path else "N/A"
-
-    # Context flow anomalies
     ctx_items = []
     for a in ctx.anomalies:
         if a.anomaly == "loss":
@@ -728,63 +740,13 @@ def _build_diagnostics(failures, bn, flow, ctx, retries=None, cost=None, error_r
         elif a.anomaly == "bloat":
             ctx_items.append(f'<div class="item" style="color:var(--yl)">⚠ {_esc(a.from_agent)} → {_esc(a.to_agent)}: +{a.size_delta_bytes:,}B</div>')
     ctx_note = "\n".join(ctx_items) if ctx_items else '<div class="item" style="color:var(--gn)">No anomalies</div>'
-
-    # Cost-yield panel
-    cy_wasteful = f"Most wasteful: {_esc(cost_yield.most_wasteful_agent)}" if cost_yield and cost_yield.most_wasteful_agent else "No waste detected"
-    cy_detail = f"Waste score: {cost_yield.waste_score:.0f}/100" if cost_yield else ""
-    cy_recs = cost_yield.recommendations[:3] if cost_yield else []
-    cy_items = "\n".join(f'<div class="item">💡 {_esc(r)}</div>' for r in cy_recs) if cy_recs else '<div class="item" style="color:var(--gn)">No recommendations</div>'
-
-    # Decisions panel
-    dec_quality = f"{decisions.decision_quality_score:.0%} quality" if decisions else "N/A"
-    dec_detail = f"{decisions.total_decisions} decisions · {decisions.decisions_leading_to_failure} led to failure" if decisions else ""
-    dec_list = []
-    if decisions:
-        for d in decisions.decisions[:3]:
-            icon = "✗" if d.led_to_failure else "✓"
-            dec_list.append(f'<div class="item">{icon} {_esc(d.coordinator)} chose {_esc(d.chosen_agent)}</div>')
-    dec_items = "\n".join(dec_list) if dec_list else '<div class="item" style="color:var(--dim)">No decisions recorded</div>'
-
-    # Propagation panel
-    prop_containment = f"{propagation.containment_rate:.0%} containment" if propagation else "N/A"
-    prop_detail = f"{propagation.total_failures} failures · depth {propagation.max_depth}" if propagation else ""
-    prop_list = []
-    if propagation:
-        for c in propagation.causal_chains[:3]:
-            icon = "🟡" if c.contained else "🔴"
-            prop_list.append(f'<div class="item">{icon} {_esc(c.root_span_name)}: {_esc(c.root_error[:40])}</div>')
-    prop_items = "\n".join(prop_list) if prop_list else '<div class="item" style="color:var(--gn)">No propagation</div>'
-
-    return f'''<div class="diag">
-<h3>Orchestration Diagnostics</h3>
-<div class="diag-grid">
-
-<details class="d-box" open>
-<summary><h4>🔴 Failure Propagation</h4></summary>
-<div class="d-body">
-<div class="val" style="color:{res_color}">{failures.resilience_score:.0%} resilience</div>
-<div class="det">{failures.total_failed_spans} failed · {failures.handled_count} handled · {failures.unhandled_count} unhandled</div>
-<div class="items">{fail_html}</div>
-</div>
-</details>
-
-<details class="d-box" open>
-<summary><h4>🐢 Bottleneck</h4></summary>
-<div class="d-body">
-<div class="val">{_esc(bn.bottleneck_span) if bn else "N/A"}</div>
-<div class="det">{f"{bn.bottleneck_duration_ms:.0f}ms ({bn.bottleneck_pct:.0f}%)" if bn else ""}</div>
-<div class="items">{bn_html}</div>
-</div>
-</details>
-
-<details class="d-box" open>
+    return f"""<details class="d-box" open>
 <summary><h4>🔀 Handoff Flow</h4></summary>
 <div class="d-body">
 <div class="val">{len(flow.handoffs)} handoffs</div>
 <div class="det">Total: {ctx.total_context_bytes:,}B · Anomalies: {len(ctx.anomalies)}</div>
 <div class="items">{ho_html}</div>
-</div>
-</details>
+</div></details>
 
 <details class="d-box" open>
 <summary><h4>📊 Critical Path</h4></summary>
@@ -792,61 +754,113 @@ def _build_diagnostics(failures, bn, flow, ctx, retries=None, cost=None, error_r
 <div class="val" style="font-size:12px">{_esc(cp)}</div>
 <div class="det">{flow.critical_path_duration_ms:.0f}ms · {len(flow.critical_path)} hops</div>
 <div class="items">{ctx_note}</div>
-</div>
-</details>
+</div></details>"""
 
-<details class="d-box" open>
+
+def _panel_cost(cost) -> str:
+    """Build cost & tokens panel HTML."""
+    return f"""<details class="d-box" open>
 <summary><h4>💰 Cost & Tokens</h4></summary>
 <div class="d-body">
 <div class="val">${cost["total_cost_usd"]:.4f}</div>
 <div class="det">{cost["total_tokens"]:,} tokens · {_esc(cost.get("most_expensive", "N/A"))} most expensive</div>
-</div>
-</details>
+</div></details>"""
 
-<details class="d-box" open>
+
+def _panel_retries(retries) -> str:
+    """Build retries panel HTML."""
+    return f"""<details class="d-box" open>
 <summary><h4>🔄 Retries</h4></summary>
 <div class="d-body">
 <div class="val">{retries["retry_count"]} retries</div>
 <div class="det">{retries["total_wasted_attempts"]} wasted attempts</div>
-</div>
-</details>
+</div></details>"""
 
-<details class="d-box" open>
+
+def _panel_errors(error_report) -> str:
+    """Build error classification panel HTML."""
+    cats = "".join(f'<div class="item"><span style="color:var(--dim)">{_esc(cat)}: {count}</span></div>' for cat, count in (error_report.by_category if error_report else {}).items())
+    return f"""<details class="d-box" open>
 <summary><h4>🐛 Error Classification</h4></summary>
 <div class="d-body">
 <div class="val">{error_report.total_errors if error_report else 0} errors</div>
 <div class="det">{error_report.retryable_count if error_report else 0} retryable</div>
-<div class="items">{"".join(f'<div class="item"><span style="color:var(--dim)">{_esc(cat)}: {count}</span></div>' for cat, count in (error_report.by_category if error_report else {{}}).items())}</div>
-</div>
-</details>
+<div class="items">{cats}</div>
+</div></details>"""
 
-<details class="d-box" open>
+
+def _panel_cost_yield(cost_yield) -> str:
+    """Build cost-yield analysis panel HTML."""
+    wasteful = f"Most wasteful: {_esc(cost_yield.most_wasteful_agent)}" if cost_yield and cost_yield.most_wasteful_agent else "No waste detected"
+    detail = f"Waste score: {cost_yield.waste_score:.0f}/100" if cost_yield else ""
+    recs = cost_yield.recommendations[:3] if cost_yield else []
+    items = "\n".join(f'<div class="item">💡 {_esc(r)}</div>' for r in recs) if recs else '<div class="item" style="color:var(--gn)">No recommendations</div>'
+    return f"""<details class="d-box" open>
 <summary><h4>📈 Cost-Yield Analysis</h4></summary>
 <div class="d-body">
-<div class="val">{cy_wasteful}</div>
-<div class="det">{cy_detail}</div>
-<div class="items">{cy_items}</div>
-</div>
-</details>
+<div class="val">{wasteful}</div>
+<div class="det">{detail}</div>
+<div class="items">{items}</div>
+</div></details>"""
 
-<details class="d-box" open>
+
+def _panel_decisions(decisions) -> str:
+    """Build orchestration decisions panel HTML."""
+    quality = f"{decisions.decision_quality_score:.0%} quality" if decisions else "N/A"
+    detail = f"{decisions.total_decisions} decisions · {decisions.decisions_leading_to_failure} led to failure" if decisions else ""
+    items = []
+    if decisions:
+        for d in decisions.decisions[:3]:
+            icon = "✗" if d.led_to_failure else "✓"
+            items.append(f'<div class="item">{icon} {_esc(d.coordinator)} chose {_esc(d.chosen_agent)}</div>')
+    items_html = "\n".join(items) if items else '<div class="item" style="color:var(--dim)">No decisions recorded</div>'
+    return f"""<details class="d-box" open>
 <summary><h4>🎯 Orchestration Decisions</h4></summary>
 <div class="d-body">
-<div class="val">{dec_quality}</div>
-<div class="det">{dec_detail}</div>
-<div class="items">{dec_items}</div>
-</div>
-</details>
+<div class="val">{quality}</div>
+<div class="det">{detail}</div>
+<div class="items">{items_html}</div>
+</div></details>"""
 
-<details class="d-box" open>
+
+def _panel_propagation(propagation) -> str:
+    """Build causal chains panel HTML."""
+    containment = f"{propagation.containment_rate:.0%} containment" if propagation else "N/A"
+    detail = f"{propagation.total_failures} failures · depth {propagation.max_depth}" if propagation else ""
+    items = []
+    if propagation:
+        for c in propagation.causal_chains[:3]:
+            icon = "🟡" if c.contained else "🔴"
+            items.append(f'<div class="item">{icon} {_esc(c.root_span_name)}: {_esc(c.root_error[:40])}</div>')
+    items_html = "\n".join(items) if items else '<div class="item" style="color:var(--gn)">No propagation</div>'
+    return f"""<details class="d-box" open>
 <summary><h4>💥 Causal Chains</h4></summary>
 <div class="d-body">
-<div class="val">{prop_containment}</div>
-<div class="det">{prop_detail}</div>
-<div class="items">{prop_items}</div>
-</div>
-</details>
+<div class="val">{containment}</div>
+<div class="det">{detail}</div>
+<div class="items">{items_html}</div>
+</div></details>"""
 
+
+def _build_diagnostics(failures, bn, flow, ctx, retries=None, cost=None, error_report=None,
+                       cost_yield=None, decisions=None, propagation=None) -> str:
+    """Assemble all diagnostic panels into a grid."""
+    panels = [
+        _panel_failures(failures),
+        _panel_bottleneck(bn),
+        _panel_handoffs(flow, ctx),
+        _panel_cost(cost) if cost else "",
+        _panel_retries(retries) if retries else "",
+        _panel_errors(error_report),
+        _panel_cost_yield(cost_yield),
+        _panel_decisions(decisions),
+        _panel_propagation(propagation),
+    ]
+    grid = "\n".join(p for p in panels if p)
+    return f'''<div class="diag">
+<h3>Orchestration Diagnostics</h3>
+<div class="diag-grid">
+{grid}
 </div></div>'''
 
 
