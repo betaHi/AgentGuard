@@ -46,6 +46,8 @@ class CausalChain:
     depth: int = 0  # how many levels deep the failure propagated
     contained: bool = False  # was it contained by a circuit breaker
     contained_by: Optional[str] = None  # span_id that contained it
+    severity: str = "unknown"  # "recoverable" or "fatal"
+    severity_reason: str = ""  # why this classification
 
     @property
     def chain_confidence(self) -> float:
@@ -72,6 +74,8 @@ class CausalChain:
             "contained": self.contained,
             "contained_by": self.contained_by,
             "chain_confidence": round(self.chain_confidence, 3),
+            "severity": self.severity,
+            "severity_reason": self.severity_reason,
         }
 
 
@@ -175,6 +179,30 @@ def _compute_link_confidence(
             pass  # can't parse timestamps, skip timing factor
 
     return min(confidence, 1.0)
+
+
+def _classify_severity(
+    chain: "CausalChain", trace,
+) -> tuple[str, str]:
+    """Classify a causal chain as recoverable or fatal.
+
+    Recoverable: contained by circuit breaker, or trace still succeeded.
+    Fatal: propagated to root and trace failed, or affected >50% of spans.
+    """
+    from agentguard.core.trace import SpanStatus
+    trace_failed = trace.status == SpanStatus.FAILED
+    affected_ratio = len(chain.affected_span_ids) / max(len(trace.spans), 1)
+    if chain.contained:
+        return "recoverable", f"Contained by {chain.contained_by}"
+    if not trace_failed and chain.depth <= 1:
+        return "recoverable", "Shallow failure, trace succeeded"
+    if trace_failed and chain.depth >= 2:
+        return "fatal", f"Propagated {chain.depth} levels deep, trace failed"
+    if affected_ratio > 0.5:
+        return "fatal", f"Affected {affected_ratio:.0%} of spans"
+    if trace_failed:
+        return "fatal", "Trace failed"
+    return "recoverable", "Trace succeeded despite failure"
 
 
 def analyze_propagation(trace: ExecutionTrace) -> PropagationAnalysis:
@@ -288,6 +316,10 @@ def analyze_propagation(trace: ExecutionTrace) -> PropagationAnalysis:
     
     contained_count = sum(1 for c in chains if c.contained)
     
+    # Classify severity: recoverable vs fatal
+    for chain in chains:
+        chain.severity, chain.severity_reason = _classify_severity(chain, trace)
+
     return PropagationAnalysis(
         causal_chains=chains,
         circuit_breakers=circuit_breakers,
