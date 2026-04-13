@@ -46,7 +46,7 @@
 - [x] Add: py.typed marker file for PEP 561 type checking support
 - [x] Add: __version__ attribute in agentguard/__init__.py that reads from pyproject.toml
 - [x] Fix: GitHub Actions — update to actions/checkout@v5 and actions/setup-python@v5 with FORCE_JAVASCRIPT_ACTIONS_TO_NODE24=true to fix Node.js deprecation warnings. Add matrix fail-fast: false so all Python versions run even if one fails. Add ruff format check
-- [ ] Add: pre-commit config (.pre-commit-config.yaml) with ruff check + ruff format hooks
+- [x] Add: pre-commit config (.pre-commit-config.yaml) with ruff check + ruff format hooks
 - [ ] Add: CHANGELOG.md — proper Keep a Changelog format documenting Sprint 1-6 changes
 - [ ] Fix: .agentguard/ traces directory cleanup — examples accumulate traces on disk. Add max_traces option to TraceStore.save() and auto-prune old traces (keep last 100)
 
