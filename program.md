@@ -31,7 +31,7 @@
 - [x] Add example: performance optimization — trace shows parallel pipeline is 3x faster than sequential, with cost comparison
 
 ### P3: SDK real-world readiness
-- [ ] Add `@record_agent` decorator error handling: if recording fails, the decorated function should still work (fail-open)
+- [x] Add `@record_agent` decorator error handling: if recording fails, the decorated function should still work (fail-open)
 - [ ] Add trace size limits: warn if trace exceeds 10MB, truncate span metadata if needed
 - [ ] Add `agentguard.configure()` for global settings (output dir, max trace size, sampling rate)
 
