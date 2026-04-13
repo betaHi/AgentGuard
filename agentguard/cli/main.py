@@ -904,92 +904,119 @@ def cmd_guard(args):
     guard.watch(interval=args.interval)
 
 
-def main():
-    parser = argparse.ArgumentParser(
-        prog="agentguard",
-        description="🛡️ AgentGuard — Record, Replay, Evaluate, and Guard your AI Agents.",
-    )
-    sub = parser.add_subparsers(dest="command")
+# Command dispatch table: maps CLI subcommand name → handler function.
+_COMMAND_DISPATCH: dict[str, Any] = {}
 
-    # init
+
+def _register_subcommands(sub: Any) -> None:
+    """Register all CLI subcommands with argparse.
+
+    Each block adds a subparser with its arguments. Grouped by category
+    for readability. The dispatch table is populated in main().
+    """
+    # Core commands
     sub.add_parser("init", help="Initialize AgentGuard in current directory")
+    sub.add_parser("doctor", help="Check installation health")
+    sub.add_parser("version", help="Show version")
+    sub.add_parser("schema", help="Print trace JSON schema")
 
-    # show
+    # Trace viewing
     p = sub.add_parser("show", help="Display a trace file")
     p.add_argument("file", help="Path to trace JSON file")
 
-    # list
     p = sub.add_parser("list", help="List recorded traces")
     p.add_argument("--dir", default=".agentguard/traces", help="Traces directory")
 
-    # eval
+    p = sub.add_parser("tree", help="Display as indented tree")
+    p.add_argument("file", help="Trace file")
+
+    p = sub.add_parser("timeline", help="Display trace as event timeline")
+    p.add_argument("file", help="Path to trace JSON file")
+    p.add_argument("--max", type=int, help="Max events to show")
+
+    p = sub.add_parser("summary", help="One-line trace health summary")
+    p.add_argument("file", help="Path to trace JSON file")
+
+
+def _register_analysis_commands(sub: Any) -> None:
+    """Register analysis subcommands."""
+    p = sub.add_parser("analyze", help="Analyze failure propagation and flow")
+    p.add_argument("file", help="Path to trace JSON file")
+
     p = sub.add_parser("eval", help="Evaluate a trace against rules")
     p.add_argument("file", help="Path to trace JSON file")
     p.add_argument("--config", help="Path to config file (agentguard.json)")
 
-    # doctor
-    sub.add_parser("doctor", help="Check installation health")
+    p = sub.add_parser("score", help="Score a trace on quality dimensions")
+    p.add_argument("file", help="Path to trace JSON file")
+    p.add_argument("--expected-ms", type=float, help="Expected duration in ms")
 
-    # version
-    sub.add_parser("version", help="Show version")
+    p = sub.add_parser("propagation", help="Analyze failure propagation chains")
+    p.add_argument("file", help="Path to trace JSON file")
 
-    # report
-    p = sub.add_parser("report", help="Generate HTML report")
+    p = sub.add_parser("flowgraph", help="Build multi-agent flow graph")
+    p.add_argument("file", help="Path to trace JSON file")
+    p.add_argument("--mermaid", action="store_true", help="Output as Mermaid diagram")
+
+    p = sub.add_parser("context-flow", help="Analyze context flow through pipeline")
+    p.add_argument("file", help="Path to trace JSON file")
+
+    p = sub.add_parser("metrics", help="Extract metrics from a trace")
+    p.add_argument("file", help="Path to trace JSON file")
+    p.add_argument("--prometheus", action="store_true", help="Output Prometheus format")
+
+    p = sub.add_parser("correlate", help="Analyze span correlations")
+    p.add_argument("file", help="Path to trace JSON file")
+
+    p = sub.add_parser("annotate", help="Auto-annotate a trace")
+    p.add_argument("file", help="Path to trace JSON file")
+
+    p = sub.add_parser("summarize", help="Natural language summary")
+    p.add_argument("file", help="Trace file")
+    p.add_argument("--brief", action="store_true")
+
+    p = sub.add_parser("dependencies", help="Agent dependency graph")
+    p.add_argument("file", help="Trace file")
+    p.add_argument("--mermaid", action="store_true", help="Mermaid output")
+
+
+def _register_comparison_commands(sub: Any) -> None:
+    """Register comparison and merge subcommands."""
+    p = sub.add_parser("diff", help="Compare two traces")
+    p.add_argument("trace_a", help="First trace file")
+    p.add_argument("trace_b", help="Second trace file")
+
+    p = sub.add_parser("span-diff", help="Span-level diff between traces")
+    p.add_argument("trace_a", help="First trace")
+    p.add_argument("trace_b", help="Second trace")
+
+    p = sub.add_parser("compare", help="Comprehensive trace comparison")
+    p.add_argument("trace_a", help="First trace")
+    p.add_argument("trace_b", help="Second trace")
+
+    p = sub.add_parser("merge", help="Merge distributed child traces")
+    p.add_argument("file", help="Parent trace file")
+    p.add_argument("--keep", action="store_true", help="Keep child files after merge")
+
+    p = sub.add_parser("merge-dir", help="Merge all traces in a directory into one")
+    p.add_argument("dir", help="Directory containing trace JSON files")
+    p.add_argument("--output", default=".agentguard/merged.json", help="Output file path")
+
+    p = sub.add_parser("aggregate", help="Aggregate analysis across traces")
     p.add_argument("--dir", default=".agentguard/traces", help="Traces directory")
-    p.add_argument("--output", default=".agentguard/report.html", help="Output HTML path")
 
-    # search
+
+def _register_ops_commands(sub: Any) -> None:
+    """Register operational subcommands: search, validate, SLA, etc."""
     p = sub.add_parser("search", help="Search spans across traces")
     p.add_argument("--name", help="Filter by span name")
     p.add_argument("--type", choices=["agent","tool","llm_call","handoff"], help="Filter by type")
     p.add_argument("--failed", action="store_true", help="Only failed spans")
     p.add_argument("--dir", default=".agentguard/traces")
 
-    # merge
-    p = sub.add_parser("merge", help="Merge distributed child traces")
-    p.add_argument("file", help="Parent trace file")
-    p.add_argument("--keep", action="store_true", help="Keep child files after merge")
-
-    # merge-dir
-    p = sub.add_parser("merge-dir", help="Merge all traces in a directory into one")
-    p.add_argument("dir", help="Directory containing trace JSON files")
-    p.add_argument("--output", default=".agentguard/merged.json", help="Output file path")
-
-    # validate
     p = sub.add_parser("validate", help="Validate trace integrity")
     p.add_argument("file", help="Path to trace JSON file")
 
-    # diff
-    p = sub.add_parser("diff", help="Compare two traces")
-    p.add_argument("trace_a", help="First trace file")
-    p.add_argument("trace_b", help="Second trace file")
-
-    p = sub.add_parser("summary", help="One-line trace health summary")
-    p.add_argument("file", help="Path to trace JSON file")
-
-    # analyze
-    p = sub.add_parser("analyze", help="Analyze failure propagation and flow")
-    p.add_argument("file", help="Path to trace JSON file")
-
-    # propagation
-    p = sub.add_parser("propagation", help="Analyze failure propagation chains")
-    p.add_argument("file", help="Path to trace JSON file")
-
-    # flowgraph
-    p = sub.add_parser("flowgraph", help="Build multi-agent flow graph")
-    p.add_argument("file", help="Path to trace JSON file")
-    p.add_argument("--mermaid", action="store_true", help="Output as Mermaid diagram")
-
-    # context-flow
-    p = sub.add_parser("context-flow", help="Analyze context flow through pipeline")
-    p.add_argument("file", help="Path to trace JSON file")
-
-    # span-diff
-    p = sub.add_parser("span-diff", help="Span-level diff between traces")
-    p.add_argument("trace_a", help="First trace")
-    p.add_argument("trace_b", help="Second trace")
-
-    # sla
     p = sub.add_parser("sla", help="Check trace against SLA")
     p.add_argument("file", help="Trace file")
     p.add_argument("--max-duration", type=float, help="Max duration in ms")
@@ -997,77 +1024,58 @@ def main():
     p.add_argument("--max-cost", type=float, help="Max cost in USD")
     p.add_argument("--max-error-rate", type=float, help="Max error rate (0-1)")
 
-    # dependencies
-    p = sub.add_parser("dependencies", help="Agent dependency graph")
-    p.add_argument("file", help="Trace file")
-    p.add_argument("--mermaid", action="store_true", help="Mermaid output")
+    p = sub.add_parser("report", help="Generate HTML report")
+    p.add_argument("--dir", default=".agentguard/traces", help="Traces directory")
+    p.add_argument("--output", default=".agentguard/report.html", help="Output HTML path")
 
-    # benchmark
     p = sub.add_parser("benchmark", help="Performance benchmark")
     p.add_argument("--traces", type=int, default=10, help="Number of traces")
     p.add_argument("--agents", type=int, default=5, help="Agents per trace")
 
-    # generate
     p = sub.add_parser("generate", help="Generate synthetic traces")
     p.add_argument("--count", type=int, default=10)
     p.add_argument("--agents", type=int, default=3)
     p.add_argument("--failure-rate", type=float, default=0.1)
     p.add_argument("--dir", default=".agentguard/traces")
 
-    # summarize
-    p = sub.add_parser("summarize", help="Natural language summary")
-    p.add_argument("file", help="Trace file")
-    p.add_argument("--brief", action="store_true")
-
-    # tree
-    p = sub.add_parser("tree", help="Display as indented tree")
-    p.add_argument("file", help="Trace file")
-
-    # compare
-    p = sub.add_parser("compare", help="Comprehensive trace comparison")
-    p.add_argument("trace_a", help="First trace")
-    p.add_argument("trace_b", help="Second trace")
-
-    # timeline
-    p = sub.add_parser("timeline", help="Display trace as event timeline")
-    p.add_argument("file", help="Path to trace JSON file")
-    p.add_argument("--max", type=int, help="Max events to show")
-
-    # metrics
-    p = sub.add_parser("metrics", help="Extract metrics from a trace")
-    p.add_argument("file", help="Path to trace JSON file")
-    p.add_argument("--prometheus", action="store_true", help="Output Prometheus format")
-
-    # schema
-    p = sub.add_parser("schema", help="Print trace JSON schema")
-
-    # score
-    p = sub.add_parser("score", help="Score a trace on quality dimensions")
-    p.add_argument("file", help="Path to trace JSON file")
-    p.add_argument("--expected-ms", type=float, help="Expected duration in ms")
-
-    # aggregate
-    p = sub.add_parser("aggregate", help="Aggregate analysis across traces")
-    p.add_argument("--dir", default=".agentguard/traces", help="Traces directory")
-
-    # annotate
-    p = sub.add_parser("annotate", help="Auto-annotate a trace")
-    p.add_argument("file", help="Path to trace JSON file")
-
-    # correlate
-    p = sub.add_parser("correlate", help="Analyze span correlations")
-    p.add_argument("file", help="Path to trace JSON file")
-
-    # guard
     p = sub.add_parser("guard", help="Start continuous monitoring")
     p.add_argument("--dir", default=".agentguard/traces", help="Traces directory")
     p.add_argument("--interval", type=int, default=60, help="Check interval in seconds")
     p.add_argument("--threshold", type=int, default=3, help="Consecutive failures before critical alert")
     p.add_argument("--log", help="Alert log file path")
 
+
+def main():
+    """CLI entry point. Parses args and dispatches to command handlers."""
+    parser = argparse.ArgumentParser(
+        prog="agentguard",
+        description="🛡️ AgentGuard — Record, Replay, Evaluate, and Guard your AI Agents.",
+    )
+    sub = parser.add_subparsers(dest="command")
+
+    _register_subcommands(sub)
+    _register_analysis_commands(sub)
+    _register_comparison_commands(sub)
+    _register_ops_commands(sub)
+
     args = parser.parse_args()
 
-    cmds = {"init": cmd_init, "doctor": cmd_doctor, "show": cmd_show, "list": cmd_list, "search": cmd_search, "eval": cmd_eval, "merge": cmd_merge, "merge-dir": cmd_merge_dir, "validate": cmd_validate, "diff": cmd_diff, "analyze": cmd_analyze, "propagation": cmd_propagation, "flowgraph": cmd_flowgraph, "context-flow": cmd_context_flow, "span-diff": cmd_span_diff, "sla": cmd_sla, "dependencies": cmd_dependencies, "benchmark": cmd_benchmark, "generate": cmd_generate, "summarize": cmd_summarize, "tree": cmd_tree, "compare": cmd_compare, "timeline": cmd_timeline, "metrics": cmd_metrics, "schema": cmd_schema, "score": cmd_score, "summary": cmd_summary, "aggregate": cmd_aggregate, "annotate": cmd_annotate, "correlate": cmd_correlate, "version": cmd_version, "report": cmd_report, "guard": cmd_guard}
+    cmds = {
+        "init": cmd_init, "doctor": cmd_doctor, "version": cmd_version,
+        "schema": cmd_schema, "show": cmd_show, "list": cmd_list,
+        "tree": cmd_tree, "timeline": cmd_timeline, "summary": cmd_summary,
+        "analyze": cmd_analyze, "eval": cmd_eval, "score": cmd_score,
+        "propagation": cmd_propagation, "flowgraph": cmd_flowgraph,
+        "context-flow": cmd_context_flow, "metrics": cmd_metrics,
+        "correlate": cmd_correlate, "annotate": cmd_annotate,
+        "summarize": cmd_summarize, "dependencies": cmd_dependencies,
+        "diff": cmd_diff, "span-diff": cmd_span_diff, "compare": cmd_compare,
+        "merge": cmd_merge, "merge-dir": cmd_merge_dir, "aggregate": cmd_aggregate,
+        "search": cmd_search, "validate": cmd_validate, "sla": cmd_sla,
+        "report": cmd_report, "benchmark": cmd_benchmark, "generate": cmd_generate,
+        "guard": cmd_guard,
+    }
+
     if args.command in cmds:
         cmds[args.command](args)
     else:
