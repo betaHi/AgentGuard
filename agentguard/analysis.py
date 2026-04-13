@@ -825,6 +825,9 @@ class CostYieldReport:
     highest_cost_agent: str
     lowest_yield_agent: str
     best_ratio_agent: str
+    most_wasteful_agent: str = ""
+    waste_score: float = 0.0  # 0-100: higher = more wasteful
+    recommendations: list[str] = field(default_factory=list)
 
     def to_dict(self) -> dict:
         return {
@@ -833,6 +836,9 @@ class CostYieldReport:
             "highest_cost_agent": self.highest_cost_agent,
             "lowest_yield_agent": self.lowest_yield_agent,
             "best_ratio_agent": self.best_ratio_agent,
+            "most_wasteful_agent": self.most_wasteful_agent,
+            "waste_score": round(self.waste_score, 1),
+            "recommendations": self.recommendations,
             "agents": [
                 {
                     "agent": e.agent, "tokens": e.tokens,
@@ -853,15 +859,86 @@ class CostYieldReport:
             f"Total: {self.total_tokens:,} tokens, ${self.total_cost_usd:.4f}", "",
             f"- Highest cost: {self.highest_cost_agent}",
             f"- Lowest yield: {self.lowest_yield_agent}",
-            f"- Best ratio:   {self.best_ratio_agent}", "",
-            "## Per-Agent Breakdown", "",
+            f"- Best ratio:   {self.best_ratio_agent}",
+            f"- **Most wasteful: {self.most_wasteful_agent}** (waste score: {self.waste_score:.0f}/100)" if self.most_wasteful_agent else "",
+            "",
         ]
+        if self.recommendations:
+            lines.append("## Recommendations")
+            lines.append("")
+            for rec in self.recommendations:
+                lines.append(f"  💡 {rec}")
+            lines.append("")
+        lines.extend([
+            "## Per-Agent Breakdown", "",
+        ])
         for e in sorted(self.entries, key=lambda x: -x.cost_usd):
             cps = f"${e.cost_per_success:.4f}" if e.cost_per_success != float("inf") else "N/A (failed)"
             lines.append(f"**{e.agent}** — {e.tokens:,} tokens, ${e.cost_usd:.4f}")
             lines.append(f"  yield: {e.yield_score:.0f}/100, cost/success: {cps}, {e.duration_ms:.0f}ms")
             lines.append("")
         return "\n".join(lines)
+
+
+def _compute_waste_score(entry: CostYieldEntry) -> float:
+    """Compute waste score for one agent.
+
+    Waste = normalized_cost × (100 - yield_score).
+    High cost + low yield = high waste.
+    Failed agents get maximum waste penalty.
+    """
+    if entry.status == "failed":
+        return 100.0
+    # Yield is 0-100, invert so low yield = high waste factor
+    waste_factor = (100 - entry.yield_score) / 100
+    # Cost factor: use tokens as proxy (0 tokens = 0 cost waste)
+    cost_factor = min(entry.tokens / max(1, 1), 1.0) if entry.tokens > 0 else 0
+    return waste_factor * 100
+
+
+def _find_most_wasteful(
+    entries: list[CostYieldEntry],
+) -> tuple[str, float]:
+    """Find the agent with highest waste score."""
+    if not entries:
+        return "", 0.0
+    scored = [(e, _compute_waste_score(e)) for e in entries]
+    scored.sort(key=lambda x: -x[1])
+    return scored[0][0].agent, scored[0][1]
+
+
+def _generate_cost_recommendations(
+    entries: list[CostYieldEntry],
+) -> list[str]:
+    """Generate actionable recommendations from cost-yield data.
+
+    Each recommendation targets a specific inefficiency pattern
+    with a concrete suggestion for improvement.
+    """
+    recs = []
+    for e in entries:
+        waste = _compute_waste_score(e)
+        if e.status == "failed" and e.tokens > 0:
+            recs.append(
+                f"'{e.agent}' consumed {e.tokens:,} tokens but failed. "
+                f"Add retry budget limits or fail-fast checks."
+            )
+        elif waste > 50 and e.yield_score < 50:
+            recs.append(
+                f"'{e.agent}' has low yield ({e.yield_score:.0f}/100). "
+                f"Consider a cheaper model or caching results."
+            )
+        elif e.tokens > 0 and not e.has_output:
+            recs.append(
+                f"'{e.agent}' used {e.tokens:,} tokens but produced no output. "
+                f"Check if this agent is needed in the pipeline."
+            )
+        elif e.cost_per_success > 0.01:
+            recs.append(
+                f"'{e.agent}' costs ${e.cost_per_success:.4f}/success. "
+                f"Consider batching or using a smaller model."
+            )
+    return recs[:5]  # Cap at 5 recommendations
 
 
 def analyze_cost_yield(trace: ExecutionTrace) -> CostYieldReport:
@@ -934,6 +1011,10 @@ def analyze_cost_yield(trace: ExecutionTrace) -> CostYieldReport:
     # Best ratio = highest yield_score / max(cost, 0.0001)
     best_ratio = max(entries, key=lambda e: e.yield_score / max(e.cost_usd, 0.0001)).agent if entries else "N/A"
 
+    # Compute most wasteful agent: highest cost × lowest yield
+    wasteful, waste_score = _find_most_wasteful(entries)
+    recommendations = _generate_cost_recommendations(entries)
+
     return CostYieldReport(
         entries=entries,
         total_cost_usd=total_cost,
@@ -941,6 +1022,9 @@ def analyze_cost_yield(trace: ExecutionTrace) -> CostYieldReport:
         highest_cost_agent=highest_cost,
         lowest_yield_agent=lowest_yield,
         best_ratio_agent=best_ratio,
+        most_wasteful_agent=wasteful,
+        waste_score=waste_score,
+        recommendations=recommendations,
     )
 
 
