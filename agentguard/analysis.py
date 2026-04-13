@@ -430,9 +430,10 @@ class BottleneckReport:
     critical_path: list[str]
     critical_path_duration_ms: float
     bottleneck_span: str  # name of the slowest span on the critical path
-    bottleneck_duration_ms: float
-    bottleneck_pct: float  # % of total trace time consumed by bottleneck
-    agent_rankings: list[dict]  # agents sorted by duration
+    bottleneck_agent: str = ""  # parent agent if bottleneck is a tool/llm span
+    bottleneck_duration_ms: float = 0
+    bottleneck_pct: float = 0  # % of total trace time consumed by bottleneck
+    agent_rankings: list[dict] = field(default_factory=list)  # agents sorted by duration
     false_bottleneck: str | None = None  # agent that looks slow but is waiting
     false_bottleneck_detail: str = ""  # explanation of why it is a false bottleneck
 
@@ -442,6 +443,7 @@ class BottleneckReport:
             "critical_path": self.critical_path,
             "critical_path_duration_ms": round(self.critical_path_duration_ms, 1),
             "bottleneck": self.bottleneck_span,
+            "bottleneck_agent": self.bottleneck_agent,
             "bottleneck_duration_ms": round(self.bottleneck_duration_ms, 1),
             "bottleneck_pct": round(self.bottleneck_pct, 1),
             "agent_rankings": self.agent_rankings,
@@ -455,7 +457,8 @@ class BottleneckReport:
             "# Bottleneck Analysis",
             "",
             f"- **Critical path:** {' → '.join(self.critical_path)}",
-            f"- **Bottleneck:** {self.bottleneck_span} ({self.bottleneck_duration_ms:.0f}ms, {self.bottleneck_pct:.0f}% of total)",
+            f"- **Bottleneck:** {self.bottleneck_span} ({self.bottleneck_duration_ms:.0f}ms, {self.bottleneck_pct:.0f}% of total)"
+            + (f" [agent: {self.bottleneck_agent}]" if self.bottleneck_agent and self.bottleneck_agent != self.bottleneck_span else ""),
             "",
             "## Agent Rankings (slowest first)",
             "",
@@ -642,10 +645,19 @@ def analyze_bottleneck(trace: ExecutionTrace) -> BottleneckReport:
     fb_name, fb_detail = _detect_false_bottleneck(agent_rankings)
     total_dur = trace.duration_ms or 1
 
+    # Resolve tool/llm bottleneck back to parent agent for viewer compatibility
+    bottleneck_agent = ""
+    if bottleneck and bottleneck.span_type != SpanType.AGENT:
+        parent = span_map.get(bottleneck.parent_span_id or "")
+        while parent and parent.span_type != SpanType.AGENT:
+            parent = span_map.get(parent.parent_span_id or "")
+        bottleneck_agent = parent.name if parent else ""
+
     return BottleneckReport(
         critical_path=critical_path,
         critical_path_duration_ms=critical_dur,
         bottleneck_span=bottleneck.name if bottleneck else "",
+        bottleneck_agent=bottleneck_agent,
         bottleneck_duration_ms=bottleneck.duration_ms or 0 if bottleneck else 0,
         bottleneck_pct=((bottleneck.duration_ms or 0) / max(total_dur, 1)) * 100 if bottleneck else 0,
         agent_rankings=agent_rankings,
