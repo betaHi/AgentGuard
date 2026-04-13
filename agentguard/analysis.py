@@ -860,115 +860,122 @@ def _is_likely_handoff(
     return True  # conservative: assume handoff for 2 siblings
 
 
-def analyze_context_flow(trace: ExecutionTrace) -> ContextFlowReport:
-    """Analyze how context flows between agents via handoffs.
+def _trace_explicit_handoffs(
+    handoff_spans: list[Span],
+) -> list[ContextFlowPoint]:
+    """Build context flow points from explicit HANDOFF spans.
 
-    Detects:
-    - Context loss (keys present in sender output but missing in receiver input)
-    - Context bloat (receiver input significantly larger than sender output)
-    - Context compression (size reduction between handoffs)
-
-    Answers: "Which handoff lost critical information?"
+    Uses instrumented handoff metadata (from record_handoff) which
+    provides exact context keys, sizes, and receiver info.
     """
-    import json as _json
-
-    {s.span_id: s for s in trace.spans}
-    handoff_spans = [s for s in trace.spans if s.span_type == SpanType.HANDOFF]
-
     points = []
-
-    # Method 1: Use explicit HANDOFF spans
     for hs in handoff_spans:
         fr = hs.handoff_from or hs.metadata.get("handoff.from", "")
         to = hs.handoff_to or hs.metadata.get("handoff.to", "")
         ctx_keys = hs.metadata.get("handoff.context_keys", [])
         ctx_size = hs.context_size_bytes or hs.metadata.get("handoff.context_size_bytes", 0)
-
-        # Compute retention if receiver size is available
         recv_size = 0
         recv_info = hs.context_received
         if isinstance(recv_info, dict):
             recv_size = recv_info.get("size_bytes", 0)
         retention = recv_size / ctx_size if ctx_size > 0 and recv_size > 0 else None
-
         points.append(ContextFlowPoint(
             from_agent=fr, to_agent=to,
             keys_sent=ctx_keys, size_bytes=ctx_size,
             size_received_bytes=recv_size,
-            anomaly="ok",
-            retention_ratio=retention,
+            anomaly="ok", retention_ratio=retention,
         ))
+    return points
 
-    # Method 2: If no explicit handoffs, infer from sequential agents
-    if not points:
-        children_map: dict[str, list[Span]] = {}
-        for s in trace.spans:
-            if s.parent_span_id:
-                children_map.setdefault(s.parent_span_id, []).append(s)
 
-        for _parent_id, children in children_map.items():
-            agents = sorted(
-                [c for c in children if c.span_type == SpanType.AGENT],
-                key=lambda s: s.started_at or ""
+def _classify_handoff_anomaly(
+    s_keys: list[str], r_keys: list[str],
+    s_size: int, r_size: int,
+    sender_output: Any, receiver_input: Any,
+) -> tuple[str, list[str], str]:
+    """Classify a handoff anomaly: loss, bloat, compression, truncation, or ok.
+
+    Returns:
+        (anomaly_type, lost_keys, truncation_detail)
+    """
+    lost = [k for k in s_keys if k not in r_keys] if s_keys and r_keys else []
+    delta = r_size - s_size
+
+    if lost:
+        return "loss", lost, ""
+    if delta > s_size * 2 and s_size > 0:
+        return "bloat", [], ""
+    if delta < -s_size * 0.5 and s_size > 100:
+        return "compression", [], ""
+
+    is_trunc, trunc_desc = _detect_truncation(sender_output, receiver_input)
+    if is_trunc:
+        return "truncation", [], trunc_desc
+    return "ok", [], ""
+
+
+def _trace_inferred_handoffs(
+    trace: ExecutionTrace,
+) -> list[ContextFlowPoint]:
+    """Infer context flow from sequential agent spans under the same parent.
+
+    Used when no explicit HANDOFF spans exist. Compares sender output
+    to receiver input to detect loss, bloat, compression, truncation.
+    """
+    import json as _json
+
+    children_map: dict[str, list[Span]] = {}
+    for s in trace.spans:
+        if s.parent_span_id:
+            children_map.setdefault(s.parent_span_id, []).append(s)
+
+    points = []
+    for _pid, children in children_map.items():
+        agents = sorted(
+            [c for c in children if c.span_type == SpanType.AGENT],
+            key=lambda s: s.started_at or "",
+        )
+        for i in range(len(agents) - 1):
+            sender, receiver = agents[i], agents[i + 1]
+            s_out = sender.output_data or {}
+            r_in = receiver.input_data or {}
+            s_keys = list(s_out.keys()) if isinstance(s_out, dict) else []
+            r_keys = list(r_in.keys()) if isinstance(r_in, dict) else []
+            if not _is_likely_handoff(s_keys, r_keys, r_in, sibling_count=len(agents)):
+                continue
+            s_size = len(_json.dumps(s_out, default=str).encode())
+            r_size = len(_json.dumps(r_in, default=str).encode())
+            anomaly, lost, trunc_desc = _classify_handoff_anomaly(
+                s_keys, r_keys, s_size, r_size, s_out, r_in,
             )
-            for i in range(len(agents) - 1):
-                sender = agents[i]
-                receiver = agents[i + 1]
+            transforms = _detect_transformations(s_out, r_in, s_keys, r_keys)
+            points.append(ContextFlowPoint(
+                from_agent=sender.name, to_agent=receiver.name,
+                keys_sent=s_keys, size_bytes=s_size,
+                keys_received=r_keys, size_received_bytes=r_size,
+                keys_lost=lost, size_delta_bytes=r_size - s_size,
+                anomaly=anomaly,
+                truncation_detail=trunc_desc if anomaly == "truncation" else "",
+                retention_ratio=r_size / s_size if s_size > 0 else None,
+                transformations=transforms,
+            ))
+    return points
 
-                sender_output = sender.output_data or {}
-                receiver_input = receiver.input_data or {}
 
-                s_keys = list(sender_output.keys()) if isinstance(sender_output, dict) else []
-                r_keys = list(receiver_input.keys()) if isinstance(receiver_input, dict) else []
+def analyze_context_flow(trace: ExecutionTrace) -> ContextFlowReport:
+    """Analyze how context flows between agents via handoffs.
 
-                # Skip if no evidence of handoff: parallel agents with
-                # completely disjoint data are independent, not a chain.
-                if not _is_likely_handoff(s_keys, r_keys, receiver_input,
-                                          sibling_count=len(agents)):
-                    continue
-                s_size = len(_json.dumps(sender_output, default=str).encode())
-                r_size = len(_json.dumps(receiver_input, default=str).encode())
-
-                lost = [k for k in s_keys if k not in r_keys] if s_keys and r_keys else []
-                delta = r_size - s_size
-
-                anomaly = "ok"
-                if lost:
-                    anomaly = "loss"
-                elif delta > s_size * 2 and s_size > 0:
-                    anomaly = "bloat"
-                elif delta < -s_size * 0.5 and s_size > 100:
-                    anomaly = "compression"
-
-                # Check for truncation (subset detection)
-                is_trunc, trunc_desc = _detect_truncation(sender_output, receiver_input)
-                if is_trunc:
-                    anomaly = "truncation"
-
-                retention = r_size / s_size if s_size > 0 else None
-
-                transforms = _detect_transformations(
-                    sender_output, receiver_input, s_keys, r_keys
-                )
-                points.append(ContextFlowPoint(
-                    from_agent=sender.name, to_agent=receiver.name,
-                    keys_sent=s_keys, size_bytes=s_size,
-                    keys_received=r_keys, size_received_bytes=r_size,
-                    keys_lost=lost, size_delta_bytes=delta,
-                    anomaly=anomaly,
-                    truncation_detail=trunc_desc if is_trunc else "",
-                    retention_ratio=retention,
-                    transformations=transforms,
-                ))
-
-    total_bytes = sum(p.size_bytes for p in points)
-    anomalies = [p for p in points if p.anomaly != "ok"]
+    Answers Q2: "Which handoff lost critical information?"
+    Detects loss, bloat, compression, and truncation anomalies.
+    """
+    handoff_spans = [s for s in trace.spans if s.span_type == SpanType.HANDOFF]
+    points = _trace_explicit_handoffs(handoff_spans) if handoff_spans else _trace_inferred_handoffs(trace)
 
     return ContextFlowReport(
         handoff_count=len(points),
-        total_context_bytes=total_bytes,
+        total_context_bytes=sum(p.size_bytes for p in points),
         points=points,
-        anomalies=anomalies,
+        anomalies=[p for p in points if p.anomaly != "ok"],
     )
 
 
