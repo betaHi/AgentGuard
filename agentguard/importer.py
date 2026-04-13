@@ -54,87 +54,73 @@ def _guess_status(data: dict) -> SpanStatus:
     return SpanStatus.COMPLETED
 
 
-def import_otel(data: dict) -> ExecutionTrace:
-    """Import from OpenTelemetry JSON export format.
-
-    Expects OTel format:
-    {
-        "resourceSpans": [{
-            "scopeSpans": [{
-                "spans": [{ traceId, spanId, parentSpanId, name, ... }]
-            }]
-        }]
-    }
-    """
-    trace = ExecutionTrace(task="Imported from OpenTelemetry")
-
-    # Flatten all spans
+def _flatten_otel_spans(data: dict) -> list[dict]:
+    """Flatten OTel resourceSpans → scopeSpans → spans into a flat list."""
     all_spans = []
     for rs in data.get("resourceSpans", []):
         for ss in rs.get("scopeSpans", []):
             all_spans.extend(ss.get("spans", []))
+    return all_spans or data.get("spans", [])
 
-    if not all_spans:
-        # Try flat span list
-        all_spans = data.get("spans", [])
 
-    # Set trace ID from first span
+def _parse_otel_attrs(raw_attrs: list | dict) -> dict:
+    """Convert OTel attribute list to flat dict."""
+    if isinstance(raw_attrs, dict):
+        return raw_attrs
+    attrs = {}
+    for attr in raw_attrs:
+        key = attr.get("key", "")
+        value = attr.get("value", {})
+        if isinstance(value, dict):
+            attrs[key] = (value.get("stringValue") or value.get("intValue") or
+                         value.get("doubleValue") or value.get("boolValue", ""))
+        else:
+            attrs[key] = value
+    return attrs
+
+
+def _otel_ns_to_iso(ns: int) -> str:
+    """Convert OTel nanosecond Unix timestamp to ISO 8601 string."""
+    if not ns:
+        return ""
+    from datetime import datetime
+    return datetime.fromtimestamp(ns / 1e9, tz=UTC).isoformat()
+
+
+def _convert_otel_span(otel_span: dict) -> Span:
+    """Convert a single OTel span dict to an AgentGuard Span."""
+    attrs = _parse_otel_attrs(otel_span.get("attributes", []))
+    otel_span["_parsed_attributes"] = attrs
+
+    status = _guess_status(otel_span)
+    error_msg = None
+    if status == SpanStatus.FAILED:
+        error_msg = otel_span.get("status", {}).get("message", "Unknown error")
+
+    return Span(
+        span_id=otel_span.get("spanId", "")[:12],
+        parent_span_id=otel_span.get("parentSpanId", "")[:12] or None,
+        span_type=_guess_span_type(otel_span),
+        name=otel_span.get("name", "unnamed"),
+        status=status,
+        started_at=_otel_ns_to_iso(otel_span.get("startTimeUnixNano", 0)),
+        ended_at=_otel_ns_to_iso(otel_span.get("endTimeUnixNano", 0)),
+        error=error_msg,
+        metadata=attrs,
+    )
+
+
+def import_otel(data: dict) -> ExecutionTrace:
+    """Import from OpenTelemetry JSON export format (resourceSpans envelope)."""
+    trace = ExecutionTrace(task="Imported from OpenTelemetry")
+    all_spans = _flatten_otel_spans(data)
+
     if all_spans:
         trace.trace_id = all_spans[0].get("traceId", trace.trace_id)[:16]
 
     for otel_span in all_spans:
-        span_id = otel_span.get("spanId", "")[:12]
-        parent_id = otel_span.get("parentSpanId", "")[:12] or None
+        trace.add_span(_convert_otel_span(otel_span))
 
-        # Convert timestamps (OTel uses nanoseconds)
-        start_ns = otel_span.get("startTimeUnixNano", 0)
-        end_ns = otel_span.get("endTimeUnixNano", 0)
-
-        from datetime import datetime
-        started_at = ""
-        ended_at = ""
-        if start_ns:
-            started_at = datetime.fromtimestamp(start_ns / 1e9, tz=UTC).isoformat()
-        if end_ns:
-            ended_at = datetime.fromtimestamp(end_ns / 1e9, tz=UTC).isoformat()
-
-        # Extract attributes (OTel uses list format, we convert to dict)
-        attrs = {}
-        raw_attrs = otel_span.get("attributes", [])
-        if isinstance(raw_attrs, dict):
-            attrs = raw_attrs
-        else:
-            for attr in raw_attrs:
-                key = attr.get("key", "")
-                value = attr.get("value", {})
-                if isinstance(value, dict):
-                    attrs[key] = (value.get("stringValue") or value.get("intValue") or
-                                 value.get("doubleValue") or value.get("boolValue", ""))
-                else:
-                    attrs[key] = value
-
-        error_msg = None
-        status = _guess_status(otel_span)
-        if status == SpanStatus.FAILED:
-            error_msg = otel_span.get("status", {}).get("message", "Unknown error")
-
-        # Store parsed attrs for type guessing
-        otel_span["_parsed_attributes"] = attrs
-
-        span = Span(
-            span_id=span_id,
-            parent_span_id=parent_id,
-            span_type=_guess_span_type(otel_span),
-            name=otel_span.get("name", "unnamed"),
-            status=status,
-            started_at=started_at,
-            ended_at=ended_at,
-            error=error_msg,
-            metadata=attrs,
-        )
-        trace.add_span(span)
-
-    # Set trace times
     if trace.spans:
         starts = [s.started_at for s in trace.spans if s.started_at]
         ends = [s.ended_at for s in trace.spans if s.ended_at]
@@ -142,7 +128,6 @@ def import_otel(data: dict) -> ExecutionTrace:
             trace.started_at = min(starts)
         if ends:
             trace.ended_at = max(ends)
-
     return trace
 
 

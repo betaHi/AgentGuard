@@ -181,98 +181,90 @@ def correlate_failures_to_handoffs(trace: ExecutionTrace) -> list[CorrelatedEven
     return correlations
 
 
-def detect_patterns(trace: ExecutionTrace) -> list[dict]:
-    """Detect recurring patterns in the trace.
-
-    Looks for:
-    - Repeated failures (same agent failing multiple times)
-    - Retry storms (many retries in sequence)
-    - Slow chains (consistently slow agents)
-    - Failure clusters (multiple failures under same parent)
-    - Timing clusters (agents with similar durations)
-    """
-    patterns = []
-    span_map = {s.span_id: s for s in trace.spans}
-
-    # Pattern 1: Repeated failures by same agent
-    failure_counts: dict[str, int] = {}
+def _pattern_repeated_failures(trace: ExecutionTrace) -> list[dict]:
+    """Detect agents that fail multiple times."""
+    counts: dict[str, int] = {}
     for s in trace.spans:
         if s.status == SpanStatus.FAILED:
-            failure_counts[s.name] = failure_counts.get(s.name, 0) + 1
+            counts[s.name] = counts.get(s.name, 0) + 1
+    return [{
+        "name": f"repeated_failure:{name}", "type": "repeated_failure",
+        "agent": name, "count": count,
+        "description": f"Agent '{name}' failed {count} times",
+    } for name, count in counts.items() if count >= 2]
 
-    for name, count in failure_counts.items():
-        if count >= 2:
-            patterns.append({
-                "name": f"repeated_failure:{name}",
-                "type": "repeated_failure",
-                "agent": name,
-                "count": count,
-                "description": f"Agent '{name}' failed {count} times",
-            })
 
-    # Pattern 2: Retry storms
+def _pattern_retry_storms(trace: ExecutionTrace) -> list[dict]:
+    """Detect retry storms (>=3 spans retrying)."""
     retry_spans = [s for s in trace.spans if s.retry_count > 0]
-    if len(retry_spans) >= 3:
-        total_retries = sum(s.retry_count for s in retry_spans)
-        patterns.append({
-            "name": "retry_storm",
-            "type": "retry_storm",
-            "count": total_retries,
-            "spans": len(retry_spans),
-            "description": f"Retry storm: {total_retries} retries across {len(retry_spans)} spans",
-        })
+    if len(retry_spans) < 3:
+        return []
+    total = sum(s.retry_count for s in retry_spans)
+    return [{"name": "retry_storm", "type": "retry_storm",
+             "count": total, "spans": len(retry_spans),
+             "description": f"Retry storm: {total} retries across {len(retry_spans)} spans"}]
 
-    # Pattern 3: Consistently slow agents (duration > 2x average)
-    agent_durations = [(s.name, s.duration_ms or 0) for s in trace.spans if s.span_type == SpanType.AGENT and s.duration_ms]
-    if len(agent_durations) >= 2:
-        avg_dur = sum(d for _, d in agent_durations) / len(agent_durations)
-        for name, dur in agent_durations:
-            if dur > avg_dur * 2:
-                patterns.append({
-                    "name": f"slow_agent:{name}",
-                    "type": "slow_agent",
-                    "agent": name,
-                    "duration_ms": dur,
-                    "avg_duration_ms": avg_dur,
-                    "count": 1,
-                    "description": f"Agent '{name}' is {dur/avg_dur:.1f}x slower than average ({dur:.0f}ms vs {avg_dur:.0f}ms)",
-                })
 
-    # Pattern 4: Failure cluster — multiple failures under same parent
+def _pattern_slow_agents(agent_durations: list[tuple[str, float]]) -> list[dict]:
+    """Detect agents >2x slower than average."""
+    if len(agent_durations) < 2:
+        return []
+    avg = sum(d for _, d in agent_durations) / len(agent_durations)
+    return [{
+        "name": f"slow_agent:{name}", "type": "slow_agent",
+        "agent": name, "duration_ms": dur, "avg_duration_ms": avg, "count": 1,
+        "description": f"Agent '{name}' is {dur/avg:.1f}x slower than average ({dur:.0f}ms vs {avg:.0f}ms)",
+    } for name, dur in agent_durations if dur > avg * 2]
+
+
+def _pattern_failure_clusters(trace: ExecutionTrace, span_map: dict) -> list[dict]:
+    """Detect multiple failures under the same parent."""
     parent_failures: dict[str, list[str]] = {}
     for s in trace.spans:
         if s.status == SpanStatus.FAILED and s.parent_span_id:
             parent_failures.setdefault(s.parent_span_id, []).append(s.name)
-    for pid, failed_names in parent_failures.items():
-        if len(failed_names) >= 2:
-            parent_name = span_map.get(pid)
-            pname = parent_name.name if parent_name else pid
-            patterns.append({
-                "name": f"failure_cluster:{pname}",
-                "type": "failure_cluster",
-                "parent": pname,
-                "failed_children": failed_names,
-                "count": len(failed_names),
-                "description": f"{len(failed_names)} failures under '{pname}': {', '.join(failed_names)}",
+    results = []
+    for pid, names in parent_failures.items():
+        if len(names) >= 2:
+            pname = span_map[pid].name if pid in span_map else pid
+            results.append({
+                "name": f"failure_cluster:{pname}", "type": "failure_cluster",
+                "parent": pname, "failed_children": names, "count": len(names),
+                "description": f"{len(names)} failures under '{pname}': {', '.join(names)}",
             })
+    return results
 
-    # Pattern 5: Timing cluster — agents with similar durations (within 10%)
-    if len(agent_durations) >= 3:
-        from itertools import combinations
-        clusters = []
-        for (n1, d1), (n2, d2) in combinations(agent_durations, 2):
-            if d1 > 0 and d2 > 0 and abs(d1 - d2) / max(d1, d2) < 0.1:
-                clusters.append((n1, n2, d1, d2))
-        if clusters:
-            patterns.append({
-                "name": "timing_cluster",
-                "type": "timing_cluster",
-                "pairs": [(n1, n2) for n1, n2, _, _ in clusters],
-                "count": len(clusters),
-                "description": f"{len(clusters)} agent pairs with similar timing (within 10%)",
-            })
 
-    return patterns
+def _pattern_timing_clusters(agent_durations: list[tuple[str, float]]) -> list[dict]:
+    """Detect agent pairs with similar durations (within 10%)."""
+    if len(agent_durations) < 3:
+        return []
+    from itertools import combinations
+    clusters = [
+        (n1, n2) for (n1, d1), (n2, d2) in combinations(agent_durations, 2)
+        if d1 > 0 and d2 > 0 and abs(d1 - d2) / max(d1, d2) < 0.1
+    ]
+    if not clusters:
+        return []
+    return [{"name": "timing_cluster", "type": "timing_cluster",
+             "pairs": clusters, "count": len(clusters),
+             "description": f"{len(clusters)} agent pairs with similar timing (within 10%)"}]
+
+
+def detect_patterns(trace: ExecutionTrace) -> list[dict]:
+    """Detect recurring patterns: repeated failures, retry storms, slow chains, clusters."""
+    span_map = {s.span_id: s for s in trace.spans}
+    agent_durations = [
+        (s.name, s.duration_ms or 0)
+        for s in trace.spans if s.span_type == SpanType.AGENT and s.duration_ms
+    ]
+    return (
+        _pattern_repeated_failures(trace)
+        + _pattern_retry_storms(trace)
+        + _pattern_slow_agents(agent_durations)
+        + _pattern_failure_clusters(trace, span_map)
+        + _pattern_timing_clusters(agent_durations)
+    )
 
 
 def analyze_correlations(trace: ExecutionTrace) -> CorrelationReport:

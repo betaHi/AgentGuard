@@ -101,211 +101,114 @@ class TraceDiff:
         return "\n".join(lines)
 
 
+def _index_spans(trace: ExecutionTrace) -> dict[tuple, Span]:
+    """Index spans by (name, span_type) for comparison, keeping first occurrence."""
+    idx: dict[tuple, Span] = {}
+    for s in trace.spans:
+        key = (s.name, s.span_type.value)
+        if key not in idx:
+            idx[key] = s
+    return idx
+
+
+def _compare_span_pair(name: str, stype: str, sa: Span, sb: Span) -> list[SpanDiff]:
+    """Compare two matched spans and return diffs for status, duration, error."""
+    diffs = []
+    if sa.status != sb.status:
+        if sb.status == SpanStatus.COMPLETED and sa.status == SpanStatus.FAILED:
+            verdict = "improved"
+        elif sb.status == SpanStatus.FAILED and sa.status == SpanStatus.COMPLETED:
+            verdict = "regressed"
+        else:
+            verdict = "changed"
+        diffs.append(SpanDiff(
+            name=name, span_type=stype, field="status",
+            value_a=sa.status.value, value_b=sb.status.value, verdict=verdict,
+        ))
+    dur_a, dur_b = sa.duration_ms or 0, sb.duration_ms or 0
+    if dur_a > 0 and abs(dur_b - dur_a) / dur_a > 0.2:
+        diffs.append(SpanDiff(
+            name=name, span_type=stype, field="duration_ms",
+            value_a=round(dur_a), value_b=round(dur_b),
+            verdict="improved" if dur_b < dur_a else "regressed",
+        ))
+    if sa.error and not sb.error:
+        diffs.append(SpanDiff(name=name, span_type=stype, field="error",
+                              value_a=sa.error, value_b=None, verdict="improved"))
+    elif not sa.error and sb.error:
+        diffs.append(SpanDiff(name=name, span_type=stype, field="error",
+                              value_a=None, value_b=sb.error, verdict="regressed"))
+    return diffs
+
+
 def diff_traces(trace_a: ExecutionTrace, trace_b: ExecutionTrace) -> TraceDiff:
-    """Compare two execution traces and identify differences.
-
-    Matches spans by (name, span_type) and compares:
-    - status (pass/fail)
-    - duration
-    - error presence
-    - child count
-
-    Args:
-        trace_a: First trace (baseline).
-        trace_b: Second trace (candidate).
-
-    Returns:
-        TraceDiff with all identified differences.
-    """
+    """Compare two execution traces by matching spans on (name, type)."""
     result = TraceDiff(trace_a_id=trace_a.trace_id, trace_b_id=trace_b.trace_id)
+    idx_a, idx_b = _index_spans(trace_a), _index_spans(trace_b)
+    keys_a, keys_b = set(idx_a), set(idx_b)
 
-    # Index spans by (name, type) for matching
-    def index_spans(trace: ExecutionTrace) -> dict[tuple, Span]:
-        idx: dict[tuple, Span] = {}
-        for s in trace.spans:
-            key = (s.name, s.span_type.value)
-            if key not in idx:  # keep first occurrence
-                idx[key] = s
-        return idx
-
-    idx_a = index_spans(trace_a)
-    idx_b = index_spans(trace_b)
-
-    keys_a = set(idx_a.keys())
-    keys_b = set(idx_b.keys())
-
-    # Spans added/removed
-    for key in keys_b - keys_a:
-        result.spans_added.append(f"{key[0]} ({key[1]})")
-    for key in keys_a - keys_b:
-        result.spans_removed.append(f"{key[0]} ({key[1]})")
-
-    # Compare matching spans
+    result.spans_added = [f"{k[0]} ({k[1]})" for k in keys_b - keys_a]
+    result.spans_removed = [f"{k[0]} ({k[1]})" for k in keys_a - keys_b]
     for key in keys_a & keys_b:
-        sa = idx_a[key]
-        sb = idx_b[key]
-        name, stype = key
-
-        # Status change
-        if sa.status != sb.status:
-            if sb.status == SpanStatus.COMPLETED and sa.status == SpanStatus.FAILED:
-                verdict = "improved"
-            elif sb.status == SpanStatus.FAILED and sa.status == SpanStatus.COMPLETED:
-                verdict = "regressed"
-            else:
-                verdict = "changed"
-            result.diffs.append(SpanDiff(
-                name=name, span_type=stype, field="status",
-                value_a=sa.status.value, value_b=sb.status.value, verdict=verdict,
-            ))
-
-        # Duration change (significant = >20% change)
-        dur_a = sa.duration_ms or 0
-        dur_b = sb.duration_ms or 0
-        if dur_a > 0 and abs(dur_b - dur_a) / dur_a > 0.2:
-            verdict = "improved" if dur_b < dur_a else "regressed"
-            result.diffs.append(SpanDiff(
-                name=name, span_type=stype, field="duration_ms",
-                value_a=round(dur_a), value_b=round(dur_b), verdict=verdict,
-            ))
-
-        # Error appeared/disappeared
-        if sa.error and not sb.error:
-            result.diffs.append(SpanDiff(
-                name=name, span_type=stype, field="error",
-                value_a=sa.error, value_b=None, verdict="improved",
-            ))
-        elif not sa.error and sb.error:
-            result.diffs.append(SpanDiff(
-                name=name, span_type=stype, field="error",
-                value_a=None, value_b=sb.error, verdict="regressed",
-            ))
-
+        result.diffs.extend(_compare_span_pair(key[0], key[1], idx_a[key], idx_b[key]))
     return result
 
 
-def diff_flow_graphs(trace_a: ExecutionTrace, trace_b: ExecutionTrace) -> dict:
-    """Compare flow graphs of two traces.
-
-    Identifies:
-    - Changes in parallelism
-    - New or removed dependencies
-    - Critical path shifts
-    - Phase structure changes
-    """
-    from agentguard.flowgraph import build_flow_graph
-
-    graph_a = build_flow_graph(trace_a)
-    graph_b = build_flow_graph(trace_b)
-
+def _diff_graph_structure(graph_a, graph_b) -> list[dict]:
+    """Compare parallelism, sequential fraction, critical path, phases."""
     changes = []
-
-    # Parallelism change
     if graph_a.max_parallelism != graph_b.max_parallelism:
-        changes.append({
-            "type": "parallelism",
-            "field": "max_parallelism",
-            "before": graph_a.max_parallelism,
-            "after": graph_b.max_parallelism,
-        })
-
-    # Sequential fraction change
-    delta = abs(graph_a.sequential_fraction - graph_b.sequential_fraction)
-    if delta > 0.1:
-        changes.append({
-            "type": "execution_mode",
-            "field": "sequential_fraction",
-            "before": graph_a.sequential_fraction,
-            "after": graph_b.sequential_fraction,
-        })
-
-    # Critical path change
+        changes.append({"type": "parallelism", "field": "max_parallelism",
+                        "before": graph_a.max_parallelism, "after": graph_b.max_parallelism})
+    if abs(graph_a.sequential_fraction - graph_b.sequential_fraction) > 0.1:
+        changes.append({"type": "execution_mode", "field": "sequential_fraction",
+                        "before": graph_a.sequential_fraction, "after": graph_b.sequential_fraction})
     if graph_a.critical_path != graph_b.critical_path:
-        changes.append({
-            "type": "critical_path",
-            "before": graph_a.critical_path,
-            "after": graph_b.critical_path,
-            "duration_before_ms": graph_a.critical_path_ms,
-            "duration_after_ms": graph_b.critical_path_ms,
-        })
-
-    # Phase count change
+        changes.append({"type": "critical_path", "before": graph_a.critical_path,
+                        "after": graph_b.critical_path, "duration_before_ms": graph_a.critical_path_ms,
+                        "duration_after_ms": graph_b.critical_path_ms})
     if len(graph_a.phases) != len(graph_b.phases):
-        changes.append({
-            "type": "phase_count",
-            "before": len(graph_a.phases),
-            "after": len(graph_b.phases),
-        })
+        changes.append({"type": "phase_count", "before": len(graph_a.phases), "after": len(graph_b.phases)})
+    names_a, names_b = {n.name for n in graph_a.nodes}, {n.name for n in graph_b.nodes}
+    if names_b - names_a:
+        changes.append({"type": "nodes_added", "names": list(names_b - names_a)})
+    if names_a - names_b:
+        changes.append({"type": "nodes_removed", "names": list(names_a - names_b)})
+    return changes
 
-    # Node differences
-    names_a = {n.name for n in graph_a.nodes}
-    names_b = {n.name for n in graph_b.nodes}
-    added_nodes = names_b - names_a
-    removed_nodes = names_a - names_b
 
-    if added_nodes:
-        changes.append({"type": "nodes_added", "names": list(added_nodes)})
-    if removed_nodes:
-        changes.append({"type": "nodes_removed", "names": list(removed_nodes)})
-
+def diff_flow_graphs(trace_a: ExecutionTrace, trace_b: ExecutionTrace) -> dict:
+    """Compare flow graphs of two traces."""
+    from agentguard.flowgraph import build_flow_graph
+    ga, gb = build_flow_graph(trace_a), build_flow_graph(trace_b)
     return {
-        "changes": changes,
-        "graph_a": {"nodes": len(graph_a.nodes), "edges": len(graph_a.edges), "phases": len(graph_a.phases)},
-        "graph_b": {"nodes": len(graph_b.nodes), "edges": len(graph_b.edges), "phases": len(graph_b.phases)},
+        "changes": _diff_graph_structure(ga, gb),
+        "graph_a": {"nodes": len(ga.nodes), "edges": len(ga.edges), "phases": len(ga.phases)},
+        "graph_b": {"nodes": len(gb.nodes), "edges": len(gb.edges), "phases": len(gb.phases)},
     }
+
+
+def _diff_flow_changes(flow_a, flow_b) -> list[dict]:
+    """Detect compression, truncation, bottleneck, and volume changes."""
+    changes = []
+    if abs(flow_a.compression_ratio - flow_b.compression_ratio) > 0.1:
+        changes.append({"type": "compression_ratio",
+                        "before": flow_a.compression_ratio, "after": flow_b.compression_ratio})
+    if flow_a.truncation_events != flow_b.truncation_events:
+        changes.append({"type": "truncation_events",
+                        "before": flow_a.truncation_events, "after": flow_b.truncation_events})
+    if flow_a.bottleneck_agent != flow_b.bottleneck_agent:
+        changes.append({"type": "bottleneck_shift",
+                        "before": flow_a.bottleneck_agent, "after": flow_b.bottleneck_agent})
+    delta = flow_b.total_bytes_in - flow_a.total_bytes_in
+    if abs(delta) > 100:
+        changes.append({"type": "data_volume", "before_bytes": flow_a.total_bytes_in,
+                        "after_bytes": flow_b.total_bytes_in, "delta_bytes": delta})
+    return changes
 
 
 def diff_context_flow(trace_a: ExecutionTrace, trace_b: ExecutionTrace) -> dict:
-    """Compare context flow between two traces.
-
-    Identifies:
-    - Changes in compression ratio
-    - New truncation/expansion events
-    - Bottleneck shifts
-    """
+    """Compare context flow between two traces."""
     from agentguard.context_flow import analyze_context_flow_deep
-
-    flow_a = analyze_context_flow_deep(trace_a)
-    flow_b = analyze_context_flow_deep(trace_b)
-
-    changes = []
-
-    # Compression ratio change
-    if abs(flow_a.compression_ratio - flow_b.compression_ratio) > 0.1:
-        changes.append({
-            "type": "compression_ratio",
-            "before": flow_a.compression_ratio,
-            "after": flow_b.compression_ratio,
-        })
-
-    # Truncation event count change
-    if flow_a.truncation_events != flow_b.truncation_events:
-        changes.append({
-            "type": "truncation_events",
-            "before": flow_a.truncation_events,
-            "after": flow_b.truncation_events,
-        })
-
-    # Bottleneck shift
-    if flow_a.bottleneck_agent != flow_b.bottleneck_agent:
-        changes.append({
-            "type": "bottleneck_shift",
-            "before": flow_a.bottleneck_agent,
-            "after": flow_b.bottleneck_agent,
-        })
-
-    # Total data volume change
-    bytes_delta = flow_b.total_bytes_in - flow_a.total_bytes_in
-    if abs(bytes_delta) > 100:
-        changes.append({
-            "type": "data_volume",
-            "before_bytes": flow_a.total_bytes_in,
-            "after_bytes": flow_b.total_bytes_in,
-            "delta_bytes": bytes_delta,
-        })
-
-    return {
-        "changes": changes,
-        "flow_a": flow_a.to_dict(),
-        "flow_b": flow_b.to_dict(),
-    }
+    fa, fb = analyze_context_flow_deep(trace_a), analyze_context_flow_deep(trace_b)
+    return {"changes": _diff_flow_changes(fa, fb), "flow_a": fa.to_dict(), "flow_b": fb.to_dict()}

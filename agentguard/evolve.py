@@ -172,11 +172,52 @@ class EvolutionEngine:
         kb_path = self.knowledge_dir / "knowledge.json"
         kb_path.write_text(json.dumps(self.kb.to_dict(), indent=2, ensure_ascii=False), encoding="utf-8")
 
-    def reflect(self, trace: ExecutionTrace) -> Reflection:
-        """Reflect on a single trace and extract lessons.
+    def _lessons_from_failures(
+        self, failures: "FailureAnalysis", now: str,
+    ) -> list["Lesson"]:
+        """Extract lessons from failure root causes."""
+        lessons = []
+        for rc in failures.root_causes:
+            if not rc.was_handled:
+                lessons.append(Lesson(
+                    category="failure", agent=rc.span_name,
+                    observation=f"Unhandled failure: {rc.error[:80]}",
+                    suggestion=f"Add try/except with fallback in '{rc.span_name}', or add a retry mechanism",
+                    confidence=0.7, first_seen=now, last_seen=now,
+                ))
+            else:
+                lessons.append(Lesson(
+                    category="failure", agent=rc.span_name,
+                    observation=f"Failure handled gracefully: {rc.error[:80]}",
+                    suggestion=f"Good: '{rc.span_name}' has fallback. Consider adding monitoring for failure rate.",
+                    confidence=0.5, first_seen=now, last_seen=now,
+                ))
+        return lessons
 
-        This is the 'think' step — analyze what happened and why.
-        """
+    def _lessons_from_context(
+        self, ctx: "ContextFlowResult", now: str,
+    ) -> list["Lesson"]:
+        """Extract lessons from context flow anomalies."""
+        lessons = []
+        for anomaly in ctx.anomalies:
+            if anomaly.anomaly == "loss":
+                lessons.append(Lesson(
+                    category="handoff", agent=anomaly.to_agent,
+                    observation=f"Context loss: keys {anomaly.keys_lost} lost in handoff from {anomaly.from_agent}",
+                    suggestion=f"Ensure '{anomaly.from_agent}' passes all required keys, or add validation at '{anomaly.to_agent}' input",
+                    confidence=0.8, first_seen=now, last_seen=now,
+                ))
+            elif anomaly.anomaly == "bloat":
+                lessons.append(Lesson(
+                    category="handoff", agent=anomaly.from_agent,
+                    observation=f"Context bloat: +{anomaly.size_delta_bytes:,}B between {anomaly.from_agent} → {anomaly.to_agent}",
+                    suggestion="Consider filtering or summarizing output before handoff to reduce context size",
+                    confidence=0.5, first_seen=now, last_seen=now,
+                ))
+        return lessons
+
+    def reflect(self, trace: ExecutionTrace) -> Reflection:
+        """Reflect on a single trace and extract lessons and patterns."""
         now = datetime.now(UTC).isoformat()
         reflection = Reflection(trace_id=trace.trace_id)
 
@@ -185,74 +226,26 @@ class EvolutionEngine:
         bn = analyze_bottleneck(trace) if trace.agent_spans else None
         ctx = analyze_context_flow(trace)
 
-        # Lesson 1: Unhandled failures — agent needs error handling
-        for rc in failures.root_causes:
-            if not rc.was_handled:
-                reflection.lessons.append(Lesson(
-                    category="failure",
-                    agent=rc.span_name,
-                    observation=f"Unhandled failure: {rc.error[:80]}",
-                    suggestion=f"Add try/except with fallback in '{rc.span_name}', or add a retry mechanism",
-                    confidence=0.7,
-                    first_seen=now, last_seen=now,
-                ))
+        reflection.lessons.extend(self._lessons_from_failures(failures, now))
 
-        # Lesson 2: Handled failures — good pattern, but track frequency
-        for rc in failures.root_causes:
-            if rc.was_handled:
-                reflection.lessons.append(Lesson(
-                    category="failure",
-                    agent=rc.span_name,
-                    observation=f"Failure handled gracefully: {rc.error[:80]}",
-                    suggestion=f"Good: '{rc.span_name}' has fallback. Consider adding monitoring for failure rate.",
-                    confidence=0.5,
-                    first_seen=now, last_seen=now,
-                ))
-
-        # Lesson 3: Bottleneck detection
         if bn and bn.bottleneck_pct > 30 and len(trace.agent_spans) > 1:
             reflection.lessons.append(Lesson(
-                category="bottleneck",
-                agent=bn.bottleneck_span,
+                category="bottleneck", agent=bn.bottleneck_span,
                 observation=f"Agent consumes {bn.bottleneck_pct:.0f}% of total execution time",
                 suggestion=f"Consider: parallelize internal operations, cache results, or use a faster model for '{bn.bottleneck_span}'",
-                confidence=0.6,
-                first_seen=now, last_seen=now,
+                confidence=0.6, first_seen=now, last_seen=now,
             ))
 
-        # Lesson 4: Context flow anomalies
-        for anomaly in ctx.anomalies:
-            if anomaly.anomaly == "loss":
-                reflection.lessons.append(Lesson(
-                    category="handoff",
-                    agent=anomaly.to_agent,
-                    observation=f"Context loss: keys {anomaly.keys_lost} lost in handoff from {anomaly.from_agent}",
-                    suggestion=f"Ensure '{anomaly.from_agent}' passes all required keys, or add validation at '{anomaly.to_agent}' input",
-                    confidence=0.8,
-                    first_seen=now, last_seen=now,
-                ))
-            elif anomaly.anomaly == "bloat":
-                reflection.lessons.append(Lesson(
-                    category="handoff",
-                    agent=anomaly.from_agent,
-                    observation=f"Context bloat: +{anomaly.size_delta_bytes:,}B between {anomaly.from_agent} → {anomaly.to_agent}",
-                    suggestion="Consider filtering or summarizing output before handoff to reduce context size",
-                    confidence=0.5,
-                    first_seen=now, last_seen=now,
-                ))
+        reflection.lessons.extend(self._lessons_from_context(ctx, now))
 
-        # Lesson 5: Low resilience pattern
         if failures.total_failed_spans > 0 and failures.resilience_score < 0.5:
             reflection.patterns_detected.append(
                 f"Low resilience ({failures.resilience_score:.0%}): {failures.unhandled_count} unhandled failures out of {len(failures.root_causes)} root causes"
             )
-
-        # Lesson 6: Long critical path
         if flow.critical_path and len(flow.critical_path) > 4:
             reflection.patterns_detected.append(
                 f"Long critical path ({len(flow.critical_path)} steps): consider parallelizing independent agents"
             )
-
         return reflection
 
     def learn(self, trace: ExecutionTrace) -> Reflection:

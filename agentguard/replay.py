@@ -464,64 +464,40 @@ def replay_golden(
     return compare_golden(golden, current_trace, tolerance_ms, score_threshold)
 
 
-def compare_golden(
-    golden: ExecutionTrace,
-    current: ExecutionTrace,
-    tolerance_ms: float = 500.0,
-    score_threshold: float = 0.0,
-) -> AssertionReplayResult:
-    """Compare current trace against a golden baseline (both in memory).
+def _assert_agents_present(
+    golden_agents: dict, current_agents: dict,
+) -> list[AssertionResult]:
+    """Assert all golden agents exist in current trace."""
+    return [AssertionResult(
+        span_name=name, assertion_name="agent_present",
+        passed=name in current_agents,
+        message="" if name in current_agents else f"Agent '{name}' missing from current trace",
+    ) for name in golden_agents]
 
-    Checks:
-    1. All golden agents exist in current trace
-    2. No golden-completed agents have regressed to failed
-    3. Duration within tolerance for each agent
-    4. Overall score not regressed beyond threshold
 
-    Args:
-        golden: The known-good baseline trace.
-        current: The current trace to verify.
-        tolerance_ms: Max allowed duration increase per agent.
-        score_threshold: Min acceptable score delta (negative = allow regression).
-
-    Returns:
-        ReplayResult with detailed assertion outcomes.
-    """
-    results: list[AssertionResult] = []
-
-    golden_agents = {s.name: s for s in golden.agent_spans}
-    current_agents = {s.name: s for s in current.agent_spans}
-
-    # 1. Agent presence: all golden agents must exist in current
-    for name in golden_agents:
-        present = name in current_agents
-        results.append(AssertionResult(
-            span_name=name,
-            assertion_name="agent_present",
-            passed=present,
-            message="" if present else f"Agent '{name}' missing from current trace",
-        ))
-
-    # 2. Status regression: completed agents should not become failed
+def _assert_no_status_regression(
+    golden_agents: dict, current_agents: dict,
+) -> list[AssertionResult]:
+    """Assert completed golden agents haven't regressed to failed."""
+    results = []
     for name, gs in golden_agents.items():
         cs = current_agents.get(name)
         if not cs:
             continue
-        if gs.status == SpanStatus.COMPLETED and cs.status == SpanStatus.FAILED:
-            results.append(AssertionResult(
-                span_name=name,
-                assertion_name="no_status_regression",
-                passed=False,
-                message=f"Agent '{name}' regressed: completed → failed ({cs.error or ''})",
-            ))
-        else:
-            results.append(AssertionResult(
-                span_name=name,
-                assertion_name="no_status_regression",
-                passed=True,
-            ))
+        regressed = gs.status == SpanStatus.COMPLETED and cs.status == SpanStatus.FAILED
+        results.append(AssertionResult(
+            span_name=name, assertion_name="no_status_regression",
+            passed=not regressed,
+            message=f"Agent '{name}' regressed: completed → failed ({cs.error or ''})" if regressed else "",
+        ))
+    return results
 
-    # 3. Duration tolerance: current should not be much slower
+
+def _assert_duration_tolerance(
+    golden_agents: dict, current_agents: dict, tolerance_ms: float,
+) -> list[AssertionResult]:
+    """Assert agent durations are within tolerance of golden baseline."""
+    results = []
     for name, gs in golden_agents.items():
         cs = current_agents.get(name)
         if not cs or gs.duration_ms is None or cs.duration_ms is None:
@@ -537,30 +513,50 @@ def compare_golden(
                 f"(golden: {gs.duration_ms:.0f}ms, current: {cs.duration_ms:.0f}ms)"
             ),
         ))
+    return results
 
-    # 4. Score comparison
-    golden_score = score_trace(golden)
-    current_score = score_trace(current)
-    score_delta = current_score.overall - golden_score.overall
-    score_ok = score_delta >= score_threshold
-    results.append(AssertionResult(
+
+def _assert_score_not_regressed(
+    golden: ExecutionTrace, current: ExecutionTrace, threshold: float,
+) -> AssertionResult:
+    """Assert overall score hasn't regressed beyond threshold."""
+    gs = score_trace(golden)
+    cs = score_trace(current)
+    delta = cs.overall - gs.overall
+    ok = delta >= threshold
+    return AssertionResult(
         span_name="(trace)",
-        assertion_name=f"score_not_regressed(threshold={score_threshold})",
-        passed=score_ok,
-        message="" if score_ok else (
-            f"Score regressed: {golden_score.overall:.0f} → {current_score.overall:.0f} "
-            f"(delta: {score_delta:+.0f}, threshold: {score_threshold:+.0f})"
+        assertion_name=f"score_not_regressed(threshold={threshold})",
+        passed=ok,
+        message="" if ok else (
+            f"Score regressed: {gs.overall:.0f} → {cs.overall:.0f} "
+            f"(delta: {delta:+.0f}, threshold: {threshold:+.0f})"
         ),
-    ))
+    )
 
+
+def compare_golden(
+    golden: ExecutionTrace,
+    current: ExecutionTrace,
+    tolerance_ms: float = 500.0,
+    score_threshold: float = 0.0,
+) -> AssertionReplayResult:
+    """Compare current trace against a golden baseline.
+
+    Checks: agent presence, status regression, duration tolerance, score.
+    """
+    golden_agents = {s.name: s for s in golden.agent_spans}
+    current_agents = {s.name: s for s in current.agent_spans}
+
+    results = (
+        _assert_agents_present(golden_agents, current_agents)
+        + _assert_no_status_regression(golden_agents, current_agents)
+        + _assert_duration_tolerance(golden_agents, current_agents, tolerance_ms)
+        + [_assert_score_not_regressed(golden, current, score_threshold)]
+    )
     passed = sum(1 for r in results if r.passed)
-    failed = sum(1 for r in results if not r.passed)
-
     return AssertionReplayResult(
-        trace_id=current.trace_id,
-        total_assertions=len(results),
-        passed=passed,
-        failed=failed,
-        results=results,
+        trace_id=current.trace_id, total_assertions=len(results),
+        passed=passed, failed=len(results) - passed, results=results,
     )
 
