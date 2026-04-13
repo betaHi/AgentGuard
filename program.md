@@ -1,46 +1,33 @@
-# AgentGuard — Sprint 3: Production Depth
-
-## Goals
-1. Make every analysis module answer its Question with real diagnostic value
-2. Ensure viewer, CLI, and examples all tell the same accurate story
-3. Harden SDK for real-world adoption
-4. Comprehensive test coverage for edge cases
-
-## Design Docs (authoritative)
-- GUARDRAILS.md — 5 Questions + 3 Lines
-- docs/current-state-review-zh.md — known issues
-- REVIEW.md — review criteria
+# AgentGuard — Sprint 4: Polish & Depth
 
 ## Current Stories
 
-### P0: Analysis depth — make diagnostics genuinely useful
-- [x] Q1: bottleneck report should rank agents by "own work time" excluding child spans, with percentage breakdown
-- [x] Q2: handoff analyzer should detect dropped keys — compare context keys sent vs keys received
-- [x] Q3: failure propagation report should include timeline visualization (ASCII) showing failure spread over time
-- [S] Q4: cost-yield should identify the "most wasteful" agent (highest cost, lowest output quality) with actionable recommendation (SKIPPED: 3x REJECT)
-- [x] Q5: decision analysis should detect "repeated bad decisions" — same agent chosen despite prior failures
+### P0: Deepen the 5 Questions further
+- [ ] Q1: bottleneck should detect "false bottleneck" — agent that appears slow but is actually waiting on a dependency
+- [ ] Q2: handoff should track context transformation — not just keys sent/received but semantic changes (summarization, filtering)
+- [ ] Q3: failure propagation should distinguish recoverable vs fatal failures in the causal chain
+- [ ] Q4: cost-yield should support custom cost models (not just token count) — allow user-defined cost functions
+- [ ] Q5: decision analysis should suggest optimal agent selection based on historical performance
 
-### P1: Viewer ↔ Analysis full alignment
-- [x] HTML viewer: diagnostics panel should render ALL analysis outputs (bottleneck, flow, failures, cost-yield, decisions) — verify no analysis result is missing from viewer
-- [x] HTML viewer: add trace metadata header (task name, total duration, agent count, span count, overall status)
-- [S] CLI: `agentguard analyze` should output structured JSON matching exactly what viewer renders (SKIPPED: 3x REJECT)
+### P1: Viewer & CLI polish
+- [ ] Viewer: add collapsible sections in diagnostics panel (expand/collapse each analysis)
+- [ ] Viewer: add trace search/filter — find spans by agent name, status, or duration range
+- [ ] CLI: add `agentguard diff trace1.json trace2.json` — compare two traces with colored output
+- [ ] CLI: add `agentguard summary` — one-line summary of trace health (like git status)
 
-### P2: Examples tell real stories
-- [x] Audit all 18 examples: run each, capture output, verify README/docs descriptions match actual output
-- [x] Add example: debugging a real failure — trace shows agent B failed because agent A dropped context key "user_id"
-- [x] Add example: performance optimization — trace shows parallel pipeline is 3x faster than sequential, with cost comparison
+### P2: SDK production hardening
+- [ ] SDK: add sampling — record only N% of traces in production (configurable)
+- [ ] SDK: add span annotations — user can attach arbitrary key-value metadata to spans
+- [ ] SDK: add trace correlation ID — link related traces across service boundaries
+- [ ] SDK: add batch export — accumulate spans and flush periodically (reduce I/O)
 
-### P3: SDK real-world readiness
-- [x] Add `@record_agent` decorator error handling: if recording fails, the decorated function should still work (fail-open)
-- [x] Add trace size limits: warn if trace exceeds 10MB, truncate span metadata if needed
-- [x] Add `agentguard.configure()` for global settings (output dir, max trace size, sampling rate)
+### P3: Advanced testing
+- [ ] Test: replay a trace, mutate one agent's timing, verify analysis changes correctly
+- [ ] Test: generate adversarial traces (contradictory timestamps, missing parents) — verify graceful handling
+- [ ] Test: verify all CLI commands work end-to-end with real trace files
+- [ ] Test: verify HTML viewer renders correctly with 50+ agent traces
 
-### P4: Test edge cases
-- [x] Test: trace with 0 spans (empty trace through full pipeline)
-- [x] Test: trace with duplicate agent names (same agent called multiple times)
-- [x] Test: trace with circular handoffs (A→B→A)
-- [x] Test: Unicode agent names, emoji in metadata, very long strings
-- [x] Test: concurrent recording from multiple threads simultaneously
-
-## Progress Log
-- 2026-04-13: Sprint 3 started — focus on production depth, not feature breadth
+### P4: Documentation & best practices
+- [ ] Update docs/best-practices.md with Sprint 3 lessons
+- [ ] Create docs/faq.md — common questions and troubleshooting
+- [ ] Update README with Sprint 3 features (1000+ tests, new analysis capabilities)
