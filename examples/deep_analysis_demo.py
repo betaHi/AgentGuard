@@ -8,7 +8,8 @@ demonstrates:
 4. Context flow (compression, truncation, bandwidth)
 5. Span correlation (fingerprints, patterns)
 """
-import sys, os
+import sys
+import time, os
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 
@@ -37,6 +38,7 @@ def main():
     # === Phase 1: Research ===
     @record_agent(name="researcher")
     def research(topic):
+        time.sleep(0.05)  # simulate LLM call
         return {
             "articles": [f"Article about {topic} #{i}" for i in range(5)],
             "sources": ["arxiv", "github", "twitter"],
@@ -46,6 +48,7 @@ def main():
     
     @record_tool(name="web_search")
     def web_search(query):
+        time.sleep(0.02)  # simulate API call
         return {"results": [f"Result for {query}"]}
     
     research_output = research("AI agents")
@@ -64,6 +67,7 @@ def main():
     # === Phase 2: Analysis (simulated) ===
     @record_agent(name="analyst")
     def analyze(articles, sources):
+        time.sleep(0.04)  # simulate LLM analysis
         return {
             "key_points": ["Point 1: agents are evolving", "Point 2: observability matters"],
             "analysis": "Detailed analysis of multi-agent systems...",
@@ -86,6 +90,7 @@ def main():
     # === Phase 3: Writing ===
     @record_agent(name="writer")
     def write(key_points, analysis):
+        time.sleep(0.06)  # simulate LLM generation
         return {"draft": "# AI Agents in 2026\n\nAgents are evolving..."}
     
     draft = write(
