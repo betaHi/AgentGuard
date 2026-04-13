@@ -340,7 +340,7 @@ See [docs/architecture.md](docs/architecture.md) for details.
 | **Timeline** | Chronological event stream, filtering by type/span |
 | **Trace Builder** | Fluent API for constructing test/synthetic traces |
 | **SDK** | Fail-open decorators, per-trace sampling, span annotations, correlation IDs, batch export |
-| **Production** | , trace size limits (10MB warn, 100KB/field truncation), batch I/O |
+| **Production** | Per-trace sampling, configurable limits (10MB warn, 100KB/field truncation), batch I/O |
 | **Viewer** | Interactive HTML: collapsible panels, search/filter by name/status/duration, 9 diagnostic panels |
 | **Storage** | File-based store with query, prune, and schema validation |
 | **CLI** | 33 commands: show, analyze, diff, summary, score, aggregate, timeline, metrics, and more |
