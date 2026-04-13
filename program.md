@@ -35,7 +35,7 @@
 ### Phase 4: Semantic Issues (from review)
 
 - [x] Fix: parallel_pipeline.py console output still shows false truncation from context_flow_deep — the deep module reports "web_researcher → academic_researcher: -85% truncation" for independent parallel agents. Fix analyze_context_flow_deep to detect parallel siblings (same parent, overlapping timestamps) and exclude them from sequential analysis
-- [ ] Fix: viewer bottleneck sidebar shows agent cards but analyze_bottleneck returns tool spans — semantic mismatch between viewer and analysis. Viewer should map tool bottleneck back to parent agent, or show both agent and tool level
+- [x] Fix: viewer bottleneck sidebar shows agent cards but analyze_bottleneck returns tool spans — semantic mismatch between viewer and analysis. Viewer should map tool bottleneck back to parent agent, or show both agent and tool level
 - [ ] Fix: context_flow_deep "Keys removed/added" reports args/kwargs for every transition — this is SDK noise (decorator argument passing), not real context loss. Filter out args/kwargs from transition analysis
 - [ ] Fix: full_analysis.py shows "Correlations: 0, Patterns: 0" on every run — correlation analysis should find patterns in a complex trace with 10+ spans, mixed failures, and different agent types. If single-trace correlation is inherently limited, improve the algorithm or show a better example
 - [ ] Fix: README claims "1170+ tests" but actual count is 1374 (collected) — update README test count. Also verify all feature claims in README match reality by running each example and checking
