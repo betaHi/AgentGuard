@@ -21,7 +21,7 @@
 - [x] Q5: decision analysis should detect "repeated bad decisions" — same agent chosen despite prior failures
 
 ### P1: Viewer ↔ Analysis full alignment
-- [ ] HTML viewer: diagnostics panel should render ALL analysis outputs (bottleneck, flow, failures, cost-yield, decisions) — verify no analysis result is missing from viewer
+- [x] HTML viewer: diagnostics panel should render ALL analysis outputs (bottleneck, flow, failures, cost-yield, decisions) — verify no analysis result is missing from viewer
 - [ ] HTML viewer: add trace metadata header (task name, total duration, agent count, span count, overall status)
 - [ ] CLI: `agentguard analyze` should output structured JSON matching exactly what viewer renders
 
