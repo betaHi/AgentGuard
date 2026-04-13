@@ -18,7 +18,7 @@
 - [x] Refactor: analysis.py — break analyze_cost_yield (90 lines) into helpers: _compute_agent_costs(), _compute_yield_scores(), _generate_recommendations(). Each ≤50 lines
 - [x] Refactor: viewer.py — break _build_full_html (229 lines) into ≤50-line helpers: _build_head(), _build_styles(), _build_scripts(), _build_body_layout(). Extract CSS/JS into separate string constants
 - [x] Refactor: viewer.py — break _build_diagnostics (159 lines) into per-panel helpers: _panel_failures(), _panel_bottleneck(), _panel_handoffs(), _panel_context(), _panel_cost(), _panel_retries(), _panel_errors(), _panel_decisions(), _panel_propagation(). Each ≤50 lines
-- [ ] Refactor: viewer.py — break _build_sidebar (93 lines) and _build_gantt (91 lines) and _render_gantt_rows (81 lines) into ≤50-line helpers each
+- [x] Refactor: viewer.py — break _build_sidebar (93 lines) and _build_gantt (91 lines) and _render_gantt_rows (81 lines) into ≤50-line helpers each
 - [ ] Refactor: flowgraph.py — break build_flow_graph (207 lines!) into helpers: _extract_nodes(), _extract_edges(), _detect_phases(), _find_critical_path(), _build_mermaid(). Each ≤50 lines
 - [ ] Refactor: propagation.py — break analyze_propagation (123 lines) and analyze_handoff_chains (99 lines) into ≤50-line helpers
 - [ ] Refactor: scoring.py — break score_trace (156 lines) into per-dimension helpers: _score_performance(), _score_reliability(), _score_handoff_quality(), _score_cost_efficiency(), _score_decision_quality(). Each ≤50 lines
