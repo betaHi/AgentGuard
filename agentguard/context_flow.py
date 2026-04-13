@@ -177,30 +177,21 @@ def _classify_transition(input_size: int, output_size: int,
         return "stable"
 
 
-def analyze_context_flow_deep(trace: ExecutionTrace) -> ContextFlowAnalysis:
-    """Deep analysis of context flow through the agent pipeline.
+def _collect_agent_snapshots(
+    trace: ExecutionTrace,
+) -> tuple[list[ContextSnapshot], dict[str, dict]]:
+    """Collect input/output snapshots and IO metadata for each agent span.
 
-    Examines input_data and output_data of each agent span to track
-    how information flows, compresses, and transforms across the pipeline.
+    Returns:
+        (snapshots, agent_io) where agent_io maps span_id → IO metadata dict.
     """
-    span_map = {s.span_id: s for s in trace.spans}
-    children_map: dict[str, list[str]] = {}
-
-    for s in trace.spans:
-        if s.parent_span_id:
-            children_map.setdefault(s.parent_span_id, []).append(s.span_id)
-
-    # Collect snapshots: input and output of each agent
     snapshots: list[ContextSnapshot] = []
-    agent_io: dict[str, dict] = {}  # span_id -> {input_size, output_size, ...}
-
+    agent_io: dict[str, dict] = {}
     for s in trace.spans:
         if s.span_type != SpanType.AGENT:
             continue
-
         in_size, in_keys = _measure_data(s.input_data)
         out_size, out_keys = _measure_data(s.output_data)
-
         snapshots.append(ContextSnapshot(
             agent_name=s.name, span_id=s.span_id, direction="input",
             size_bytes=in_size, key_count=len(in_keys), keys=in_keys,
@@ -211,122 +202,159 @@ def analyze_context_flow_deep(trace: ExecutionTrace) -> ContextFlowAnalysis:
             size_bytes=out_size, key_count=len(out_keys), keys=out_keys,
             timestamp=s.ended_at,
         ))
-
         agent_io[s.span_id] = {
             "name": s.name, "in_size": in_size, "out_size": out_size,
             "in_keys": in_keys, "out_keys": out_keys,
             "started_at": s.started_at, "ended_at": s.ended_at,
             "duration_ms": s.duration_ms or 0,
         }
+    return snapshots, agent_io
 
-    # Build transitions: sequential agent pairs under same parent
+
+def _are_parallel(a_info: dict, b_info: dict) -> bool:
+    """Check if two agents executed in parallel (overlapping time).
+
+    Parallel siblings are independent — not a handoff chain.
+    """
+    from datetime import datetime
+    try:
+        a_start = datetime.fromisoformat(a_info["started_at"]) if a_info["started_at"] else None
+        a_end = datetime.fromisoformat(a_info["ended_at"]) if a_info["ended_at"] else None
+        b_start = datetime.fromisoformat(b_info["started_at"]) if b_info["started_at"] else None
+        b_end = datetime.fromisoformat(b_info["ended_at"]) if b_info["ended_at"] else None
+        if a_start and a_end and b_start and b_end:
+            return a_start < b_end and b_start < a_end
+    except Exception:
+        pass
+    return False
+
+
+def _detect_transitions(
+    children_map: dict[str, list[str]],
+    span_map: dict[str, Any],
+    agent_io: dict[str, dict],
+) -> tuple[list[ContextTransition], list[ContextBandwidth]]:
+    """Detect context transitions between sequential agent pairs.
+
+    Skips parallel siblings to avoid false positive truncation reports.
+    """
     transitions: list[ContextTransition] = []
-    bandwidth_list: list[ContextBandwidth] = []
-
-    for _parent_id, child_ids in children_map.items():
+    bandwidth: list[ContextBandwidth] = []
+    for _pid, child_ids in children_map.items():
         agents = [(cid, span_map[cid]) for cid in child_ids
                   if cid in span_map and span_map[cid].span_type == SpanType.AGENT]
         agents.sort(key=lambda x: x[1].started_at or "")
-
         for i in range(len(agents) - 1):
-            sid_a, span_a = agents[i]
-            sid_b, span_b = agents[i + 1]
-
+            sid_a, _ = agents[i]
+            sid_b, _ = agents[i + 1]
             if sid_a not in agent_io or sid_b not in agent_io:
                 continue
+            a_info, b_info = agent_io[sid_a], agent_io[sid_b]
+            # Skip parallel siblings — they are independent, not a chain
+            if _are_parallel(a_info, b_info):
+                continue
+            t, bw = _build_transition(a_info, b_info)
+            transitions.append(t)
+            if bw:
+                bandwidth.append(bw)
+    return transitions, bandwidth
 
-            a_info = agent_io[sid_a]
-            b_info = agent_io[sid_b]
 
-            # Context flows from A's output to B's input
-            out_size = a_info["out_size"]
-            in_size = b_info["in_size"]
+def _build_transition(
+    a_info: dict, b_info: dict,
+) -> tuple[ContextTransition, ContextBandwidth | None]:
+    """Build a single transition + optional bandwidth from sender→receiver IO."""
+    out_size, in_size = a_info["out_size"], b_info["in_size"]
+    out_keys, in_keys = set(a_info["out_keys"]), set(b_info["in_keys"])
+    keys_removed = list(out_keys - in_keys)
+    keys_added = list(in_keys - out_keys)
+    delta = in_size - out_size
+    delta_pct = ((in_size / max(out_size, 1)) - 1) * 100
+    event = _classify_transition(out_size, in_size, keys_removed, keys_added)
+    t = ContextTransition(
+        from_agent=a_info["name"], to_agent=b_info["name"],
+        input_size=out_size, output_size=in_size,
+        delta_bytes=delta, delta_pct=delta_pct, event=event,
+        keys_added=keys_added, keys_removed=keys_removed,
+        keys_preserved=list(out_keys & in_keys),
+    )
+    bw = None
+    gap_ms = b_info["duration_ms"] or 1
+    if out_size > 0:
+        bw = ContextBandwidth(
+            from_agent=a_info["name"], to_agent=b_info["name"],
+            bytes_transferred=out_size, duration_ms=gap_ms,
+            bandwidth_bps=(out_size / gap_ms) * 1000,
+        )
+    return t, bw
 
-            out_keys = set(a_info["out_keys"])
-            in_keys = set(b_info["in_keys"])
 
-            keys_removed = list(out_keys - in_keys)
-            keys_added = list(in_keys - out_keys)
-            keys_preserved = list(out_keys & in_keys)
-
-            delta = in_size - out_size
-            delta_pct = ((in_size / max(out_size, 1)) - 1) * 100
-
-            event = _classify_transition(out_size, in_size, keys_removed, keys_added)
-
-            transitions.append(ContextTransition(
-                from_agent=a_info["name"],
-                to_agent=b_info["name"],
-                input_size=out_size,  # sender's output
-                output_size=in_size,  # receiver's input
-                delta_bytes=delta,
-                delta_pct=delta_pct,
-                event=event,
-                keys_added=keys_added,
-                keys_removed=keys_removed,
-                keys_preserved=keys_preserved,
-            ))
-
-            # Bandwidth: bytes transferred / time between spans
-            # Time = gap between A's end and B's start, or B's duration
-            gap_ms = b_info["duration_ms"] or 1
-            if out_size > 0:
-                bps = (out_size / gap_ms) * 1000
-                bandwidth_list.append(ContextBandwidth(
-                    from_agent=a_info["name"],
-                    to_agent=b_info["name"],
-                    bytes_transferred=out_size,
-                    duration_ms=gap_ms,
-                    bandwidth_bps=bps,
-                ))
-
-    # Also check explicit HANDOFF spans
+def _detect_handoff_transitions(trace: ExecutionTrace) -> list[ContextTransition]:
+    """Detect transitions from explicit HANDOFF spans with dropped keys."""
+    transitions = []
     for s in trace.spans:
-        if s.span_type == SpanType.HANDOFF:
-            ctx_size = s.context_size_bytes or 0
-            if ctx_size > 0:
-                fr = s.handoff_from or "unknown"
-                to = s.handoff_to or "unknown"
+        if s.span_type != SpanType.HANDOFF:
+            continue
+        ctx_size = s.context_size_bytes or 0
+        dropped = s.context_dropped_keys or []
+        if ctx_size > 0 and dropped:
+            used = s.context_used_keys or []
+            transitions.append(ContextTransition(
+                from_agent=s.handoff_from or "unknown",
+                to_agent=s.handoff_to or "unknown",
+                input_size=ctx_size, output_size=ctx_size,
+                delta_bytes=0, delta_pct=0,
+                event="truncation" if len(dropped) > len(used) else "transformation",
+                keys_removed=dropped, keys_preserved=used,
+            ))
+    return transitions
 
-                # Check if receiver used the context
-                used_keys = s.context_used_keys or []
-                dropped_keys = s.context_dropped_keys or []
 
-                if dropped_keys:
-                    transitions.append(ContextTransition(
-                        from_agent=fr, to_agent=to,
-                        input_size=ctx_size, output_size=ctx_size,
-                        delta_bytes=0, delta_pct=0,
-                        event="truncation" if len(dropped_keys) > len(used_keys) else "transformation",
-                        keys_removed=dropped_keys,
-                        keys_preserved=used_keys,
-                    ))
+def _compute_aggregates(
+    transitions: list[ContextTransition],
+) -> tuple[int, int, float, str | None, int, int]:
+    """Compute aggregate metrics from transitions.
 
-    # Aggregates
+    Returns:
+        (total_in, total_out, compression_ratio, bottleneck_agent,
+         truncation_events, expansion_events)
+    """
     total_in = sum(t.input_size for t in transitions)
     total_out = sum(t.output_size for t in transitions)
-    compression_ratio = total_out / max(total_in, 1)
-
-    truncation_events = sum(1 for t in transitions if t.event == "truncation")
-    expansion_events = sum(1 for t in transitions if t.event == "expansion")
-
-    # Find bottleneck: agent with the highest compression (most context lost)
-    bottleneck = None
-    max_loss = 0
+    bottleneck, max_loss = None, 0
     for t in transitions:
         loss = t.input_size - t.output_size
         if loss > max_loss:
             max_loss = loss
-            bottleneck = t.to_agent  # the receiving agent is where context was lost
+            bottleneck = t.to_agent
+    return (
+        total_in, total_out,
+        total_out / max(total_in, 1),
+        bottleneck,
+        sum(1 for t in transitions if t.event == "truncation"),
+        sum(1 for t in transitions if t.event == "expansion"),
+    )
 
+
+def analyze_context_flow_deep(trace: ExecutionTrace) -> ContextFlowAnalysis:
+    """Deep analysis of context flow through the agent pipeline.
+
+    Tracks how information flows, compresses, and transforms.
+    Skips parallel siblings to avoid false truncation reports.
+    """
+    span_map = {s.span_id: s for s in trace.spans}
+    children_map: dict[str, list[str]] = {}
+    for s in trace.spans:
+        if s.parent_span_id:
+            children_map.setdefault(s.parent_span_id, []).append(s.span_id)
+
+    snapshots, agent_io = _collect_agent_snapshots(trace)
+    transitions, bandwidth = _detect_transitions(children_map, span_map, agent_io)
+    transitions.extend(_detect_handoff_transitions(trace))
+
+    ti, to, cr, bn, trunc, exp = _compute_aggregates(transitions)
     return ContextFlowAnalysis(
-        snapshots=snapshots,
-        transitions=transitions,
-        bandwidth=bandwidth_list,
-        total_bytes_in=total_in,
-        total_bytes_out=total_out,
-        compression_ratio=compression_ratio,
-        bottleneck_agent=bottleneck,
-        truncation_events=truncation_events,
-        expansion_events=expansion_events,
+        snapshots=snapshots, transitions=transitions, bandwidth=bandwidth,
+        total_bytes_in=ti, total_bytes_out=to, compression_ratio=cr,
+        bottleneck_agent=bn, truncation_events=trunc, expansion_events=exp,
     )
