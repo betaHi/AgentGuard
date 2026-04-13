@@ -33,6 +33,7 @@ class FailureNode:
     affected_children: list[FailureNode] = field(default_factory=list)
 
     def to_dict(self) -> dict:
+        """Serialize to dictionary."""
         return {
             "span_id": self.span_id,
             "name": self.span_name,
@@ -55,6 +56,7 @@ class FailureAnalysis:
     resilience_score: float  # 0-1, higher = more resilient
 
     def to_dict(self) -> dict:
+        """Serialize to dictionary."""
         return {
             "root_causes": [r.to_dict() for r in self.root_causes],
             "total_failed_spans": self.total_failed_spans,
@@ -65,6 +67,7 @@ class FailureAnalysis:
         }
 
     def to_report(self) -> str:
+        """Format as human-readable report string."""
         lines = [
             "# Failure Propagation Analysis",
             "",
@@ -252,6 +255,7 @@ class HandoffInfo:
     duration_ms: float | None = None
 
     def to_dict(self) -> dict:
+        """Serialize to dictionary."""
         return {
             "from": self.from_agent,
             "to": self.to_agent,
@@ -272,6 +276,7 @@ class FlowAnalysis:
     parallel_groups: list[list[str]]  # groups of agents that ran in parallel
 
     def to_dict(self) -> dict:
+        """Serialize to dictionary."""
         return {
             "agent_count": self.agent_count,
             "tool_count": self.tool_count,
@@ -392,6 +397,12 @@ def analyze_flow(trace: ExecutionTrace) -> FlowAnalysis:
 
     Identifies handoffs between agents, the critical path (longest
     execution chain), and parallel execution groups.
+
+    Args:
+        trace: The execution trace to analyze.
+
+    Returns:
+        FlowAnalysis with critical path, parallelism metrics, and phase detection.
     """
     span_map = {s.span_id: s for s in trace.spans}
     children_map: dict[str, list[Span]] = {}
@@ -426,6 +437,7 @@ class BottleneckReport:
     false_bottleneck_detail: str = ""  # explanation of why it is a false bottleneck
 
     def to_dict(self) -> dict:
+        """Serialize to dictionary."""
         return {
             "critical_path": self.critical_path,
             "critical_path_duration_ms": round(self.critical_path_duration_ms, 1),
@@ -438,6 +450,7 @@ class BottleneckReport:
         }
 
     def to_report(self) -> str:
+        """Format as human-readable report string."""
         lines = [
             "# Bottleneck Analysis",
             "",
@@ -610,6 +623,12 @@ def analyze_bottleneck(trace: ExecutionTrace) -> BottleneckReport:
     Answers Q1: "Which agent is the performance bottleneck?"
     Uses critical path analysis + own-duration ranking to separate
     real work from container/delegation overhead.
+
+    Args:
+        trace: The execution trace to analyze.
+
+    Returns:
+        BottleneckAnalysis identifying the slowest agent and optimization targets.
     """
     span_map = {s.span_id: s for s in trace.spans}
     children_map: dict[str, list[Span]] = {}
@@ -652,6 +671,7 @@ class ContextFlowPoint:
     transformations: list[dict] = field(default_factory=list)  # semantic changes detected
 
     def to_dict(self) -> dict:
+        """Serialize to dictionary."""
         return {
             "from": self.from_agent, "to": self.to_agent,
             "keys_sent": self.keys_sent, "size_bytes": self.size_bytes,
@@ -678,6 +698,7 @@ class ContextFlowReport:
         return sum(ratios) / len(ratios) if ratios else None
 
     def to_dict(self) -> dict:
+        """Serialize to dictionary."""
         return {
             "handoff_count": self.handoff_count,
             "total_context_bytes": self.total_context_bytes,
@@ -687,6 +708,7 @@ class ContextFlowReport:
         }
 
     def to_report(self) -> str:
+        """Format as human-readable report string."""
         lines = [
             "# Context Flow Analysis",
             "",
@@ -967,6 +989,12 @@ def analyze_context_flow(trace: ExecutionTrace) -> ContextFlowReport:
 
     Answers Q2: "Which handoff lost critical information?"
     Detects loss, bloat, compression, and truncation anomalies.
+
+    Args:
+        trace: The execution trace to analyze.
+
+    Returns:
+        ContextFlowResult with anomalies (loss, bloat, mutation) at handoff points.
     """
     handoff_spans = [s for s in trace.spans if s.span_type == SpanType.HANDOFF]
     points = _trace_explicit_handoffs(handoff_spans) if handoff_spans else _trace_inferred_handoffs(trace)
@@ -984,6 +1012,12 @@ def analyze_retries(trace: ExecutionTrace) -> dict:
 
     Identifies spans that were retried (same name under same parent,
     first failed then succeeded).
+
+    Args:
+        trace: The execution trace to analyze.
+
+    Returns:
+        RetryAnalysis with per-span retry stats and wasted time estimates.
     """
     parent_children: dict[str, list[Span]] = {}
     for s in trace.spans:
@@ -1022,6 +1056,12 @@ def analyze_cost(trace: ExecutionTrace) -> dict:
     """Analyze cost distribution across agents and tools.
 
     Returns per-agent and per-tool cost breakdown.
+
+    Args:
+        trace: The execution trace to analyze.
+
+    Returns:
+        CostAnalysis with per-agent costs, token usage, and cost-per-quality metrics.
     """
     agent_costs: dict[str, dict] = {}
     tool_costs: dict[str, dict] = {}
@@ -1085,6 +1125,7 @@ class CostYieldReport:
     recommendations: list[str] = field(default_factory=list)
 
     def to_dict(self) -> dict:
+        """Serialize to dictionary."""
         return {
             "total_cost_usd": round(self.total_cost_usd, 4),
             "total_tokens": self.total_tokens,
@@ -1109,6 +1150,7 @@ class CostYieldReport:
         }
 
     def to_report(self) -> str:
+        """Format as human-readable report string."""
         lines = [
             "# Cost-Yield Analysis", "",
             f"Total: {self.total_tokens:,} tokens, ${self.total_cost_usd:.4f}", "",
@@ -1317,6 +1359,7 @@ class DecisionRecord:
     led_to_failure: bool  # True if chosen agent (or its children) failed
 
     def to_dict(self) -> dict[str, Any]:
+        """Serialize to dictionary."""
         return {
             "coordinator": self.coordinator,
             "chosen": self.chosen_agent,
@@ -1340,6 +1383,7 @@ class DecisionAnalysis:
     suggestions: list[dict] = field(default_factory=list)  # optimal agent recommendations
 
     def to_dict(self) -> dict[str, Any]:
+        """Serialize to dictionary."""
         return {
             "total_decisions": self.total_decisions,
             "decisions_leading_to_failure": self.decisions_leading_to_failure,
@@ -1349,6 +1393,7 @@ class DecisionAnalysis:
         }
 
     def to_report(self) -> str:
+        """Format as human-readable report string."""
         lines = [
             "# Orchestration Decision Analysis", "",
             f"Total decisions: {self.total_decisions}",
@@ -1381,6 +1426,7 @@ class RepeatedBadDecision:
     failure_rate: float  # times_failed / times_chosen
 
     def to_dict(self) -> dict[str, Any]:
+        """Serialize to dictionary."""
         return {
             "agent": self.agent,
             "times_chosen": self.times_chosen,
@@ -1401,6 +1447,12 @@ def detect_repeated_bad_decisions(
 
     Why this matters: orchestrators that don't learn from failures
     waste tokens and time on agents that keep failing.
+
+    Args:
+        trace: The execution trace to analyze.
+
+    Returns:
+        List of BadDecision records for orchestration choices that repeat failures.
     """
     da = analyze_decisions(trace)
     if not da.decisions:
@@ -1626,6 +1678,7 @@ class DurationAnomaly:
     severity: str  # "warning" (3x) or "critical" (10x)
 
     def to_dict(self) -> dict[str, Any]:
+        """Serialize to dictionary."""
         return {
             "span_name": self.span_name,
             "span_type": self.span_type,
@@ -1644,6 +1697,7 @@ class DurationAnomalyReport:
     anomaly_count: int
 
     def to_dict(self) -> dict[str, Any]:
+        """Serialize to dictionary."""
         return {
             "total_spans_checked": self.total_spans_checked,
             "anomaly_count": self.anomaly_count,
@@ -1651,6 +1705,7 @@ class DurationAnomalyReport:
         }
 
     def to_report(self) -> str:
+        """Format as human-readable report string."""
         if not self.anomalies:
             return f"# Duration Anomalies\n\nNo anomalies ({self.total_spans_checked} spans checked)."
         lines = [
@@ -1762,6 +1817,12 @@ def analyze_timing(trace: ExecutionTrace) -> dict:
     - Time gaps between sequential spans (potential idle/waiting time)
     - Overlapping spans (parallel execution)
     - Agent utilization (active vs idle time)
+
+    Args:
+        trace: The execution trace to analyze.
+
+    Returns:
+        TimingAnalysis with gap detection, overlap analysis, and scheduling insights.
     """
     from datetime import datetime
 
@@ -1839,6 +1900,7 @@ class CounterfactualResult:
     verdict: str  # "optimal", "suboptimal", "catastrophic", "no_alternatives"
 
     def to_dict(self) -> dict[str, Any]:
+        """Serialize to dictionary."""
         return {
             "coordinator": self.coordinator,
             "chosen": self.chosen_agent,
@@ -1865,6 +1927,7 @@ class CounterfactualAnalysis:
     total_regret_ms: float  # sum of positive regrets
 
     def to_dict(self) -> dict[str, Any]:
+        """Serialize to dictionary."""
         return {
             "total_decisions": self.total_decisions,
             "optimal": self.optimal_count,
@@ -1875,6 +1938,7 @@ class CounterfactualAnalysis:
         }
 
     def to_report(self) -> str:
+        """Format as human-readable report string."""
         lines = [
             "# Counterfactual Decision Analysis", "",
             f"Decisions: {self.total_decisions}",
@@ -2014,6 +2078,12 @@ def analyze_counterfactual(trace: ExecutionTrace) -> CounterfactualAnalysis:
 
     Limitations: can only compare against alternatives that ran.
     Alternatives that never executed get no counterfactual score.
+
+    Args:
+        trace: The execution trace to analyze.
+
+    Returns:
+        CounterfactualAnalysis with what-if scenarios and estimated impact.
     """
     da = analyze_decisions(trace)
     results = [_evaluate_single_decision(d, trace) for d in da.decisions]

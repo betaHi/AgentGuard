@@ -52,7 +52,14 @@ class GuardConfig:
 
     @classmethod
     def from_dict(cls, data: dict) -> GuardConfig:
-        """Load config from a dictionary."""
+        """Load config from a dictionary.
+
+        Args:
+            data: Configuration dictionary.
+
+        Returns:
+            AgentGuardConfig instance.
+        """
         agents = []
         for agent_data in data.get("agents", []):
             tests = []
@@ -73,7 +80,14 @@ class GuardConfig:
 
     @classmethod
     def from_file(cls, filepath: str = "agentguard.yaml") -> GuardConfig:
-        """Load config from a YAML or JSON file."""
+        """Load config from a YAML or JSON file.
+
+        Args:
+            path: Path to JSON configuration file.
+
+        Returns:
+            AgentGuardConfig instance loaded from file.
+        """
         path = Path(filepath)
         if not path.exists():
             return cls()

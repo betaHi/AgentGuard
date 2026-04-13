@@ -46,6 +46,7 @@ def record_agent_async(
         Decorated async function that automatically records execution.
     """
     def decorator(func: Callable) -> Callable:
+        """Apply tracing to the given function."""
         @functools.wraps(func)
         async def wrapper(*args, **kwargs) -> Any:
             span = _try_start_span(name, version, metadata, args, kwargs)
@@ -76,6 +77,7 @@ def record_tool_async(
         Decorated async function that automatically records execution.
     """
     def decorator(func: Callable) -> Callable:
+        """Apply tracing to the given function."""
         @functools.wraps(func)
         async def wrapper(*args, **kwargs) -> Any:
             span = _try_start_tool_span(name, metadata, args, kwargs)

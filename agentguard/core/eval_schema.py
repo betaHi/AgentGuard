@@ -27,6 +27,7 @@ class RuleResult:
     detail: str = ""
 
     def to_dict(self) -> dict:
+        """Serialize to dictionary."""
         d = asdict(self)
         d["verdict"] = self.verdict.value
         return d
@@ -44,18 +45,22 @@ class EvaluationResult:
 
     @property
     def passed(self) -> int:
+        """Count of passed evaluation rules."""
         return sum(1 for r in self.rules if r.verdict == RuleVerdict.PASS)
 
     @property
     def failed(self) -> int:
+        """Count of failed evaluation rules."""
         return sum(1 for r in self.rules if r.verdict == RuleVerdict.FAIL)
 
     @property
     def total(self) -> int:
+        """Total number of evaluation rules checked."""
         return len(self.rules)
 
     @property
     def overall_verdict(self) -> RuleVerdict:
+        """Overall verdict: 'pass' if all rules passed, else 'fail'."""
         if any(r.verdict == RuleVerdict.FAIL for r in self.rules):
             return RuleVerdict.FAIL
         if all(r.verdict == RuleVerdict.PASS for r in self.rules):
@@ -63,6 +68,7 @@ class EvaluationResult:
         return RuleVerdict.SKIP
 
     def to_dict(self) -> dict:
+        """Serialize to dictionary."""
         return {
             "trace_id": self.trace_id,
             "agent_name": self.agent_name,
@@ -77,6 +83,7 @@ class EvaluationResult:
         }
 
     def to_json(self, indent: int = 2) -> str:
+        """Serialize to JSON string."""
         return json.dumps(self.to_dict(), indent=indent, ensure_ascii=False)
 
     def to_report(self) -> str:

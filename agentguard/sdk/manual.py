@@ -83,19 +83,31 @@ class ManualTracer:
         return span.span_id
 
     def end_agent(self, span_id: str, output: Any = None) -> None:
-        """Mark an agent span as completed."""
+        """Mark an agent span as completed.
+
+        Args:
+            output_data: Agent output to record.
+        """
         span = self._spans.get(span_id)
         if span:
             span.complete(output=output)
 
     def end_tool(self, span_id: str, output: Any = None) -> None:
-        """Mark a tool span as completed."""
+        """Mark a tool span as completed.
+
+        Args:
+            output_data: Tool output to record.
+        """
         span = self._spans.get(span_id)
         if span:
             span.complete(output=output)
 
     def fail_span(self, span_id: str, error: str) -> None:
-        """Mark any span as failed."""
+        """Mark any span as failed.
+
+        Args:
+            error: Error message or exception.
+        """
         span = self._spans.get(span_id)
         if span:
             span.fail(error=error)

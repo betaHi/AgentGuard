@@ -112,7 +112,11 @@ class TraceRecorder:
         return tuple(self._span_stack)
 
     def restore_context(self, span_stack: tuple[str, ...]) -> None:
-        """Replace the current thread's span stack with a captured context."""
+        """Replace the current thread's span stack with a captured context.
+
+        Args:
+            token: Context token from a previous bind.
+        """
         self._local.span_stack = list(span_stack)
 
     def bind_context(self, func: Callable[..., _T]) -> Callable[..., _T]:
@@ -120,10 +124,17 @@ class TraceRecorder:
 
         The returned callable restores the captured stack for the duration of
         the call, then puts the previous thread-local stack back.
+
+        Args:
+            trace: ExecutionTrace to bind.
+
+        Returns:
+            Context token for later restoration.
         """
         captured_stack = self.capture_context()
 
         def wrapped(*args, **kwargs) -> Any:
+            """Wrap function with automatic span recording."""
             previous_stack = self.capture_context()
             self.restore_context(captured_stack)
             try:
@@ -138,6 +149,9 @@ class TraceRecorder:
 
         If this trace was sampled out, the span is NOT added to the trace
         but the stack is still maintained for correct current_span_id tracking.
+
+        Args:
+            span: Span to push onto the stack.
         """
         if self._sampled:
             self.trace.add_span(span)
@@ -148,6 +162,9 @@ class TraceRecorder:
 
         Always maintains stack regardless of sampling, so parent tracking
         stays correct for nested decorators.
+
+        Returns:
+            The popped Span, or None if stack is empty.
         """
         stack = self._span_stack
         if stack and stack[-1] == span.span_id:
@@ -201,7 +218,14 @@ _T = TypeVar("_T")
 
 
 def init_recorder(task: str = "", trigger: str = "manual", output_dir: str = ".agentguard/traces") -> TraceRecorder:
-    """Initialize a new global trace recorder."""
+    """Initialize a new global trace recorder.
+
+    Args:
+        config: Optional recorder configuration dict.
+
+    Returns:
+        Initialized Recorder instance.
+    """
     global _global_recorder
     with _lock:
         _global_recorder = TraceRecorder(task=task, trigger=trigger, output_dir=output_dir)
@@ -223,13 +247,20 @@ def set_correlation_id(correlation_id: str) -> None:
 
     Example:
         set_correlation_id(request.headers["X-Correlation-ID"])
+
+    Args:
+        correlation_id: External correlation identifier.
     """
     with contextlib.suppress(Exception):
         get_recorder().set_correlation_id(correlation_id)
 
 
 def set_parent_trace(parent_trace_id: str) -> None:
-    """Set parent trace ID (this trace was spawned by another)."""
+    """Set parent trace ID (this trace was spawned by another).
+
+    Args:
+        parent_trace_id: Parent trace ID for distributed tracing.
+    """
     with contextlib.suppress(Exception):
         get_recorder().set_parent_trace(parent_trace_id)
 
@@ -270,5 +301,8 @@ def bind_current_trace_context(func: Callable[..., _T]) -> Callable[..., _T]:
 
     Use this when scheduling work onto another thread so child spans remain
     attached to the active parent span from the caller's thread.
+
+    Args:
+        trace: ExecutionTrace to bind to current context.
     """
     return get_recorder().bind_context(func)

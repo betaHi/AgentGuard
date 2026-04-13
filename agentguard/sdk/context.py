@@ -343,7 +343,11 @@ class TracingExecutor:
         return self._executor.map(_make_wrapped, zipped, timeout=timeout)
 
     def shutdown(self, wait: bool = True) -> None:
-        """Shut down the executor."""
+        """Shut down the executor.
+
+        Args:
+            timeout: Max seconds to wait for pending spans.
+        """
         self._executor.shutdown(wait=wait)
 
     def __enter__(self) -> TracingExecutor:
@@ -435,18 +439,25 @@ class _MergingFuture:
         self._recorder = recorder
 
     def result(self, timeout: float | None = None) -> Any:
-        """Get the result and merge worker spans."""
+        """Get the result and merge worker spans.
+
+        Returns:
+            The completed ExecutionTrace, or None if not finished.
+        """
         worker_result = self._future.result(timeout=timeout)
         _merge_worker_spans(self._recorder, worker_result)
         return worker_result["return_value"]
 
     def done(self) -> bool:
+        """Check if the trace context has completed."""
         return self._future.done()
 
     def cancel(self) -> bool:
+        """Cancel the trace context."""
         return self._future.cancel()
 
     def exception(self, timeout: float | None = None) -> Any:
+        """Return any exception from the trace context."""
         return self._future.exception(timeout=timeout)
 
 

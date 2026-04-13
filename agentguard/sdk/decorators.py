@@ -46,8 +46,10 @@ def record_agent(
             ...
     """
     def decorator(func: Callable) -> Callable:
+        """Apply tracing to the given function."""
         @functools.wraps(func)
         def wrapper(*args, **kwargs) -> Any:
+            """Wrap function call with span recording."""
             span = _try_start_span(name, version, metadata, args, kwargs)
             try:
                 result = func(*args, **kwargs)
@@ -82,8 +84,10 @@ def record_tool(
             ...
     """
     def decorator(func: Callable) -> Callable:
+        """Apply tracing to the given function."""
         @functools.wraps(func)
         def wrapper(*args, **kwargs) -> Any:
+            """Wrap function call with span recording."""
             span = _try_start_tool_span(name, metadata, args, kwargs)
             try:
                 result = func(*args, **kwargs)
