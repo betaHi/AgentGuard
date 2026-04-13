@@ -36,7 +36,7 @@
 - [x] Add `agentguard.configure()` for global settings (output dir, max trace size, sampling rate)
 
 ### P4: Test edge cases
-- [ ] Test: trace with 0 spans (empty trace through full pipeline)
+- [x] Test: trace with 0 spans (empty trace through full pipeline)
 - [ ] Test: trace with duplicate agent names (same agent called multiple times)
 - [ ] Test: trace with circular handoffs (A→B→A)
 - [ ] Test: Unicode agent names, emoji in metadata, very long strings
