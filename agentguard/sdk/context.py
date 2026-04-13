@@ -354,6 +354,188 @@ class TracingExecutor:
 
 
 
+class TracingProcessExecutor:
+    """ProcessPoolExecutor wrapper that propagates trace context across processes.
+
+    Unlike TracingExecutor (threads), processes don't share memory.
+    This wrapper:
+    1. Captures parent context (span IDs) at submit time
+    2. Runs the callable in a worker process with a local recorder
+    3. Collects child spans from the worker and merges them into
+       the parent recorder
+
+    Limitations:
+    - fn and args must be picklable (stdlib ProcessPoolExecutor requirement)
+    - Spans created in workers are merged after completion, not in real-time
+    - Worker-side recorder is independent; cross-process span nesting
+      is reconstructed via parent_span_id
+
+    Uses only stdlib (concurrent.futures, multiprocessing) — zero external deps.
+
+    Example::
+
+        from agentguard.sdk.context import TracingProcessExecutor
+
+        with TracingProcessExecutor(max_workers=2) as executor:
+            futures = [
+                executor.submit(cpu_bound_agent, data)
+                for data in chunks
+            ]
+            results = [f.result() for f in futures]
+    """
+
+    def __init__(self, max_workers: Optional[int] = None) -> None:
+        from concurrent.futures import ProcessPoolExecutor
+        self._executor = ProcessPoolExecutor(max_workers=max_workers)
+
+    def submit(self, fn: Any, *args: Any, **kwargs: Any) -> Any:
+        """Submit a callable with trace context propagation.
+
+        Captures parent span ID so worker spans are correctly parented.
+        Wraps the result to include worker spans for merging.
+
+        Args:
+            fn: Picklable callable to execute in the process pool.
+            *args: Positional arguments for fn.
+            **kwargs: Keyword arguments for fn.
+
+        Returns:
+            A Future whose result is the fn return value.
+            Worker spans are automatically merged on result retrieval.
+        """
+        recorder = get_recorder()
+        parent_context = recorder.capture_context()
+        task_name = recorder.trace.task if recorder.trace else ""
+
+        future = self._executor.submit(
+            _process_worker, fn, args, kwargs, parent_context, task_name
+        )
+        return _MergingFuture(future, recorder)
+
+    def shutdown(self, wait: bool = True) -> None:
+        """Shut down the executor."""
+        self._executor.shutdown(wait=wait)
+
+    def __enter__(self) -> "TracingProcessExecutor":
+        return self
+
+    def __exit__(self, exc_type: Any, exc_val: Any, exc_tb: Any) -> None:
+        self.shutdown(wait=True)
+
+
+class _MergingFuture:
+    """Future wrapper that merges worker spans into parent on result().
+
+    This is transparent to the caller — they get the actual return
+    value, and spans are silently merged into the parent trace.
+    """
+
+    def __init__(self, future: Any, recorder: Any) -> None:
+        self._future = future
+        self._recorder = recorder
+
+    def result(self, timeout: Optional[float] = None) -> Any:
+        """Get the result and merge worker spans."""
+        worker_result = self._future.result(timeout=timeout)
+        _merge_worker_spans(self._recorder, worker_result)
+        return worker_result["return_value"]
+
+    def done(self) -> bool:
+        return self._future.done()
+
+    def cancel(self) -> bool:
+        return self._future.cancel()
+
+    def exception(self, timeout: Optional[float] = None) -> Any:
+        return self._future.exception(timeout=timeout)
+
+
+def _process_worker(
+    fn: Any,
+    args: tuple,
+    kwargs: dict,
+    parent_context: tuple[str, ...],
+    task_name: str,
+) -> dict:
+    """Run fn in a worker process with a local recorder.
+
+    Creates a fresh recorder, restores parent context,
+    runs the function, and returns both the result and
+    any spans created for merging back.
+
+    This function must be module-level (picklable).
+    """
+    from agentguard.sdk.recorder import init_recorder, finish_recording
+
+    init_recorder(task=task_name or "worker", trigger="process_pool")
+    recorder = get_recorder()
+    recorder.restore_context(parent_context)
+
+    error = None
+    return_value = None
+    try:
+        return_value = fn(*args, **kwargs)
+    except Exception as e:
+        error = str(e)
+
+    trace = finish_recording()
+    span_dicts = [_span_to_dict(s) for s in trace.spans]
+
+    return {
+        "return_value": return_value,
+        "error": error,
+        "spans": span_dicts,
+    }
+
+
+def _span_to_dict(span: Any) -> dict:
+    """Serialize a span to a picklable dict for cross-process transfer."""
+    return {
+        "span_id": span.span_id,
+        "name": span.name,
+        "span_type": span.span_type.value if span.span_type else "agent",
+        "parent_span_id": span.parent_span_id,
+        "started_at": span.started_at,
+        "ended_at": span.ended_at,
+        "status": span.status.value if span.status else "completed",
+        "error": span.error,
+        "metadata": dict(span.metadata) if span.metadata else {},
+        "input_data": span.input_data,
+        "output_data": span.output_data,
+    }
+
+
+def _merge_worker_spans(recorder: Any, worker_result: dict) -> None:
+    """Merge spans from a worker process into the parent recorder.
+
+    Reconstructs Span objects from serialized dicts and adds them
+    to the active trace. Preserves parent_span_id for correct nesting.
+    """
+    from agentguard.core.trace import Span, SpanType, SpanStatus
+
+    if not recorder.trace:
+        return
+
+    for sd in worker_result.get("spans", []):
+        span = Span(
+            span_id=sd["span_id"],
+            name=sd["name"],
+            span_type=SpanType(sd["span_type"]),
+            parent_span_id=sd.get("parent_span_id"),
+            started_at=sd.get("started_at"),
+            ended_at=sd.get("ended_at"),
+            status=SpanStatus(sd["status"]),
+            error=sd.get("error"),
+            metadata=sd.get("metadata", {}),
+            input_data=sd.get("input_data"),
+            output_data=sd.get("output_data"),
+        )
+        recorder.trace.add_span(span)
+
+    if worker_result.get("error"):
+        raise RuntimeError(f"Worker failed: {worker_result['error']}")
+
+
 def traced_task(
     coro: Any,
     name: Optional[str] = None,
