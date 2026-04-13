@@ -189,8 +189,11 @@ def detect_patterns(trace: ExecutionTrace) -> list[dict]:
     - Repeated failures (same agent failing multiple times)
     - Retry storms (many retries in sequence)
     - Slow chains (consistently slow agents)
+    - Failure clusters (multiple failures under same parent)
+    - Timing clusters (agents with similar durations)
     """
     patterns = []
+    span_map = {s.span_id: s for s in trace.spans}
     
     # Pattern 1: Repeated failures by same agent
     failure_counts: dict[str, int] = {}
@@ -236,6 +239,40 @@ def detect_patterns(trace: ExecutionTrace) -> list[dict]:
                     "description": f"Agent '{name}' is {dur/avg_dur:.1f}x slower than average ({dur:.0f}ms vs {avg_dur:.0f}ms)",
                 })
     
+    # Pattern 4: Failure cluster — multiple failures under same parent
+    parent_failures: dict[str, list[str]] = {}
+    for s in trace.spans:
+        if s.status == SpanStatus.FAILED and s.parent_span_id:
+            parent_failures.setdefault(s.parent_span_id, []).append(s.name)
+    for pid, failed_names in parent_failures.items():
+        if len(failed_names) >= 2:
+            parent_name = span_map.get(pid)
+            pname = parent_name.name if parent_name else pid
+            patterns.append({
+                "name": f"failure_cluster:{pname}",
+                "type": "failure_cluster",
+                "parent": pname,
+                "failed_children": failed_names,
+                "count": len(failed_names),
+                "description": f"{len(failed_names)} failures under '{pname}': {', '.join(failed_names)}",
+            })
+
+    # Pattern 5: Timing cluster — agents with similar durations (within 10%)
+    if len(agent_durations) >= 3:
+        from itertools import combinations
+        clusters = []
+        for (n1, d1), (n2, d2) in combinations(agent_durations, 2):
+            if d1 > 0 and d2 > 0 and abs(d1 - d2) / max(d1, d2) < 0.1:
+                clusters.append((n1, n2, d1, d2))
+        if clusters:
+            patterns.append({
+                "name": "timing_cluster",
+                "type": "timing_cluster",
+                "pairs": [(n1, n2) for n1, n2, _, _ in clusters],
+                "count": len(clusters),
+                "description": f"{len(clusters)} agent pairs with similar timing (within 10%)",
+            })
+
     return patterns
 
 
