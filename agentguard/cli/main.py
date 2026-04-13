@@ -554,6 +554,43 @@ def cmd_score(args):
     print(score.to_report())
 
 
+def cmd_summary(args):
+    """Print a one-line health summary of a trace (like git status)."""
+    trace = _load_trace_file(args.file)
+    line = _format_summary_line(trace)
+    print(line)
+
+
+def _format_summary_line(trace) -> str:
+    """Build a single-line trace health summary.
+
+    Format: [GRADE] task — duration · agents · failures · score
+    Example: [A] user lookup — 2.1s · 3 agents · 0 failures · 95/100
+    """
+    from agentguard.scoring import score_trace
+    from agentguard.analysis import analyze_failures
+
+    score = score_trace(trace)
+    failures = analyze_failures(trace)
+    dur = trace.duration_ms
+    dur_str = f"{dur/1000:.1f}s" if dur and dur >= 1000 else f"{dur:.0f}ms" if dur else "?"
+    n_agents = len(trace.agent_spans)
+    n_failed = failures.total_failed_spans
+    status = trace.status.value if trace.status else "unknown"
+
+    grade_colors = {"A": C.GREEN, "B": C.GREEN, "C": C.YELLOW, "D": C.RED, "F": C.RED}
+    gc = grade_colors.get(score.grade, C.DIM)
+    status_icon = "✅" if status == "completed" else "❌" if status == "failed" else "⏳"
+
+    return (
+        f"{gc}[{score.grade}]{C.RESET} "
+        f"{status_icon} {C.BOLD}{trace.task}{C.RESET} — "
+        f"{dur_str} · {n_agents} agents · "
+        f"{C.RED if n_failed else C.GREEN}{n_failed} failures{C.RESET} · "
+        f"{gc}{score.overall:.0f}/100{C.RESET}"
+    )
+
+
 def cmd_aggregate(args):
     """Aggregate analysis across multiple traces."""
     import os, json
@@ -938,6 +975,9 @@ def main():
     p.add_argument("trace_a", help="First trace file")
     p.add_argument("trace_b", help="Second trace file")
     
+    p = sub.add_parser("summary", help="One-line trace health summary")
+    p.add_argument("file", help="Path to trace JSON file")
+
     # analyze
     p = sub.add_parser("analyze", help="Analyze failure propagation and flow")
     p.add_argument("file", help="Path to trace JSON file")
@@ -1038,7 +1078,7 @@ def main():
     
     args = parser.parse_args()
     
-    cmds = {"init": cmd_init, "doctor": cmd_doctor, "show": cmd_show, "list": cmd_list, "search": cmd_search, "eval": cmd_eval, "merge": cmd_merge, "merge-dir": cmd_merge_dir, "validate": cmd_validate, "diff": cmd_diff, "analyze": cmd_analyze, "propagation": cmd_propagation, "flowgraph": cmd_flowgraph, "context-flow": cmd_context_flow, "span-diff": cmd_span_diff, "sla": cmd_sla, "dependencies": cmd_dependencies, "benchmark": cmd_benchmark, "generate": cmd_generate, "summarize": cmd_summarize, "tree": cmd_tree, "compare": cmd_compare, "timeline": cmd_timeline, "metrics": cmd_metrics, "schema": cmd_schema, "score": cmd_score, "aggregate": cmd_aggregate, "annotate": cmd_annotate, "correlate": cmd_correlate, "version": cmd_version, "report": cmd_report, "guard": cmd_guard}
+    cmds = {"init": cmd_init, "doctor": cmd_doctor, "show": cmd_show, "list": cmd_list, "search": cmd_search, "eval": cmd_eval, "merge": cmd_merge, "merge-dir": cmd_merge_dir, "validate": cmd_validate, "diff": cmd_diff, "analyze": cmd_analyze, "propagation": cmd_propagation, "flowgraph": cmd_flowgraph, "context-flow": cmd_context_flow, "span-diff": cmd_span_diff, "sla": cmd_sla, "dependencies": cmd_dependencies, "benchmark": cmd_benchmark, "generate": cmd_generate, "summarize": cmd_summarize, "tree": cmd_tree, "compare": cmd_compare, "timeline": cmd_timeline, "metrics": cmd_metrics, "schema": cmd_schema, "score": cmd_score, "summary": cmd_summary, "aggregate": cmd_aggregate, "annotate": cmd_annotate, "correlate": cmd_correlate, "version": cmd_version, "report": cmd_report, "guard": cmd_guard}
     if args.command in cmds:
         cmds[args.command](args)
     else:
