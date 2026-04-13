@@ -204,128 +204,130 @@ def _classify_severity(
     return "recoverable", "Trace succeeded despite failure"
 
 
+def _check_containment(
+    span_id: str, chain: CausalChain,
+    parent_map: dict[str, str], span_map: dict[str, Any],
+    failed_ids: set[str], cb_counts: dict[str, int],
+) -> None:
+    """Check if a failed span's parent contained the failure (circuit breaker)."""
+    pid = parent_map.get(span_id)
+    if pid and pid in span_map:
+        parent = span_map[pid]
+        if parent.status == SpanStatus.COMPLETED and span_id in failed_ids and not chain.contained:
+            chain.contained = True
+            chain.contained_by = parent.name
+            cb_counts[pid] = cb_counts.get(pid, 0) + 1
+
+
+def _trace_causal_chain(
+    rc_id: str,
+    span_map: dict[str, Any],
+    children_map: dict[str, list[str]],
+    parent_map: dict[str, str],
+    failed_ids: set[str],
+) -> tuple[CausalChain, set[str], dict[str, int]]:
+    """Trace a single causal chain from a root cause failure.
+
+    BFS through children to find all affected descendants.
+    Detects circuit breakers (parents that contain failures).
+
+    Returns:
+        (chain, affected_ids, circuit_breaker_counts)
+    """
+    rc_span = span_map[rc_id]
+    chain = CausalChain(
+        root_span_id=rc_id, root_span_name=rc_span.name,
+        root_error=rc_span.error or "unknown",
+    )
+    affected: set[str] = {rc_id}
+    cb_counts: dict[str, int] = {}
+    queue = [(rc_id, 0)]
+    visited = {rc_id}
+    max_depth = 0
+    while queue:
+        current_id, depth = queue.pop(0)
+        current = span_map.get(current_id)
+        if not current:
+            continue
+        for child_id in children_map.get(current_id, []):
+            if child_id in visited:
+                continue
+            visited.add(child_id)
+            child = span_map.get(child_id)
+            if not child or child.span_id not in failed_ids:
+                continue
+            conf = _compute_link_confidence(current, child, span_map)
+            chain.links.append(CausalLink(
+                from_span_id=current_id, from_span_name=current.name,
+                to_span_id=child_id, to_span_name=child.name,
+                relationship="cascade", confidence=conf,
+            ))
+            chain.affected_span_ids.append(child_id)
+            affected.add(child_id)
+            max_depth = max(max_depth, depth + 1)
+            queue.append((child_id, depth + 1))
+        _check_containment(current_id, chain, parent_map, span_map, failed_ids, cb_counts)
+    chain.depth = max_depth
+    return chain, affected, cb_counts
+
+
+def _build_circuit_breakers(
+    cb_counts: dict[str, int],
+    span_map: dict[str, Any],
+) -> list[dict]:
+    """Build circuit breaker report from aggregated counts."""
+    breakers = []
+    for cb_id, count in sorted(cb_counts.items(), key=lambda x: -x[1]):
+        cb = span_map.get(cb_id)
+        if cb:
+            breakers.append({"span_id": cb_id, "name": cb.name, "contained_count": count})
+    return breakers
+
+
 def analyze_propagation(trace: ExecutionTrace) -> PropagationAnalysis:
     """Analyze how failures propagate through the span tree.
 
-    Builds full causal chains from each root cause to all affected spans,
-    identifies circuit breakers (spans that catch and contain failures),
-    and computes containment metrics.
+    Builds causal chains, identifies circuit breakers, computes containment.
     """
     span_map = {s.span_id: s for s in trace.spans}
     children_map: dict[str, list[str]] = {}
     parent_map: dict[str, str] = {}
-
     for s in trace.spans:
         if s.parent_span_id:
             parent_map[s.span_id] = s.parent_span_id
             children_map.setdefault(s.parent_span_id, []).append(s.span_id)
 
     failed_ids = {s.span_id for s in trace.spans if s.status == SpanStatus.FAILED}
-
     if not failed_ids:
         return PropagationAnalysis(
             causal_chains=[], circuit_breakers=[],
             total_failures=0, total_affected=0, max_depth=0, containment_rate=1.0,
         )
 
-    # Find root cause failures: failed spans whose parent didn't fail
-    root_causes = []
-    for sid in failed_ids:
-        parent_id = parent_map.get(sid)
-        if parent_id is None or parent_id not in failed_ids:
-            root_causes.append(sid)
+    root_causes = [sid for sid in failed_ids
+                   if parent_map.get(sid) is None or parent_map.get(sid) not in failed_ids]
 
-    # For each root cause, trace the full propagation chain
     all_affected: set[str] = set()
     chains: list[CausalChain] = []
-    circuit_breaker_counts: dict[str, int] = {}
-
+    all_cb: dict[str, int] = {}
     for rc_id in root_causes:
-        rc_span = span_map[rc_id]
-        chain = CausalChain(
-            root_span_id=rc_id,
-            root_span_name=rc_span.name,
-            root_error=rc_span.error or "unknown",
-        )
-
-        # BFS to find all affected descendants
-        queue = [(rc_id, 0)]
-        visited = {rc_id}
-        max_depth = 0
-
-        while queue:
-            current_id, depth = queue.pop(0)
-            current = span_map.get(current_id)
-            if not current:
-                continue
-
-            for child_id in children_map.get(current_id, []):
-                if child_id in visited:
-                    continue
-                visited.add(child_id)
-                child = span_map.get(child_id)
-                if not child:
-                    continue
-
-                if child.span_id in failed_ids:
-                    # Failure propagated to this child
-                    conf = _compute_link_confidence(current, child, span_map)
-                    chain.links.append(CausalLink(
-                        from_span_id=current_id,
-                        from_span_name=current.name,
-                        to_span_id=child_id,
-                        to_span_name=child.name,
-                        relationship="cascade",
-                        confidence=conf,
-                    ))
-                    chain.affected_span_ids.append(child_id)
-                    all_affected.add(child_id)
-                    max_depth = max(max_depth, depth + 1)
-                    queue.append((child_id, depth + 1))
-                elif current_id in failed_ids:
-                    # Parent failed but this child succeeded — circuit breaker pattern
-                    # (child handled the failure or was independent)
-                    pass
-
-            # Check if parent contained this failure
-            parent_id = parent_map.get(current_id)
-            if parent_id and parent_id in span_map:
-                parent = span_map[parent_id]
-                if parent.status == SpanStatus.COMPLETED and current_id in failed_ids:
-                    # Parent succeeded despite child failure = containment
-                    if not chain.contained:
-                        chain.contained = True
-                        chain.contained_by = parent.name
-                        circuit_breaker_counts[parent_id] = circuit_breaker_counts.get(parent_id, 0) + 1
-
-        chain.depth = max_depth
-        all_affected.add(rc_id)
+        chain, affected, cb = _trace_causal_chain(
+            rc_id, span_map, children_map, parent_map, failed_ids)
         chains.append(chain)
+        all_affected.update(affected)
+        for k, v in cb.items():
+            all_cb[k] = all_cb.get(k, 0) + v
 
-    # Build circuit breaker report
-    circuit_breakers = []
-    for cb_id, count in sorted(circuit_breaker_counts.items(), key=lambda x: -x[1]):
-        cb = span_map.get(cb_id)
-        if cb:
-            circuit_breakers.append({
-                "span_id": cb_id,
-                "name": cb.name,
-                "contained_count": count,
-            })
-
-    contained_count = sum(1 for c in chains if c.contained)
-
-    # Classify severity: recoverable vs fatal
     for chain in chains:
         chain.severity, chain.severity_reason = _classify_severity(chain, trace)
 
     return PropagationAnalysis(
         causal_chains=chains,
-        circuit_breakers=circuit_breakers,
+        circuit_breakers=_build_circuit_breakers(all_cb, span_map),
         total_failures=len(failed_ids),
         total_affected=len(all_affected),
         max_depth=max((c.depth for c in chains), default=0),
-        containment_rate=contained_count / max(len(chains), 1),
+        containment_rate=sum(1 for c in chains if c.contained) / max(len(chains), 1),
     )
 
 
@@ -385,104 +387,90 @@ def hypothetical_failure(trace: ExecutionTrace, span_id: str) -> dict:
     }
 
 
-def analyze_handoff_chains(trace: ExecutionTrace) -> dict:
-    """Analyze sequences of handoffs to detect patterns.
+def _build_handoff_chains(handoff_spans: list) -> list[list[dict]]:
+    """Group time-sorted handoff spans into connected chains.
 
-    Looks at the full chain of handoffs (A→B→C→D) to identify:
-    - Context degradation over the chain (progressive loss)
-    - Handoff frequency (too many handoffs = overhead)
-    - Critical handoff points (where most context is lost)
-
-    Returns:
-        Dict with: chains, total_handoffs, degradation_score, critical_handoff
+    Two handoffs are in the same chain if the first's 'to' agent
+    matches the second's 'from' agent.
     """
-    handoff_spans = [s for s in trace.spans if s.span_type == SpanType.HANDOFF]
-
-    if not handoff_spans:
-        return {
-            "chains": [],
-            "total_handoffs": 0,
-            "degradation_score": 0.0,
-            "critical_handoff": None,
-        }
-
-    # Sort by time
-    handoff_spans.sort(key=lambda s: s.started_at or "")
-
-    # Build chains: connected sequences of handoffs
     chains: list[list[dict]] = []
-    current_chain: list[dict] = []
-
+    current: list[dict] = []
     for h in handoff_spans:
-        fr = h.handoff_from or ""
-        to = h.handoff_to or ""
-        ctx_size = h.context_size_bytes or 0
-        utilization = h.metadata.get("handoff.utilization", 1.0)
-
         entry = {
-            "from": fr,
-            "to": to,
-            "context_size_bytes": ctx_size,
-            "utilization": utilization,
+            "from": h.handoff_from or "",
+            "to": h.handoff_to or "",
+            "context_size_bytes": h.context_size_bytes or 0,
+            "utilization": h.metadata.get("handoff.utilization", 1.0),
             "dropped_keys": h.context_dropped_keys or [],
         }
-
-        if current_chain and current_chain[-1]["to"] == fr:
-            current_chain.append(entry)
+        if current and current[-1]["to"] == entry["from"]:
+            current.append(entry)
         else:
-            if current_chain:
-                chains.append(current_chain)
-            current_chain = [entry]
+            if current:
+                chains.append(current)
+            current = [entry]
+    if current:
+        chains.append(current)
+    return chains
 
-    if current_chain:
-        chains.append(current_chain)
 
-    # Calculate degradation: how much context is lost across each chain
-    chain_reports = []
+def _analyze_chain_degradation(
+    chains: list[list[dict]],
+) -> tuple[list[dict], dict | None]:
+    """Compute per-chain reports and find the critical handoff (most loss).
+
+    Returns:
+        (chain_reports, critical_handoff)
+    """
+    reports = []
     max_loss = 0
-    critical_handoff = None
-
+    critical = None
     for chain in chains:
-        if len(chain) < 1:
+        if not chain:
             continue
-
-        first_size = chain[0]["context_size_bytes"]
-        last_size = chain[-1]["context_size_bytes"]
-
         agents = [chain[0]["from"]] + [h["to"] for h in chain]
-        total_dropped = []
-        for h in chain:
-            total_dropped.extend(h["dropped_keys"])
-
-        avg_utilization = sum(h["utilization"] for h in chain) / len(chain)
-
-        chain_reports.append({
-            "agents": agents,
-            "length": len(chain),
-            "start_size_bytes": first_size,
-            "end_size_bytes": last_size,
-            "total_keys_dropped": len(total_dropped),
-            "dropped_keys": total_dropped,
-            "avg_utilization": round(avg_utilization, 2),
+        dropped = [k for h in chain for k in h["dropped_keys"]]
+        avg_util = sum(h["utilization"] for h in chain) / len(chain)
+        reports.append({
+            "agents": agents, "length": len(chain),
+            "start_size_bytes": chain[0]["context_size_bytes"],
+            "end_size_bytes": chain[-1]["context_size_bytes"],
+            "total_keys_dropped": len(dropped),
+            "dropped_keys": dropped,
+            "avg_utilization": round(avg_util, 2),
         })
-
-        # Find the handoff with most context loss
         for h in chain:
             loss = len(h["dropped_keys"])
             if loss > max_loss:
                 max_loss = loss
-                critical_handoff = {"from": h["from"], "to": h["to"], "keys_dropped": h["dropped_keys"]}
+                critical = {"from": h["from"], "to": h["to"], "keys_dropped": h["dropped_keys"]}
+    return reports, critical
 
-    # Degradation score: 0 = no degradation, 1 = total loss
-    total_dropped_all = sum(len(h.context_dropped_keys or []) for h in handoff_spans)
-    total_sent_all = sum(len(h.metadata.get("handoff.context_keys", [])) for h in handoff_spans)
-    degradation = total_dropped_all / max(total_sent_all, 1)
+
+def analyze_handoff_chains(trace: ExecutionTrace) -> dict:
+    """Analyze sequences of handoffs to detect degradation patterns.
+
+    Identifies context degradation over chains, handoff frequency,
+    and critical handoff points where most context is lost.
+    """
+    handoff_spans = sorted(
+        [s for s in trace.spans if s.span_type == SpanType.HANDOFF],
+        key=lambda s: s.started_at or "",
+    )
+    if not handoff_spans:
+        return {"chains": [], "total_handoffs": 0, "degradation_score": 0.0, "critical_handoff": None}
+
+    chains = _build_handoff_chains(handoff_spans)
+    reports, critical = _analyze_chain_degradation(chains)
+
+    total_dropped = sum(len(h.context_dropped_keys or []) for h in handoff_spans)
+    total_sent = sum(len(h.metadata.get("handoff.context_keys", [])) for h in handoff_spans)
 
     return {
-        "chains": chain_reports,
+        "chains": reports,
         "total_handoffs": len(handoff_spans),
-        "degradation_score": round(degradation, 2),
-        "critical_handoff": critical_handoff,
+        "degradation_score": round(total_dropped / max(total_sent, 1), 2),
+        "critical_handoff": critical,
     }
 
 
