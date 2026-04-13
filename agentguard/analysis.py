@@ -13,7 +13,7 @@ Given a multi-agent execution trace, these functions answer:
 from __future__ import annotations
 
 from dataclasses import dataclass, field
-from typing import Any, Optional
+from typing import Any, Callable, Optional
 
 from agentguard.core.trace import ExecutionTrace, Span, SpanType, SpanStatus
 
@@ -1080,19 +1080,43 @@ def _generate_cost_recommendations(
     return recs[:5]  # Cap at 5 recommendations
 
 
-def analyze_cost_yield(trace: ExecutionTrace) -> CostYieldReport:
-    """Compare token spend per agent vs output quality.
+def _default_yield_score(succeeded: bool, has_output: bool, output_size: int) -> float:
+    """Default yield scoring: completion + output quality."""
+    score = 0.0
+    if succeeded:
+        score += 50
+    if has_output:
+        score += 30
+    if output_size > 100:
+        score += 10
+    if output_size > 1000:
+        score += 10
+    return score
+
+
+def analyze_cost_yield(
+    trace: ExecutionTrace,
+    cost_fn: Optional[Callable] = None,
+    yield_fn: Optional[Callable] = None,
+) -> CostYieldReport:
+    """Compare cost per agent vs output quality.
 
     Answers Q4: "Which execution path has the highest cost but worst yield?"
 
     For each agent computes:
-    - Cost (tokens + USD)
-    - Yield score (composite of: completed? has output? output size)
+    - Cost (via cost_fn or default: estimated_cost_usd + token heuristic)
+    - Yield score (via yield_fn or default: completion + output quality)
     - Cost-per-success ratio
     - Tokens-per-ms efficiency
 
     Args:
         trace: The execution trace to analyze.
+        cost_fn: Optional custom cost function (span) -> float.
+            Receives a Span, returns cost as float. Overrides default
+            token/USD calculation. Example: lambda s: s.duration_ms * 0.001
+        yield_fn: Optional custom yield function (span) -> float.
+            Receives a Span, returns yield score 0-100. Overrides default
+            completion/output-based scoring.
 
     Returns:
         CostYieldReport with per-agent breakdown and summary.
@@ -1102,7 +1126,7 @@ def analyze_cost_yield(trace: ExecutionTrace) -> CostYieldReport:
     entries = []
     for s in trace.agent_spans:
         tokens = s.token_count or 0
-        cost = s.estimated_cost_usd or 0.0
+        cost = cost_fn(s) if cost_fn else (s.estimated_cost_usd or 0.0)
         dur = s.duration_ms or 0.0
         succeeded = s.status == SpanStatus.COMPLETED
         has_output = s.output_data is not None
@@ -1116,15 +1140,10 @@ def analyze_cost_yield(trace: ExecutionTrace) -> CostYieldReport:
                 output_size = 0
 
         # Yield score: 0-100 composite
-        yield_score = 0.0
-        if succeeded:
-            yield_score += 50  # completed
-        if has_output:
-            yield_score += 30  # produced output
-        if output_size > 100:
-            yield_score += 10  # substantial output
-        if output_size > 1000:
-            yield_score += 10  # rich output
+        if yield_fn:
+            yield_score = yield_fn(s)
+        else:
+            yield_score = _default_yield_score(succeeded, has_output, output_size)
 
         cost_per_success = cost if succeeded and cost > 0 else (float("inf") if not succeeded else 0.0)
         tokens_per_ms = tokens / max(dur, 1)
