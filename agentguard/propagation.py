@@ -79,6 +79,26 @@ class CausalChain:
 
 
 @dataclass
+class RetryStorm:
+    """A retry storm: agent retries 3+ times, wasting downstream resources."""
+    span_name: str
+    retry_count: int
+    wasted_duration_ms: float  # time spent on failed retries
+    wasted_cost_usd: float  # cost of failed retry attempts
+    downstream_affected: int  # spans triggered by retries
+
+    def to_dict(self) -> dict:
+        """Serialize to dictionary."""
+        return {
+            "span_name": self.span_name,
+            "retry_count": self.retry_count,
+            "wasted_duration_ms": round(self.wasted_duration_ms, 1),
+            "wasted_cost_usd": round(self.wasted_cost_usd, 6),
+            "downstream_affected": self.downstream_affected,
+        }
+
+
+@dataclass
 class PropagationAnalysis:
     """Full failure propagation analysis for a trace."""
     causal_chains: list[CausalChain]
@@ -87,6 +107,7 @@ class PropagationAnalysis:
     total_affected: int  # unique spans affected by any failure chain
     max_depth: int  # deepest failure chain
     containment_rate: float  # fraction of root causes that were contained
+    retry_storms: list[RetryStorm] = field(default_factory=list)
 
     def to_dict(self) -> dict:
         return {
@@ -96,6 +117,7 @@ class PropagationAnalysis:
             "total_affected": self.total_affected,
             "max_depth": self.max_depth,
             "containment_rate": round(self.containment_rate, 2),
+            "retry_storms": [s.to_dict() for s in self.retry_storms],
         }
 
     def to_report(self) -> str:
@@ -106,8 +128,17 @@ class PropagationAnalysis:
             f"- **Total affected spans:** {self.total_affected}",
             f"- **Max propagation depth:** {self.max_depth}",
             f"- **Containment rate:** {self.containment_rate:.0%}",
+            f"- **Retry storms:** {len(self.retry_storms)}",
             "",
         ]
+        for storm in self.retry_storms:
+            lines.append(
+                f"⚡ **Retry storm: {storm.span_name}** — "
+                f"{storm.retry_count} retries, wasted {storm.wasted_duration_ms:.0f}ms "
+                f"(${storm.wasted_cost_usd:.4f}), {storm.downstream_affected} downstream"
+            )
+        if self.retry_storms:
+            lines.append("")
         for chain in self.causal_chains:
             icon = "🟡" if chain.contained else "🔴"
             lines.append(f"{icon} **{chain.root_span_name}**: {chain.root_error}")
@@ -282,6 +313,48 @@ def _build_circuit_breakers(
         if cb:
             breakers.append({"span_id": cb_id, "name": cb.name, "contained_count": count})
     return breakers
+
+
+def _detect_retry_storms(
+    trace: ExecutionTrace,
+    children_map: dict[str, list],
+) -> list[RetryStorm]:
+    """Detect retry storms: spans with 3+ retries that waste downstream resources.
+
+    A retry storm occurs when an agent/tool retries excessively, and each
+    retry may trigger downstream work (children of the retrying span's parent).
+
+    Args:
+        trace: The execution trace.
+        children_map: Map of span_id → child spans.
+
+    Returns:
+        List of detected retry storms with wasted cost estimates.
+    """
+    storms = []
+    for s in trace.spans:
+        if s.retry_count < 3:
+            continue
+        # Wasted time: retry_count * average duration (heuristic)
+        avg_dur = (s.duration_ms or 0) / max(s.retry_count, 1)
+        wasted_dur = avg_dur * (s.retry_count - 1)  # all but last attempt
+        wasted_cost = (s.estimated_cost_usd or 0) * ((s.retry_count - 1) / max(s.retry_count, 1))
+        # Count downstream: siblings that started after this span
+        downstream = 0
+        if s.parent_span_id:
+            siblings = children_map.get(s.parent_span_id, [])
+            for sib in siblings:
+                if sib.span_id != s.span_id and sib.started_at and s.ended_at:
+                    if sib.started_at >= s.started_at:
+                        downstream += 1
+        storms.append(RetryStorm(
+            span_name=s.name,
+            retry_count=s.retry_count,
+            wasted_duration_ms=wasted_dur,
+            wasted_cost_usd=wasted_cost,
+            downstream_affected=downstream,
+        ))
+    return storms
 
 
 def analyze_propagation(trace: ExecutionTrace) -> PropagationAnalysis:
