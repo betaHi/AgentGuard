@@ -7,7 +7,7 @@
 - [x] Q2: handoff should track context transformation — not just keys sent/received but semantic changes (summarization, filtering)
 - [x] Q3: failure propagation should distinguish recoverable vs fatal failures in the causal chain
 - [x] Q4: cost-yield should support custom cost models (not just token count) — allow user-defined cost functions
-- [ ] Q5: decision analysis should suggest optimal agent selection based on historical performance
+- [x] Q5: decision analysis should suggest optimal agent selection based on historical performance
 
 ### P1: Viewer & CLI polish
 - [ ] Viewer: add collapsible sections in diagnostics panel (expand/collapse each analysis)
