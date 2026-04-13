@@ -20,7 +20,7 @@
 - [x] Refactor: viewer.py — break _build_diagnostics (159 lines) into per-panel helpers: _panel_failures(), _panel_bottleneck(), _panel_handoffs(), _panel_context(), _panel_cost(), _panel_retries(), _panel_errors(), _panel_decisions(), _panel_propagation(). Each ≤50 lines
 - [x] Refactor: viewer.py — break _build_sidebar (93 lines) and _build_gantt (91 lines) and _render_gantt_rows (81 lines) into ≤50-line helpers each
 - [x] Refactor: flowgraph.py — break build_flow_graph (207 lines!) into helpers: _extract_nodes(), _extract_edges(), _detect_phases(), _find_critical_path(), _build_mermaid(). Each ≤50 lines
-- [ ] Refactor: propagation.py — break analyze_propagation (123 lines) and analyze_handoff_chains (99 lines) into ≤50-line helpers
+- [x] Refactor: propagation.py — break analyze_propagation (123 lines) and analyze_handoff_chains (99 lines) into ≤50-line helpers
 - [ ] Refactor: scoring.py — break score_trace (156 lines) into per-dimension helpers: _score_performance(), _score_reliability(), _score_handoff_quality(), _score_cost_efficiency(), _score_decision_quality(). Each ≤50 lines
 - [ ] Refactor: context_flow.py — break analyze_context_flow_deep (153 lines) into helpers: _build_snapshots(), _detect_transitions(), _compute_bandwidth(). Each ≤50 lines. Also fix false positive: parallel agents should NOT report truncation between independent siblings (currently parallel_pipeline.py output still shows false truncation from this module even though analysis.py is fixed)
 - [ ] Refactor: cli/main.py — break main() (168 lines) into subcommand dispatch table + per-command small functions. Extract common patterns (load trace, print error) into helpers
