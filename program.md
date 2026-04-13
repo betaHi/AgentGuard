@@ -8,7 +8,7 @@
 - [x] Test: verify cost-yield analysis returns non-zero costs when agents report cost in output_data
 
 ### P1: Context Flow false positives in parallel pipelines
-- [ ] Fix: parallel_pipeline.py context flow reports truncation between parallel agents (web_researcher → academic_researcher: -85%) — these are independent parallel agents, NOT a handoff chain. Context flow should only analyze actual handoff pairs, not sequential siblings
+- [x] Fix: parallel_pipeline.py context flow reports truncation between parallel agents (web_researcher → academic_researcher: -85%) — these are independent parallel agents, NOT a handoff chain. Context flow should only analyze actual handoff pairs, not sequential siblings
 - [ ] Test: parallel pipeline context flow should NOT report truncation between independent parallel agents
 
 ### P2: deep_analysis_demo duration is 0ms
