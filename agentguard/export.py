@@ -112,109 +112,97 @@ def export_otel_spans(trace: ExecutionTrace) -> list[dict]:
 
 
 
+def _iso_to_unix_nano(iso: str | None) -> int:
+    """Convert ISO 8601 timestamp to Unix nanoseconds for OTel."""
+    if not iso:
+        return 0
+    try:
+        from datetime import datetime
+        dt = datetime.fromisoformat(iso)
+        return int(dt.timestamp() * 1e9)
+    except (ValueError, TypeError):
+        return 0
+
+
+def _attrs_to_otel(attributes: dict) -> list[dict]:
+    """Convert flat dict to OTel attribute list format."""
+    result = []
+    for k, v in attributes.items():
+        if isinstance(v, bool):
+            result.append({"key": k, "value": {"boolValue": v}})
+        elif isinstance(v, int):
+            result.append({"key": k, "value": {"intValue": str(v)}})
+        elif isinstance(v, float):
+            result.append({"key": k, "value": {"doubleValue": v}})
+        elif isinstance(v, list):
+            str_vals = [{"stringValue": str(item)} for item in v]
+            result.append({"key": k, "value": {"arrayValue": {"values": str_vals}}})
+        else:
+            result.append({"key": k, "value": {"stringValue": str(v)}})
+    return result
+
+
+def _span_to_otel_attributes(span: Any, trace_task: str) -> dict:
+    """Build OTel attributes dict from a span, following GenAI conventions."""
+    attributes: dict = {
+        "agentguard.span_type": span.span_type.value,
+        "agentguard.task": trace_task,
+    }
+    if span.span_type.value == "agent":
+        attributes["gen_ai.operation.name"] = "invoke_agent"
+        attributes["gen_ai.agent.name"] = span.name
+        ver = span.metadata.get("agent_version")
+        if ver:
+            attributes["gen_ai.agent.version"] = ver
+    elif span.span_type.value == "tool":
+        attributes["gen_ai.operation.name"] = "execute_tool"
+        attributes["gen_ai.tool.name"] = span.name
+    elif span.span_type.value == "llm_call":
+        attributes["gen_ai.operation.name"] = "chat"
+        model = span.metadata.get("model")
+        if model:
+            attributes["gen_ai.request.model"] = model
+    elif span.span_type.value == "handoff":
+        attributes["agentguard.handoff.from"] = span.handoff_from or ""
+        attributes["agentguard.handoff.to"] = span.handoff_to or ""
+        if span.context_size_bytes is not None:
+            attributes["agentguard.handoff.context_size_bytes"] = span.context_size_bytes
+    if span.error:
+        attributes["error.message"] = span.error
+    for k, v in span.metadata.items():
+        if k not in ("agent_version", "model"):
+            attr_key = f"agentguard.{k}" if not k.startswith("agentguard.") else k
+            attributes[attr_key] = v
+    return attributes
+
+
+def _build_otel_span(span: Any, trace_id_hex: str, trace_task: str) -> dict:
+    """Convert a single span to OTel format."""
+    attributes = _span_to_otel_attributes(span, trace_task)
+    span_id_hex = span.span_id.replace("-", "")[:16].ljust(16, "0")
+    parent_hex = span.parent_span_id.replace("-", "")[:16].ljust(16, "0") if span.parent_span_id else ""
+    status_code = 1 if span.status.value == "completed" else 2
+    return {
+        "traceId": trace_id_hex,
+        "spanId": span_id_hex,
+        "parentSpanId": parent_hex,
+        "name": f"{span.span_type.value}:{span.name}",
+        "kind": "INTERNAL",
+        "startTimeUnixNano": _iso_to_unix_nano(span.started_at),
+        "endTimeUnixNano": _iso_to_unix_nano(span.ended_at),
+        "attributes": _attrs_to_otel(attributes),
+        "status": {"code": status_code, "message": span.error or ""},
+    }
+
+
 def export_otel(trace: ExecutionTrace, filepath: str | None = None) -> dict:
     """Export trace to OpenTelemetry JSON format (resourceSpans envelope).
 
-    Produces the standard OTel JSON structure that can be imported back
-    via ``importer.import_otel()`` or sent to any OTel-compatible collector.
-
     Uses nanosecond Unix timestamps and attribute list format per the
-    OTel specification.
-
-    Args:
-        trace: The execution trace to export.
-        filepath: Optional file path to write JSON output.
-
-    Returns:
-        Dict in OTel ``resourceSpans`` format.
+    OTel specification. Compatible with any OTel collector.
     """
-    from datetime import datetime
-
-    def _iso_to_unix_nano(iso: str | None) -> int:
-        if not iso:
-            return 0
-        try:
-            dt = datetime.fromisoformat(iso)
-            return int(dt.timestamp() * 1e9)
-        except (ValueError, TypeError):
-            return 0
-
-    def _attrs_to_otel(attributes: dict) -> list[dict]:
-        """Convert flat dict to OTel attribute list format."""
-        result = []
-        for k, v in attributes.items():
-            if isinstance(v, bool):
-                result.append({"key": k, "value": {"boolValue": v}})
-            elif isinstance(v, int):
-                result.append({"key": k, "value": {"intValue": str(v)}})
-            elif isinstance(v, float):
-                result.append({"key": k, "value": {"doubleValue": v}})
-            elif isinstance(v, list):
-                str_vals = [{"stringValue": str(item)} for item in v]
-                result.append({"key": k, "value": {"arrayValue": {"values": str_vals}}})
-            else:
-                result.append({"key": k, "value": {"stringValue": str(v)}})
-        return result
-
-    otel_spans = []
     trace_id_hex = trace.trace_id.replace("-", "")[:32].ljust(32, "0")
-
-    for span in trace.spans:
-        attributes = {
-            "agentguard.span_type": span.span_type.value,
-            "agentguard.task": trace.task,
-        }
-
-        if span.span_type.value == "agent":
-            attributes["gen_ai.operation.name"] = "invoke_agent"
-            attributes["gen_ai.agent.name"] = span.name
-            ver = span.metadata.get("agent_version")
-            if ver:
-                attributes["gen_ai.agent.version"] = ver
-        elif span.span_type.value == "tool":
-            attributes["gen_ai.operation.name"] = "execute_tool"
-            attributes["gen_ai.tool.name"] = span.name
-        elif span.span_type.value == "llm_call":
-            attributes["gen_ai.operation.name"] = "chat"
-            model = span.metadata.get("model")
-            if model:
-                attributes["gen_ai.request.model"] = model
-        elif span.span_type.value == "handoff":
-            attributes["agentguard.handoff.from"] = span.handoff_from or ""
-            attributes["agentguard.handoff.to"] = span.handoff_to or ""
-            if span.context_size_bytes is not None:
-                attributes["agentguard.handoff.context_size_bytes"] = span.context_size_bytes
-
-        if span.error:
-            attributes["error.message"] = span.error
-
-        for k, v in span.metadata.items():
-            if k not in ("agent_version", "model"):
-                attr_key = f"agentguard.{k}" if not k.startswith("agentguard.") else k
-                attributes[attr_key] = v
-
-        span_id_hex = span.span_id.replace("-", "")[:16].ljust(16, "0")
-        parent_hex = ""
-        if span.parent_span_id:
-            parent_hex = span.parent_span_id.replace("-", "")[:16].ljust(16, "0")
-
-        status_code = 1 if span.status.value == "completed" else 2  # 1=Ok, 2=Error
-
-        otel_span = {
-            "traceId": trace_id_hex,
-            "spanId": span_id_hex,
-            "parentSpanId": parent_hex,
-            "name": f"{span.span_type.value}:{span.name}",
-            "kind": "INTERNAL",
-            "startTimeUnixNano": _iso_to_unix_nano(span.started_at),
-            "endTimeUnixNano": _iso_to_unix_nano(span.ended_at),
-            "attributes": _attrs_to_otel(attributes),
-            "status": {
-                "code": status_code,
-                "message": span.error or "",
-            },
-        }
-        otel_spans.append(otel_span)
+    otel_spans = [_build_otel_span(s, trace_id_hex, trace.task) for s in trace.spans]
 
     result = {
         "resourceSpans": [{
