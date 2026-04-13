@@ -12,7 +12,7 @@
 ### Phase 2: Code Architecture (>50-line function refactoring)
 
 - [x] Refactor: analysis.py — break analyze_failures (103 lines) into helpers: _find_root_causes(), _compute_blast_radius(), _compute_resilience(). Each ≤50 lines
-- [ ] Refactor: analysis.py — break analyze_flow (100 lines) into helpers: _extract_handoffs(), _compute_flow_metrics(). Each ≤50 lines
+- [x] Refactor: analysis.py — break analyze_flow (100 lines) into helpers: _extract_handoffs(), _compute_flow_metrics(). Each ≤50 lines
 - [ ] Refactor: analysis.py — break analyze_bottleneck (86 lines) into helpers: _find_critical_path(), _rank_bottlenecks(). Each ≤50 lines
 - [ ] Refactor: analysis.py — break analyze_context_flow (110 lines) into helpers: _trace_context_points(), _detect_anomalies(). Each ≤50 lines
 - [ ] Refactor: analysis.py — break analyze_cost_yield (90 lines) into helpers: _compute_agent_costs(), _compute_yield_scores(), _generate_recommendations(). Each ≤50 lines
