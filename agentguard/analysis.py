@@ -757,6 +757,31 @@ def _detect_key_renames(
     return renames
 
 
+def _is_likely_handoff(
+    sender_keys: list[str], receiver_keys: list[str],
+    receiver_input: Any, sibling_count: int = 2,
+) -> bool:
+    """Determine if two sequential siblings have a handoff relationship.
+
+    Returns True if there's evidence the receiver depends on the sender's
+    output. Returns False only for clear fan-out patterns (3+ siblings
+    with completely disjoint data).
+
+    Why 3+ siblings: with only 2 siblings, we can't distinguish A→B handoff
+    from A||B parallelism, so we conservatively assume handoff.
+    With 3+ siblings under one parent and no shared keys, it's fan-out.
+    """
+    if not sender_keys or not receiver_keys:
+        return True  # ambiguous, allow analysis
+    shared = set(sender_keys) & set(receiver_keys)
+    if shared:
+        return True  # receiver uses sender's output keys
+    # Only skip for fan-out patterns (3+ parallel siblings)
+    if sibling_count >= 3:
+        return False
+    return True  # conservative: assume handoff for 2 siblings
+
+
 def analyze_context_flow(trace: ExecutionTrace) -> ContextFlowReport:
     """Analyze how context flows between agents via handoffs.
     
@@ -817,6 +842,12 @@ def analyze_context_flow(trace: ExecutionTrace) -> ContextFlowReport:
                 
                 s_keys = list(sender_output.keys()) if isinstance(sender_output, dict) else []
                 r_keys = list(receiver_input.keys()) if isinstance(receiver_input, dict) else []
+                
+                # Skip if no evidence of handoff: parallel agents with
+                # completely disjoint data are independent, not a chain.
+                if not _is_likely_handoff(s_keys, r_keys, receiver_input,
+                                          sibling_count=len(agents)):
+                    continue
                 s_size = len(_json.dumps(sender_output, default=str).encode())
                 r_size = len(_json.dumps(receiver_input, default=str).encode())
                 
