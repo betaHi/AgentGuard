@@ -7,6 +7,9 @@ including all agent invocations, tool calls, and their relationships.
 from __future__ import annotations
 
 import json
+import logging
+
+_trace_logger = logging.getLogger(__name__)
 import uuid
 from dataclasses import dataclass, field, asdict
 from datetime import datetime, timezone
@@ -294,16 +297,22 @@ class ExecutionTrace:
             "metadata": self.metadata,
         }
 
-    def to_json(self, indent: int = 2) -> str:
+    def to_json(self, indent: int = 2, truncate: bool = False) -> str:
         """Serialize the trace to a JSON string.
 
         Args:
             indent: Number of spaces for JSON indentation.
+            truncate: If True, truncate oversized span data fields.
 
         Returns:
-            Pretty-printed JSON string.
+            Pretty-printed JSON string. Warns if trace exceeds 10 MB.
         """
-        return json.dumps(self.to_dict(), indent=indent, ensure_ascii=False)
+        from agentguard.core.limits import check_trace_size, truncate_trace
+        d = self.to_dict()
+        check_trace_size(d)
+        if truncate:
+            d = truncate_trace(d)
+        return json.dumps(d, indent=indent, ensure_ascii=False)
 
     @classmethod
     def from_dict(cls, data: dict[str, Any]) -> ExecutionTrace:
