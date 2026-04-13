@@ -42,7 +42,7 @@
 
 ### Phase 5: Production Hardening
 
-- [ ] Add: pyproject.toml — add proper entry points, classifiers update to "4 - Beta", add project.urls for Documentation
+- [x] Add: pyproject.toml — add proper entry points, classifiers update to "4 - Beta", add project.urls for Documentation
 - [ ] Add: py.typed marker file for PEP 561 type checking support
 - [ ] Add: __version__ attribute in agentguard/__init__.py that reads from pyproject.toml
 - [ ] Fix: GitHub Actions — update to actions/checkout@v5 and actions/setup-python@v5 with FORCE_JAVASCRIPT_ACTIONS_TO_NODE24=true to fix Node.js deprecation warnings. Add matrix fail-fast: false so all Python versions run even if one fails. Add ruff format check
