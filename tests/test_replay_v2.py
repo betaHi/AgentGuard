@@ -4,7 +4,7 @@ import pytest
 
 from agentguard.builder import TraceBuilder
 from agentguard.core.trace import ExecutionTrace, SpanStatus, SpanType
-from agentguard.replay_v2 import TraceReplay, mutate_trace
+from agentguard.replay import TraceReplay, mutate_trace
 
 
 @pytest.fixture
@@ -95,7 +95,7 @@ import json
 import tempfile
 from pathlib import Path
 
-from agentguard.replay_v2 import compare_golden, replay_golden
+from agentguard.replay import compare_golden, replay_golden
 
 
 class TestGoldenReplay:

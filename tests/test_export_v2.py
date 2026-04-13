@@ -4,7 +4,7 @@ import pytest
 
 from agentguard.builder import TraceBuilder
 from agentguard.core.trace import ExecutionTrace, Span
-from agentguard.export_v2 import trace_to_csv, trace_to_table, traces_to_csv
+from agentguard.export import trace_to_csv, trace_to_table, traces_to_csv
 
 
 @pytest.fixture
