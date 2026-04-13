@@ -386,9 +386,85 @@ def cmd_diff(args):
     print()
 
 
+def _output_structured_json(trace) -> None:
+    """Output ALL analysis results as structured JSON.
+
+    Matches exactly what the HTML viewer renders, ensuring
+    CLI and viewer produce identical diagnostic data.
+    """
+    import json
+    from agentguard.analysis import (
+        analyze_failures, analyze_flow, analyze_bottleneck,
+        analyze_context_flow, analyze_retries, analyze_cost,
+        analyze_cost_yield, analyze_decisions,
+    )
+    from agentguard.propagation import analyze_propagation
+    from agentguard.scoring import score_trace
+
+    result = _build_analysis_dict(trace)
+    print(json.dumps(result, indent=2, default=str))
+
+
+def _build_analysis_dict(trace) -> dict:
+    """Build the complete analysis dictionary for JSON output."""
+    from agentguard.analysis import (
+        analyze_failures, analyze_flow, analyze_bottleneck,
+        analyze_context_flow, analyze_cost_yield, analyze_decisions,
+    )
+    from agentguard.propagation import analyze_propagation
+    from agentguard.scoring import score_trace
+
+    failures = analyze_failures(trace)
+    flow = analyze_flow(trace)
+    bn = analyze_bottleneck(trace) if trace.agent_spans else None
+    ctx = analyze_context_flow(trace)
+    cost_yield = analyze_cost_yield(trace)
+    decisions = analyze_decisions(trace)
+    propagation = analyze_propagation(trace)
+    score = score_trace(trace)
+
+    return {
+        "trace": _build_trace_metadata(trace),
+        "score": {"overall": score.overall, "grade": score.grade},
+        "failures": failures.to_dict(),
+        "flow": flow.to_dict(),
+        "bottleneck": bn.to_dict() if bn else None,
+        "context_flow": ctx.to_dict(),
+        "cost_yield": cost_yield.to_dict(),
+        "decisions": decisions.to_dict(),
+        "propagation": propagation.to_dict(),
+    }
+
+
+def _build_trace_metadata(trace) -> dict:
+    """Extract trace metadata matching the viewer header."""
+    return {
+        "task": trace.task,
+        "trigger": trace.trigger,
+        "duration_ms": trace.duration_ms,
+        "span_count": len(trace.spans),
+        "agent_count": len(trace.agent_spans),
+        "tool_count": sum(
+            1 for s in trace.spans if s.span_type.value == "tool"
+        ),
+        "handoff_count": sum(
+            1 for s in trace.spans if s.span_type.value == "handoff"
+        ),
+        "failed_count": sum(
+            1 for s in trace.spans
+            if s.status and s.status.value == "failed"
+        ),
+        "status": trace.status.value if trace.status else "unknown",
+    }
+
+
 def cmd_analyze(args):
     """Analyze failure propagation and flow in a trace."""
     trace = _load_trace_file(args.file)
+
+    if getattr(args, 'json', False):
+        _output_structured_json(trace)
+        return
     
     from agentguard.analysis import analyze_failures, analyze_flow, analyze_bottleneck, analyze_context_flow, analyze_retries, analyze_cost, analyze_timing
     
