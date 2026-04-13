@@ -25,7 +25,7 @@
 - [x] Test: replay a trace, mutate one agent's timing, verify analysis changes correctly
 - [x] Test: generate adversarial traces (contradictory timestamps, missing parents) — verify graceful handling
 - [x] Test: verify all CLI commands work end-to-end with real trace files
-- [ ] Test: verify HTML viewer renders correctly with 50+ agent traces
+- [x] Test: verify HTML viewer renders correctly with 50+ agent traces
 
 ### P4: Documentation & best practices
 - [ ] Update docs/best-practices.md with Sprint 3 lessons
