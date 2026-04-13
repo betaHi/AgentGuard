@@ -59,7 +59,7 @@ from agentguard.generate import generate_trace, generate_batch
 from agentguard.templates import create_from_template
 from agentguard.plugin import register_analyzer, register_exporter, get_plugin_registry
 from agentguard.settings import configure, get_settings, reset_settings
-from agentguard.sdk.recorder import annotate
+from agentguard.sdk.recorder import annotate, set_correlation_id, set_parent_trace
 
 __all__ = [
     "record_agent", "record_tool",
@@ -84,5 +84,5 @@ __all__ = [
     "extract_metrics", "batch_analyze",
     "generate_trace", "generate_batch", "create_from_template",
     "register_analyzer", "register_exporter", "get_plugin_registry",
-    "configure", "get_settings", "reset_settings", "annotate",
+    "configure", "get_settings", "reset_settings", "annotate", "set_correlation_id", "set_parent_trace",
 ]

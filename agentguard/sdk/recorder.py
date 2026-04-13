@@ -63,6 +63,27 @@ class TraceRecorder:
         stack = self._span_stack
         return stack[-1] if stack else None
 
+    def set_correlation_id(self, correlation_id: str) -> None:
+        """Set the correlation ID for this trace.
+
+        Links this trace to other traces across service boundaries.
+        Call this early, typically right after init_recorder().
+
+        Args:
+            correlation_id: Shared ID across related traces.
+        """
+        self.trace.correlation_id = correlation_id
+
+    def set_parent_trace(self, parent_trace_id: str) -> None:
+        """Set the parent trace ID for this trace.
+
+        Indicates this trace was spawned by another trace.
+
+        Args:
+            parent_trace_id: ID of the trace that spawned this one.
+        """
+        self.trace.parent_trace_id = parent_trace_id
+
     def annotate_span(self, key: str, value: Any) -> None:
         """Attach a key-value annotation to the current span.
 
@@ -194,6 +215,26 @@ def get_recorder() -> TraceRecorder:
             if _global_recorder is None:
                 _global_recorder = TraceRecorder()
     return _global_recorder
+
+
+def set_correlation_id(correlation_id: str) -> None:
+    """Set correlation ID on the current trace (links across services).
+
+    Example:
+        set_correlation_id(request.headers["X-Correlation-ID"])
+    """
+    try:
+        get_recorder().set_correlation_id(correlation_id)
+    except Exception:
+        pass
+
+
+def set_parent_trace(parent_trace_id: str) -> None:
+    """Set parent trace ID (this trace was spawned by another)."""
+    try:
+        get_recorder().set_parent_trace(parent_trace_id)
+    except Exception:
+        pass
 
 
 def annotate(key: str, value: Any) -> None:

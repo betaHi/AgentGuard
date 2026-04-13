@@ -193,6 +193,8 @@ class ExecutionTrace:
     status: SpanStatus = SpanStatus.RUNNING
     spans: list[Span] = field(default_factory=list)
     metadata: dict[str, Any] = field(default_factory=dict)
+    correlation_id: Optional[str] = None  # links related traces across services
+    parent_trace_id: Optional[str] = None  # trace that spawned this one
 
     def add_span(self, span: Span) -> None:
         """Add a span to this trace.
@@ -295,6 +297,8 @@ class ExecutionTrace:
             "duration_ms": self.duration_ms,
             "spans": [s.to_dict() for s in self.spans],
             "metadata": self.metadata,
+            "correlation_id": self.correlation_id,
+            "parent_trace_id": self.parent_trace_id,
         }
 
     def to_json(self, indent: int = 2, truncate: bool = False) -> str:
@@ -332,6 +336,8 @@ class ExecutionTrace:
             ended_at=data.get("ended_at"),
             status=SpanStatus(data.get("status", "running")),
             metadata=data.get("metadata", {}),
+            correlation_id=data.get("correlation_id"),
+            parent_trace_id=data.get("parent_trace_id"),
         )
         for span_data in data.get("spans", []):
             span = Span(
