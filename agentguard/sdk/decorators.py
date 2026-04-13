@@ -24,6 +24,7 @@ from typing import Any, Callable, Optional
 
 from agentguard.core.trace import ExecutionTrace, Span, SpanType, SpanStatus
 from agentguard.sdk.recorder import get_recorder
+import random
 
 
 def record_agent(
@@ -101,6 +102,24 @@ def record_tool(
 
 
 
+def _should_sample() -> bool:
+    """Check if this trace should be sampled based on global settings.
+
+    Returns True if recording should proceed, False to skip.
+    Uses random.random() < sampling_rate for probabilistic sampling.
+    """
+    try:
+        from agentguard.settings import get_settings
+        rate = get_settings().sampling_rate
+        if rate >= 1.0:
+            return True
+        if rate <= 0.0:
+            return False
+        return random.random() < rate
+    except Exception:
+        return True  # fail-open: record if settings unavailable
+
+
 def _try_start_span(
     name: str, version: str, metadata: Optional[dict], args: tuple, kwargs: dict
 ) -> Optional[Span]:
@@ -109,8 +128,13 @@ def _try_start_span(
     Why fail-open: recording is observability — it must never break the
     decorated function. If the recorder is misconfigured or OOM, the user's
     agent should still run.
+
+    Respects agentguard.configure(sampling_rate=N) — if sampled out,
+    returns None and no span is recorded.
     """
     try:
+        if not _should_sample():
+            return None
         recorder = get_recorder()
         span = Span(
             span_type=SpanType.AGENT,
@@ -131,6 +155,8 @@ def _try_start_tool_span(
 ) -> Optional[Span]:
     """Create and push a tool span, returning None on failure (fail-open)."""
     try:
+        if not _should_sample():
+            return None
         recorder = get_recorder()
         span = Span(
             span_type=SpanType.TOOL,
