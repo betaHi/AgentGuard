@@ -24,7 +24,7 @@
 ### P3: Advanced testing
 - [x] Test: replay a trace, mutate one agent's timing, verify analysis changes correctly
 - [x] Test: generate adversarial traces (contradictory timestamps, missing parents) — verify graceful handling
-- [ ] Test: verify all CLI commands work end-to-end with real trace files
+- [x] Test: verify all CLI commands work end-to-end with real trace files
 - [ ] Test: verify HTML viewer renders correctly with 50+ agent traces
 
 ### P4: Documentation & best practices
