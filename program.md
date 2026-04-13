@@ -28,7 +28,7 @@
 
 ### Phase 3: Type Hints & Docstrings (production quality)
 
-- [ ] Fix: add return type hints to all 35 public CLI functions (cmd_show, cmd_list, cmd_eval etc.) — all should return None or int
+- [x] Fix: add return type hints to all 35 public CLI functions (cmd_show, cmd_list, cmd_eval etc.) — all should return None or int
 - [ ] Fix: add return type hints to remaining 15 public functions without them (outside CLI)
 - [ ] Audit: verify all public API functions have docstrings with Args/Returns sections. Add missing ones. Focus on agentguard/analysis.py, agentguard/sdk/, agentguard/core/
 
