@@ -13,7 +13,7 @@
 
 ### P2: deep_analysis_demo duration is 0ms
 - [x] Fix: deep_analysis_demo.py — TraceBuilder-constructed spans have 0ms duration because timestamps aren't set. TraceBuilder.add_agent/add_tool should accept duration_ms parameter and auto-set started_at/ended_at
-- [ ] Test: TraceBuilder with duration_ms produces spans with correct timestamps
+- [x] Test: TraceBuilder with duration_ms produces spans with correct timestamps
 
 ### P3: Correlation analysis always empty on single trace
 - [ ] Fix: correlation analysis returns 0 correlations on single trace — it should still detect patterns within a single trace (e.g., failed spans sharing same parent, timing clusters). If single-trace correlation is inherently limited, document this clearly and show a multi-trace example
