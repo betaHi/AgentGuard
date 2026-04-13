@@ -18,7 +18,7 @@
 ### P2: SDK production hardening
 - [x] SDK: add sampling — record only N% of traces in production (configurable)
 - [x] SDK: add span annotations — user can attach arbitrary key-value metadata to spans
-- [ ] SDK: add trace correlation ID — link related traces across service boundaries
+- [x] SDK: add trace correlation ID — link related traces across service boundaries
 - [ ] SDK: add batch export — accumulate spans and flush periodically (reduce I/O)
 
 ### P3: Advanced testing
