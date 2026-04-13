@@ -5,7 +5,7 @@
 ### P0: Deepen the 5 Questions further
 - [x] Q1: bottleneck should detect "false bottleneck" — agent that appears slow but is actually waiting on a dependency
 - [x] Q2: handoff should track context transformation — not just keys sent/received but semantic changes (summarization, filtering)
-- [ ] Q3: failure propagation should distinguish recoverable vs fatal failures in the causal chain
+- [x] Q3: failure propagation should distinguish recoverable vs fatal failures in the causal chain
 - [ ] Q4: cost-yield should support custom cost models (not just token count) — allow user-defined cost functions
 - [ ] Q5: decision analysis should suggest optimal agent selection based on historical performance
 
