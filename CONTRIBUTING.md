@@ -171,3 +171,19 @@ docs/               # Design documents and reviews
 ## License
 
 By contributing, you agree that your contributions will be licensed under MIT.
+
+
+## Updating Screenshots
+
+README screenshots are generated from live HTML reports and CLI output.
+
+    # Install dependencies (one-time)
+    pip install playwright
+    playwright install chromium
+
+    # Regenerate all 8 screenshots
+    python scripts/generate_screenshots.py
+
+Output goes to docs/screenshots/. The script generates HTML report
+screenshots via Playwright and CLI output captures as text files
+(convert to PNG with termshot or carbon-now-cli).
