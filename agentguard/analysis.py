@@ -1221,6 +1221,7 @@ class DecisionAnalysis:
     total_decisions: int
     decisions_leading_to_failure: int
     decision_quality_score: float  # 0-1: fraction of decisions with good outcomes
+    suggestions: list[dict] = field(default_factory=list)  # optimal agent recommendations
 
     def to_dict(self) -> dict[str, Any]:
         return {
@@ -1228,6 +1229,7 @@ class DecisionAnalysis:
             "decisions_leading_to_failure": self.decisions_leading_to_failure,
             "decision_quality_score": round(self.decision_quality_score, 2),
             "decisions": [d.to_dict() for d in self.decisions],
+            "suggestions": self.suggestions,
         }
 
     def to_report(self) -> str:
@@ -1379,6 +1381,82 @@ def _decision_span_to_record(
     )
 
 
+def _suggest_optimal_agents(
+    decisions: list["DecisionRecord"],
+    trace: "ExecutionTrace",
+) -> list[dict]:
+    """Suggest optimal agent selection based on historical performance in trace.
+
+    Builds a performance profile for each agent seen in decisions,
+    then suggests the best alternative when a decision led to failure.
+
+    Returns:
+        List of suggestion dicts with 'decision_index', 'current_agent',
+        'suggested_agent', and 'reason'.
+    """
+    profiles = _build_agent_profiles_from_decisions(decisions, trace)
+    suggestions: list[dict] = []
+    for i, d in enumerate(decisions):
+        if not d.led_to_failure:
+            continue
+        best = _find_best_alternative(d, profiles)
+        if best:
+            suggestions.append({
+                "decision_index": i,
+                "current_agent": d.chosen_agent,
+                "suggested_agent": best["agent"],
+                "reason": best["reason"],
+            })
+    return suggestions
+
+
+def _build_agent_profiles_from_decisions(
+    decisions: list, trace,
+) -> dict[str, dict]:
+    """Build performance profiles for agents seen in decisions."""
+    from agentguard.core.trace import SpanStatus
+    profiles: dict[str, dict] = {}
+    for s in trace.agent_spans:
+        name = s.name
+        if name not in profiles:
+            profiles[name] = {
+                "total": 0, "succeeded": 0, "total_ms": 0.0,
+                "avg_ms": 0.0, "success_rate": 0.0,
+            }
+        p = profiles[name]
+        p["total"] += 1
+        if s.status == SpanStatus.COMPLETED:
+            p["succeeded"] += 1
+        p["total_ms"] += s.duration_ms or 0
+    for p in profiles.values():
+        p["avg_ms"] = p["total_ms"] / max(p["total"], 1)
+        p["success_rate"] = p["succeeded"] / max(p["total"], 1)
+    return profiles
+
+
+def _find_best_alternative(
+    decision: "DecisionRecord", profiles: dict[str, dict],
+) -> Optional[dict]:
+    """Find the best alternative agent for a failed decision."""
+    candidates = []
+    for alt in decision.alternatives:
+        if alt in profiles and profiles[alt]["success_rate"] > 0:
+            candidates.append((alt, profiles[alt]))
+    if not candidates:
+        return None
+    best_name, best_prof = max(candidates, key=lambda x: x[1]["success_rate"])
+    current_prof = profiles.get(decision.chosen_agent, {})
+    current_rate = current_prof.get("success_rate", 0)
+    return {
+        "agent": best_name,
+        "reason": (
+            f"{best_name} has {best_prof['success_rate']:.0%} success rate "
+            f"({best_prof['avg_ms']:.0f}ms avg) vs "
+            f"{decision.chosen_agent} at {current_rate:.0%}"
+        ),
+    }
+
+
 def analyze_decisions(trace: ExecutionTrace) -> DecisionAnalysis:
     """Analyze orchestration decisions and their downstream outcomes.
 
@@ -1410,6 +1488,8 @@ def analyze_decisions(trace: ExecutionTrace) -> DecisionAnalysis:
     total = len(records)
     failures = sum(1 for r in records if r.led_to_failure)
     quality = 1.0 if total == 0 else (total - failures) / total
+
+    suggestions = _suggest_optimal_agents(records, trace)
 
     return DecisionAnalysis(
         decisions=records,
