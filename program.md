@@ -22,7 +22,7 @@
 - [x] SDK: add batch export — accumulate spans and flush periodically (reduce I/O)
 
 ### P3: Advanced testing
-- [ ] Test: replay a trace, mutate one agent's timing, verify analysis changes correctly
+- [x] Test: replay a trace, mutate one agent's timing, verify analysis changes correctly
 - [ ] Test: generate adversarial traces (contradictory timestamps, missing parents) — verify graceful handling
 - [ ] Test: verify all CLI commands work end-to-end with real trace files
 - [ ] Test: verify HTML viewer renders correctly with 50+ agent traces
