@@ -14,7 +14,7 @@ authors = [
 ]
 keywords = ["ai", "agent", "observability", "testing", "reliability", "multi-agent", "evaluation"]
 classifiers = [
-    "Development Status :: 3 - Alpha",
+    "Development Status :: 4 - Beta",
     "Intended Audience :: Developers",
     "License :: OSI Approved :: MIT License",
     "Programming Language :: Python :: 3.11",
@@ -37,6 +37,7 @@ agentguard = "agentguard.cli.main:main"
 Homepage = "https://github.com/betaHi/AgentGuard"
 Repository = "https://github.com/betaHi/AgentGuard"
 Issues = "https://github.com/betaHi/AgentGuard/issues"
+Documentation = "https://github.com/betaHi/AgentGuard#readme"
 
 [tool.setuptools.packages.find]
 include = ["agentguard*"]
