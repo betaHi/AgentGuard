@@ -66,61 +66,8 @@ def generate_timeline_html(
     return str(out_path)
 
 
-def _build_full_html(traces: list[ExecutionTrace]) -> str:
-    if not traces:
-        return _build_empty_html()
-
-    # Use the most recent trace as the primary display
-    primary = traces[0]
-    failures = analyze_failures(primary)
-    flow = analyze_flow(primary)
-    bn = analyze_bottleneck(primary) if primary.agent_spans else None
-    ctx = analyze_context_flow(primary)
-
-    dur_total = primary.duration_ms or 1
-
-    # Score the trace
-    from agentguard.scoring import score_trace as _score_trace
-    _score = _score_trace(primary)
-
-    # Build sidebar agent cards
-    agent_cards = _build_sidebar(primary, failures, bn)
-
-    # Build Gantt timeline
-    timeline = _build_gantt(primary, flow, dur_total)
-
-    # Build diagnostics grid
-    retries = analyze_retries(primary)
-    cost = analyze_cost(primary)
-    error_report = analyze_errors(primary)
-    cost_yield = analyze_cost_yield(primary)
-    decisions = analyze_decisions(primary)
-    from agentguard.propagation import analyze_propagation
-    propagation = analyze_propagation(primary)
-    diagnostics = _build_diagnostics(failures, bn, flow, ctx, retries, cost, error_report,
-                                     cost_yield, decisions, propagation)
-
-    # Trace selector (if multiple traces)
-    trace_count = len(traces)
-
-    # Build trace list for selector (if multiple traces)
-    trace_list_html = ""
-    if trace_count > 1:
-        items = []
-        for i, t in enumerate(traces[:20]):
-            st = "✅" if t.status.value == "completed" else "❌"
-            dur = f"{t.duration_ms:.0f}ms" if t.duration_ms else "?"
-            active = "font-weight:700;color:var(--br);" if i == 0 else ""
-            items.append(f'<div style="padding:4px 0;font-size:10px;{active}">{st} {t.task or t.trace_id[:12]} · {dur}</div>')
-        trace_list_html = f'<div style="margin-top:12px;border-top:1px solid var(--bd);padding-top:8px"><h2 style="font-size:10px;text-transform:uppercase;letter-spacing:1px;color:var(--dim);margin-bottom:6px">Recent Traces ({trace_count})</h2>{"".join(items)}</div>'
-    status_txt = "PASS" if primary.status == SpanStatus.COMPLETED else "FAIL"
-    status_cls = "b-pass" if primary.status == SpanStatus.COMPLETED else "b-fail"
-
-    return f'''<!DOCTYPE html>
-<html lang="en"><head>
-<meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1.0">
-<title>AgentGuard — Orchestration Panel</title>
-<style>
+# --- HTML template constants ---
+_VIEWER_CSS = """<style>
 :root{{--bg:#0d1117;--sf:#161b22;--bd:#30363d;--tx:#c9d1d9;--dim:#8b949e;--br:#f0f6fc;
 --gn:#3fb950;--rd:#f85149;--bl:#58a6ff;--yl:#e3b341;--pp:#bc8cff;
 --gn-bg:#1b3a2a;--rd-bg:#3d1f1f;--yl-bg:#3d321e;--bl-bg:#1e2d3d;--pp-bg:#2d1e3d;}}
@@ -195,40 +142,9 @@ body{{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',system-ui,monospac
 .ag-card,.d-box{{border-color:#ddd;background:#fafafa;}}.g-bar.ok{{background:#28a745;}}.g-bar.err{{background:#dc3545;}}
 .badge,.score-badge{{print-color-adjust:exact;-webkit-print-color-adjust:exact;}}}}
 @media(max-width:768px){{.layout{{grid-template-columns:1fr;}}.sidebar{{border-right:none;border-bottom:1px solid var(--bd);max-height:200px;}}}}
-</style></head><body>
+</style>"""
 
-<div class="top-bar">
-<h1>🛡️ AgentGuard</h1>
-<div class="meta">
-{_esc(primary.task)}
-<span class="badge {status_cls}" style="margin-left:8px">{status_txt}</span>
-<span class="score-badge score-{_score.grade.lower()}">{_score.overall:.0f}/100 ({_score.grade})</span>
-{f'<span style="margin-left:8px;color:var(--dim)">{trace_count} traces</span>' if trace_count > 1 else ''}
-</div>
-<div class="meta-detail" style="font-size:11px;color:var(--dim);padding:2px 16px 0">
-⏱ {dur_total/1000:.1f}s total
-· 🤖 {len(primary.agent_spans)} agents
-· 📊 {len(primary.spans)} spans
-· 🔧 {sum(1 for s in primary.spans if s.span_type.value == 'tool')} tools
-· 🔀 {sum(1 for s in primary.spans if s.span_type.value == 'handoff')} handoffs
-· 🔴 {sum(1 for s in primary.spans if s.status and s.status.value == 'failed')} failed
-· Trigger: {_esc(primary.trigger)}
-</div></div>
-
-<div class="layout">
-<div class="sidebar">{agent_cards}{trace_list_html}</div>
-<div class="main">
-<h2>Execution Timeline</h2>
-{timeline}
-{diagnostics}
-<details style="margin-top:14px;border:1px solid var(--bd);border-radius:6px;padding:8px;">
-<summary style="cursor:pointer;font-size:10px;color:var(--dim);padding:4px;">📋 Raw Trace JSON</summary>
-<pre style="background:var(--bg);border:1px solid var(--bd);border-radius:4px;padding:8px;font-size:9px;color:var(--dim);overflow-x:auto;max-height:300px;margin-top:8px;">{_esc(primary.to_json(indent=2)[:5000])}</pre>
-</details>
-<div class="ft">AgentGuard · Orchestration Observability · {len(primary.spans)} spans · {primary.trace_id}</div>
-</div></div>
-
-<script>
+_VIEWER_JS = """<script>
 document.querySelectorAll(".g-row").forEach(function(row){{
   row.style.cursor="pointer";
   row.addEventListener("click",function(){{
@@ -293,8 +209,114 @@ function zoomGantt(dir){{
   var lbl=document.getElementById("zoom-pct");
   if(lbl){{lbl.textContent=_zoomLevel+"%";}}
 }}
-</script>
-</body></html>'''
+</script>"""
+
+
+def _build_head(primary: ExecutionTrace, score: Any, status_cls: str,
+                status_txt: str, dur_total: float, trace_count: int) -> str:
+    """Build the HTML head + top bar with trace metadata."""
+    return f"""<!DOCTYPE html>
+<html lang="en"><head>
+<meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1.0">
+<title>AgentGuard — Orchestration Panel</title>
+{_VIEWER_CSS}</head><body>
+
+<div class="top-bar">
+<h1>🛡️ AgentGuard</h1>
+<div class="meta">
+{_esc(primary.task)}
+<span class="badge {status_cls}" style="margin-left:8px">{status_txt}</span>
+<span class="score-badge score-{score.grade.lower()}">{score.overall:.0f}/100 ({score.grade})</span>
+{f'<span style="margin-left:8px;color:var(--dim)">{trace_count} traces</span>' if trace_count > 1 else ''}
+</div>
+<div class="meta-detail" style="font-size:11px;color:var(--dim);padding:2px 16px 0">
+⏱ {dur_total/1000:.1f}s total
+· 🤖 {len(primary.agent_spans)} agents
+· 📊 {len(primary.spans)} spans
+· 🔧 {sum(1 for s in primary.spans if s.span_type.value == 'tool')} tools
+· 🔀 {sum(1 for s in primary.spans if s.span_type.value == 'handoff')} handoffs
+· 🔴 {sum(1 for s in primary.spans if s.status and s.status.value == 'failed')} failed
+· Trigger: {_esc(primary.trigger)}
+</div></div>"""
+
+
+def _build_trace_list(traces: list[ExecutionTrace]) -> str:
+    """Build the trace selector sidebar section for multi-trace views."""
+    if len(traces) <= 1:
+        return ""
+    items = []
+    for i, t in enumerate(traces[:20]):
+        st = "✅" if t.status.value == "completed" else "❌"
+        dur = f"{t.duration_ms:.0f}ms" if t.duration_ms else "?"
+        active = "font-weight:700;color:var(--br);" if i == 0 else ""
+        items.append(f'<div style="padding:4px 0;font-size:10px;{active}">{st} {t.task or t.trace_id[:12]} · {dur}</div>')
+    return (f'<div style="margin-top:12px;border-top:1px solid var(--bd);padding-top:8px">'
+            f'<h2 style="font-size:10px;text-transform:uppercase;letter-spacing:1px;color:var(--dim);margin-bottom:6px">'
+            f'Recent Traces ({len(traces)})</h2>{"".join(items)}</div>')
+
+
+def _build_body_layout(
+    primary: ExecutionTrace,
+    agent_cards: str, trace_list_html: str,
+    timeline: str, diagnostics: str,
+) -> str:
+    """Build the main body layout: sidebar + timeline + diagnostics + footer."""
+    return f"""<div class="layout">
+<div class="sidebar">{agent_cards}{trace_list_html}</div>
+<div class="main">
+<h2>Execution Timeline</h2>
+{timeline}
+{diagnostics}
+<details style="margin-top:14px;border:1px solid var(--bd);border-radius:6px;padding:8px;">
+<summary style="cursor:pointer;font-size:10px;color:var(--dim);padding:4px;">📋 Raw Trace JSON</summary>
+<pre style="background:var(--bg);border:1px solid var(--bd);border-radius:4px;padding:8px;font-size:9px;color:var(--dim);overflow-x:auto;max-height:300px;margin-top:8px;">{_esc(primary.to_json(indent=2)[:5000])}</pre>
+</details>
+<div class="ft">AgentGuard · Orchestration Observability · {len(primary.spans)} spans · {primary.trace_id}</div>
+</div></div>
+
+{_VIEWER_JS}
+</body></html>"""
+
+
+def _build_full_html(traces: list[ExecutionTrace]) -> str:
+    """Build complete HTML report for one or more traces.
+
+    Orchestrates analysis, then assembles head, sidebar, timeline,
+    diagnostics, and scripts into a single HTML document.
+    """
+    if not traces:
+        return _build_empty_html()
+
+    primary = traces[0]
+    failures = analyze_failures(primary)
+    flow = analyze_flow(primary)
+    bn = analyze_bottleneck(primary) if primary.agent_spans else None
+    ctx = analyze_context_flow(primary)
+    dur_total = primary.duration_ms or 1
+
+    from agentguard.scoring import score_trace as _score_trace
+    _score = _score_trace(primary)
+
+    agent_cards = _build_sidebar(primary, failures, bn)
+    timeline = _build_gantt(primary, flow, dur_total)
+
+    retries = analyze_retries(primary)
+    cost = analyze_cost(primary)
+    error_report = analyze_errors(primary)
+    cost_yield = analyze_cost_yield(primary)
+    decisions = analyze_decisions(primary)
+    from agentguard.propagation import analyze_propagation
+    propagation = analyze_propagation(primary)
+    diagnostics = _build_diagnostics(failures, bn, flow, ctx, retries, cost, error_report,
+                                     cost_yield, decisions, propagation)
+
+    status_txt = "PASS" if primary.status == SpanStatus.COMPLETED else "FAIL"
+    status_cls = "b-pass" if primary.status == SpanStatus.COMPLETED else "b-fail"
+    trace_list_html = _build_trace_list(traces)
+
+    head = _build_head(primary, _score, status_cls, status_txt, dur_total, len(traces))
+    body = _build_body_layout(primary, agent_cards, trace_list_html, timeline, diagnostics)
+    return head + "\n" + body
 
 
 def _build_empty_html() -> str:
