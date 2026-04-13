@@ -33,13 +33,15 @@ def check_trace_size(trace_dict: dict[str, Any]) -> int:
         Approximate size in bytes.
     """
     size = len(json.dumps(trace_dict, default=str).encode("utf-8"))
-    if size > TRACE_WARN_BYTES:
+    from agentguard.settings import get_settings
+    warn_bytes = int(get_settings().max_trace_size_mb * 1024 * 1024)
+    if size > warn_bytes:
         _logger.warning(
             "Trace '%s' is %.1f MB (limit: %.1f MB). "
             "Consider truncating metadata or reducing span data.",
             trace_dict.get("task", "unknown"),
             size / (1024 * 1024),
-            TRACE_WARN_BYTES / (1024 * 1024),
+            warn_bytes / (1024 * 1024),
         )
     return size
 
