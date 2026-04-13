@@ -359,3 +359,132 @@ def _build_self_time(
         f"  {'(self-time)':<20} {'':10} {self_dur:>8.0f}ms {self_pct:>5.1f}%  "
         f"{'░' * max(bar_len, 0)}",
     ]
+
+
+def failure_timeline(
+    trace: ExecutionTrace, width: int = 50
+) -> str:
+    """ASCII timeline showing failure propagation over time.
+
+    Visualizes when failures occurred and how they spread,
+    answering Q3: 'Which sub-agent failure started propagating?'
+
+    Each row is a failed span. Timeline shows:
+    - ▓ = failed span duration
+    - → = propagation direction (parent to child)
+    - 🛡 = contained (parent succeeded despite child failure)
+
+    Args:
+        trace: The execution trace.
+        width: Width of the timeline bar area.
+
+    Returns:
+        Multi-line ASCII timeline string.
+    """
+    failed_spans = _get_failed_spans_sorted(trace)
+    if not failed_spans:
+        return "# Failure Timeline\n\nNo failures detected. ✓"
+
+    time_range = _compute_time_range(trace)
+    if time_range is None:
+        return "# Failure Timeline\n\nCannot compute timeline (missing timestamps)."
+
+    min_t, max_t = time_range
+    span_map = {s.span_id: s for s in trace.spans}
+
+    lines = _build_timeline_header(width)
+    for span in failed_spans:
+        row = _render_span_row(span, min_t, max_t, width, span_map)
+        lines.append(row)
+
+    lines.append(f"  {'─' * 22}┼{'─' * width}┤")
+    lines.extend(_build_timeline_legend(failed_spans, span_map))
+    return "\n".join(lines)
+
+
+def _get_failed_spans_sorted(trace: ExecutionTrace) -> list[Span]:
+    """Get failed spans sorted by start time."""
+    failed = [s for s in trace.spans if s.status and s.status.value == "failed"]
+    failed.sort(key=lambda s: s.started_at or "")
+    return failed
+
+
+def _compute_time_range(
+    trace: ExecutionTrace,
+) -> Optional[tuple[float, float]]:
+    """Compute min/max timestamps across all spans."""
+    timestamps = []
+    for s in trace.spans:
+        if s.started_at:
+            t = _parse_ts(s.started_at)
+            if t is not None:
+                timestamps.append(t)
+        if s.ended_at:
+            t = _parse_ts(s.ended_at)
+            if t is not None:
+                timestamps.append(t)
+    if len(timestamps) < 2:
+        return None
+    return min(timestamps), max(timestamps)
+
+
+def _build_timeline_header(width: int) -> list[str]:
+    """Build the header for the timeline view."""
+    return [
+        "# Failure Timeline",
+        "",
+        f"  {'Span':<22}│{'early':^{width//2}}{'late':>{width - width//2}}│",
+        f"  {'─' * 22}┼{'─' * width}┤",
+    ]
+
+
+def _render_span_row(
+    span: Span, min_t: float, max_t: float,
+    width: int, span_map: dict,
+) -> str:
+    """Render one failed span as a timeline row."""
+    start = _parse_ts(span.started_at) or min_t
+    end = _parse_ts(span.ended_at) or max_t
+    duration = max_t - min_t
+    if duration <= 0:
+        duration = 1
+
+    col_start = int((start - min_t) / duration * width)
+    col_end = int((end - min_t) / duration * width)
+    col_start = max(0, min(col_start, width - 1))
+    col_end = max(col_start + 1, min(col_end, width))
+
+    bar = [" "] * width
+    for i in range(col_start, col_end):
+        bar[i] = "▓"
+
+    # Mark containment
+    contained = _is_contained(span, span_map)
+    suffix = " 🛡" if contained else " ✗"
+
+    name = span.name[:20]
+    return f"  {name:<22}│{''.join(bar)}│{suffix}"
+
+
+def _is_contained(span: Span, span_map: dict) -> bool:
+    """Check if a failed span was contained by its parent."""
+    if not span.parent_span_id:
+        return False
+    parent = span_map.get(span.parent_span_id)
+    if not parent:
+        return False
+    return parent.status and parent.status.value == "completed"
+
+
+def _build_timeline_legend(
+    failed_spans: list[Span], span_map: dict
+) -> list[str]:
+    """Build the legend/summary for the timeline."""
+    contained = sum(1 for s in failed_spans if _is_contained(s, span_map))
+    uncontained = len(failed_spans) - contained
+    return [
+        "",
+        f"  Total failures: {len(failed_spans)} "
+        f"(🛡 contained: {contained}, ✗ uncontained: {uncontained})",
+        "  Legend: ▓ failed duration | 🛡 contained by parent | ✗ propagated",
+    ]
