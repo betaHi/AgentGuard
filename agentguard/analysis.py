@@ -1210,32 +1210,15 @@ def _default_yield_score(succeeded: bool, has_output: bool, output_size: int) ->
     return score
 
 
-def analyze_cost_yield(
+def _compute_agent_costs(
     trace: ExecutionTrace,
-    cost_fn: Callable | None = None,
-    yield_fn: Callable | None = None,
-) -> CostYieldReport:
-    """Compare cost per agent vs output quality.
+    cost_fn: Callable | None,
+    yield_fn: Callable | None,
+) -> list[CostYieldEntry]:
+    """Compute cost and yield entries for each agent span.
 
-    Answers Q4: "Which execution path has the highest cost but worst yield?"
-
-    For each agent computes:
-    - Cost (via cost_fn or default: estimated_cost_usd + token heuristic)
-    - Yield score (via yield_fn or default: completion + output quality)
-    - Cost-per-success ratio
-    - Tokens-per-ms efficiency
-
-    Args:
-        trace: The execution trace to analyze.
-        cost_fn: Optional custom cost function (span) -> float.
-            Receives a Span, returns cost as float. Overrides default
-            token/USD calculation. Example: lambda s: s.duration_ms * 0.001
-        yield_fn: Optional custom yield function (span) -> float.
-            Receives a Span, returns yield score 0-100. Overrides default
-            completion/output-based scoring.
-
-    Returns:
-        CostYieldReport with per-agent breakdown and summary.
+    For each agent computes cost (custom or estimated_cost_usd),
+    yield score (custom or default), cost-per-success, and token efficiency.
     """
     import json as _json
 
@@ -1246,53 +1229,73 @@ def analyze_cost_yield(
         dur = s.duration_ms or 0.0
         succeeded = s.status == SpanStatus.COMPLETED
         has_output = s.output_data is not None
-
-        # Measure output size
-        output_size = 0
-        if s.output_data is not None:
-            try:
-                output_size = len(_json.dumps(s.output_data, default=str).encode("utf-8"))
-            except Exception:
-                output_size = 0
-
-        # Yield score: 0-100 composite
+        output_size = _measure_output_size(s.output_data, _json)
         yield_score = yield_fn(s) if yield_fn else _default_yield_score(succeeded, has_output, output_size)
-
         cost_per_success = cost if succeeded and cost > 0 else (float("inf") if not succeeded else 0.0)
-        tokens_per_ms = tokens / max(dur, 1)
-
         entries.append(CostYieldEntry(
-            agent=s.name,
-            tokens=tokens,
-            cost_usd=cost,
-            status=s.status.value,
-            duration_ms=dur,
-            has_output=has_output,
-            output_size_bytes=output_size,
+            agent=s.name, tokens=tokens, cost_usd=cost,
+            status=s.status.value, duration_ms=dur,
+            has_output=has_output, output_size_bytes=output_size,
             cost_per_success=cost_per_success,
-            tokens_per_ms=tokens_per_ms,
+            tokens_per_ms=tokens / max(dur, 1),
             yield_score=yield_score,
         ))
+    return entries
 
-    total_cost = sum(e.cost_usd for e in entries)
-    total_tokens = sum(e.tokens for e in entries)
 
-    highest_cost = max(entries, key=lambda e: e.cost_usd).agent if entries else "N/A"
-    lowest_yield = min(entries, key=lambda e: e.yield_score).agent if entries else "N/A"
-    # Best ratio = highest yield_score / max(cost, 0.0001)
-    best_ratio = max(entries, key=lambda e: e.yield_score / max(e.cost_usd, 0.0001)).agent if entries else "N/A"
+def _measure_output_size(output_data: Any, json_mod: Any) -> int:
+    """Measure serialized output size in bytes. Returns 0 on failure."""
+    if output_data is None:
+        return 0
+    try:
+        return len(json_mod.dumps(output_data, default=str).encode("utf-8"))
+    except Exception:
+        return 0
 
-    # Compute most wasteful agent: highest cost × lowest yield
+
+def _compute_yield_scores(entries: list[CostYieldEntry]) -> dict[str, str]:
+    """Compute summary yield scores: highest cost, lowest yield, best ratio agents.
+
+    Returns dict with keys: highest_cost, lowest_yield, best_ratio.
+    """
+    if not entries:
+        return {"highest_cost": "N/A", "lowest_yield": "N/A", "best_ratio": "N/A"}
+    return {
+        "highest_cost": max(entries, key=lambda e: e.cost_usd).agent,
+        "lowest_yield": min(entries, key=lambda e: e.yield_score).agent,
+        "best_ratio": max(entries, key=lambda e: e.yield_score / max(e.cost_usd, 0.0001)).agent,
+    }
+
+
+def analyze_cost_yield(
+    trace: ExecutionTrace,
+    cost_fn: Callable | None = None,
+    yield_fn: Callable | None = None,
+) -> CostYieldReport:
+    """Compare cost per agent vs output quality.
+
+    Answers Q4: "Which execution path has the highest cost but worst yield?"
+
+    Args:
+        trace: The execution trace to analyze.
+        cost_fn: Optional custom cost function (span) -> float.
+        yield_fn: Optional custom yield function (span) -> float (0-100).
+
+    Returns:
+        CostYieldReport with per-agent breakdown and summary.
+    """
+    entries = _compute_agent_costs(trace, cost_fn, yield_fn)
+    scores = _compute_yield_scores(entries)
     wasteful, waste_score = _find_most_wasteful(entries)
     recommendations = _generate_cost_recommendations(entries)
 
     return CostYieldReport(
         entries=entries,
-        total_cost_usd=total_cost,
-        total_tokens=total_tokens,
-        highest_cost_agent=highest_cost,
-        lowest_yield_agent=lowest_yield,
-        best_ratio_agent=best_ratio,
+        total_cost_usd=sum(e.cost_usd for e in entries),
+        total_tokens=sum(e.tokens for e in entries),
+        highest_cost_agent=scores["highest_cost"],
+        lowest_yield_agent=scores["lowest_yield"],
+        best_ratio_agent=scores["best_ratio"],
         most_wasteful_agent=wasteful,
         waste_score=waste_score,
         recommendations=recommendations,
