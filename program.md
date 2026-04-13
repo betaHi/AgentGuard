@@ -54,7 +54,7 @@
 
 - [x] Q1 improve: bottleneck analysis should distinguish between "agent is slow because its LLM call is slow" vs "agent is slow because it's waiting for a dependency" — add wait_time vs work_time breakdown per agent span
 - [x] Q2 improve: handoff analysis should track not just bytes but semantic richness — count unique information units (distinct facts/entities) rather than just key counts. Use a heuristic: count unique leaf values in the output dict
-- [ ] Q3 improve: failure propagation should detect retry storms — when an agent retries 3+ times and each retry triggers downstream work, flag as "retry storm" with total wasted cost
+- [x] Q3 improve: failure propagation should detect retry storms — when an agent retries 3+ times and each retry triggers downstream work, flag as "retry storm" with total wasted cost
 - [ ] Q4 improve: cost-yield analysis should support custom cost models — allow users to pass a cost_fn(span) -> float function instead of only reading span.estimated_cost_usd. Document with example
 - [ ] Q5 improve: counterfactual analysis — when a coordinator chose agent A over agent B, and A failed, compute "if B had been chosen instead" based on B's historical success rate from previous traces
 
