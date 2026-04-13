@@ -11,7 +11,7 @@
 
 ### P1: Viewer & CLI polish
 - [x] Viewer: add collapsible sections in diagnostics panel (expand/collapse each analysis)
-- [ ] Viewer: add trace search/filter — find spans by agent name, status, or duration range
+- [x] Viewer: add trace search/filter — find spans by agent name, status, or duration range
 - [ ] CLI: add `agentguard diff trace1.json trace2.json` — compare two traces with colored output
 - [ ] CLI: add `agentguard summary` — one-line summary of trace health (like git status)
 
