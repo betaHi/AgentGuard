@@ -84,6 +84,127 @@ class FailureAnalysis:
         return "\n".join(lines)
 
 
+def _build_span_maps(trace: ExecutionTrace) -> tuple[
+    dict[str, str], dict[str, list[str]], dict[str, Span]
+]:
+    """Build parent, children, and span lookup maps from a trace.
+
+    Returns:
+        (parent_map, children_map, span_map) where parent_map maps
+        span_id → parent_span_id, children_map maps parent → [child_ids],
+        and span_map maps span_id → Span.
+    """
+    parent_map: dict[str, str] = {}
+    children_map: dict[str, list[str]] = {}
+    span_map: dict[str, Span] = {}
+    for s in trace.spans:
+        span_map[s.span_id] = s
+        if s.parent_span_id:
+            parent_map[s.span_id] = s.parent_span_id
+            children_map.setdefault(s.parent_span_id, []).append(s.span_id)
+    return parent_map, children_map, span_map
+
+
+def _find_root_causes(
+    failed: list[Span],
+    parent_map: dict[str, str],
+    failed_ids: set[str],
+) -> list[Span]:
+    """Identify root cause failures — failed spans whose parent did NOT fail.
+
+    A root cause is a failed span with no parent, or whose parent succeeded.
+    This separates originating failures from downstream propagation.
+    """
+    root_causes = []
+    for s in failed:
+        parent_id = parent_map.get(s.span_id)
+        if parent_id is None or parent_id not in failed_ids:
+            root_causes.append(s)
+    return root_causes
+
+
+def _compute_blast_radius(
+    root_cause_spans: list[Span],
+    children_map: dict[str, list[str]],
+    span_map: dict[str, Span],
+    parent_map: dict[str, str],
+    failed_ids: set[str],
+) -> tuple[list[FailureNode], set[str]]:
+    """Compute blast radius: for each root cause, find affected downstream spans.
+
+    Returns:
+        (root_cause_nodes, total_affected_ids) — FailureNode trees and
+        the set of all span IDs affected by failures.
+    """
+    def _collect_affected(span_id: str) -> list[str]:
+        affected = []
+        for child_id in children_map.get(span_id, []):
+            if child_id in failed_ids:
+                affected.append(child_id)
+                affected.extend(_collect_affected(child_id))
+        return affected
+
+    root_causes = []
+    total_affected: set[str] = set()
+    for rc_span in root_cause_spans:
+        affected = _collect_affected(rc_span.span_id)
+        total_affected.update(affected)
+        total_affected.add(rc_span.span_id)
+        was_handled = _is_failure_handled(rc_span, parent_map, span_map)
+        node = FailureNode(
+            span_id=rc_span.span_id,
+            span_name=rc_span.name,
+            span_type=rc_span.span_type.value,
+            error=rc_span.error or "unknown error",
+            is_root_cause=True,
+            was_handled=was_handled,
+            affected_children=[
+                FailureNode(
+                    span_id=aid, span_name=span_map[aid].name,
+                    span_type=span_map[aid].span_type.value,
+                    error=span_map[aid].error or "",
+                ) for aid in affected if aid in span_map
+            ],
+        )
+        root_causes.append(node)
+    return root_causes, total_affected
+
+
+def _is_failure_handled(
+    span: Span,
+    parent_map: dict[str, str],
+    span_map: dict[str, Span],
+) -> bool:
+    """Determine if a failure was handled by its parent.
+
+    A tool failure is considered handled if the parent agent still completed
+    successfully (i.e., the agent caught and recovered from the error).
+    Agent failures are unhandled by default.
+    """
+    if span.failure_handled:
+        return True
+    if span.span_type == SpanType.TOOL:
+        parent_id = parent_map.get(span.span_id)
+        if parent_id and parent_id in span_map:
+            parent_span = span_map[parent_id]
+            if parent_span.status == SpanStatus.COMPLETED:
+                return True
+    return False
+
+
+def _compute_resilience(root_causes: list[FailureNode]) -> tuple[int, int, float]:
+    """Compute resilience metrics from root cause failure nodes.
+
+    Returns:
+        (handled_count, unhandled_count, resilience_score) where
+        resilience_score is the ratio of handled to total root causes.
+    """
+    handled = sum(1 for rc in root_causes if rc.was_handled)
+    unhandled = len(root_causes) - handled
+    resilience = handled / max(len(root_causes), 1)
+    return handled, unhandled, resilience
+
+
 def analyze_failures(trace: ExecutionTrace) -> FailureAnalysis:
     """Analyze failure propagation in a trace.
 
@@ -103,81 +224,13 @@ def analyze_failures(trace: ExecutionTrace) -> FailureAnalysis:
             handled_count=0, unhandled_count=0, resilience_score=1.0,
         )
 
-    # Build parent map
-    parent_map: dict[str, str] = {}
-    children_map: dict[str, list[str]] = {}
-    span_map: dict[str, Span] = {}
-
-    for s in trace.spans:
-        span_map[s.span_id] = s
-        if s.parent_span_id:
-            parent_map[s.span_id] = s.parent_span_id
-            children_map.setdefault(s.parent_span_id, []).append(s.span_id)
-
+    parent_map, children_map, span_map = _build_span_maps(trace)
     failed_ids = {s.span_id for s in failed}
-
-    # Find root causes: failed spans whose parent did NOT fail,
-    # or failed spans with no parent
-    root_cause_spans = []
-    for s in failed:
-        parent_id = parent_map.get(s.span_id)
-        if parent_id is None or parent_id not in failed_ids:
-            root_cause_spans.append(s)
-
-    # For each root cause, find affected downstream spans
-    def count_affected(span_id: str) -> list[str]:
-        affected = []
-        for child_id in children_map.get(span_id, []):
-            if child_id in failed_ids:
-                affected.append(child_id)
-                affected.extend(count_affected(child_id))
-        return affected
-
-    root_causes = []
-    total_affected = set()
-
-    for rc_span in root_cause_spans:
-        affected = count_affected(rc_span.span_id)
-        total_affected.update(affected)
-        total_affected.add(rc_span.span_id)
-
-        # Determine if failure was handled:
-        # - Tool failure where parent agent succeeded = handled (agent caught the error)
-        # - Agent failure = unhandled (the agent itself failed, even if orchestrator continued)
-        was_handled = False
-        if rc_span.failure_handled:
-            was_handled = True
-        elif rc_span.span_type == SpanType.TOOL:
-            # Tool failed — check if parent agent still succeeded
-            parent_id = parent_map.get(rc_span.span_id)
-            if parent_id and parent_id in span_map:
-                parent_span = span_map[parent_id]
-                if parent_span.status == SpanStatus.COMPLETED:
-                    was_handled = True
-        # Agent failures are unhandled by default — the agent couldn't cope
-
-        node = FailureNode(
-            span_id=rc_span.span_id,
-            span_name=rc_span.name,
-            span_type=rc_span.span_type.value,
-            error=rc_span.error or "unknown error",
-            is_root_cause=True,
-            was_handled=was_handled,
-            affected_children=[
-                FailureNode(
-                    span_id=aid, span_name=span_map[aid].name,
-                    span_type=span_map[aid].span_type.value,
-                    error=span_map[aid].error or "",
-                ) for aid in affected if aid in span_map
-            ],
-        )
-        root_causes.append(node)
-
-    handled = sum(1 for rc in root_causes if rc.was_handled)
-    unhandled = len(root_causes) - handled
-
-    # Resilience score: ratio of handled failures to total root causes
-    resilience = handled / max(len(root_causes), 1)
+    root_cause_spans = _find_root_causes(failed, parent_map, failed_ids)
+    root_causes, total_affected = _compute_blast_radius(
+        root_cause_spans, children_map, span_map, parent_map, failed_ids,
+    )
+    handled, unhandled, resilience = _compute_resilience(root_causes)
 
     return FailureAnalysis(
         root_causes=root_causes,
