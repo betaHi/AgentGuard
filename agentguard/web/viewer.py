@@ -159,8 +159,13 @@ body{{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',system-ui,monospac
 .diag{{background:var(--sf);border:1px solid var(--bd);border-radius:8px;padding:14px;margin-top:14px;}}
 .diag h3{{font-size:11px;color:var(--br);margin-bottom:10px;}}
 .diag-grid{{display:grid;grid-template-columns:repeat(auto-fit, minmax(280px, 1fr));gap:10px;}}
-.d-box{{background:var(--bg);border:1px solid var(--bd);border-radius:6px;padding:10px;}}
-.d-box h4{{font-size:9px;text-transform:uppercase;letter-spacing:.5px;color:var(--dim);margin-bottom:5px;}}
+.d-box{{background:var(--bg);border:1px solid var(--bd);border-radius:6px;padding:0;}}
+.d-box summary{{font-size:9px;text-transform:uppercase;letter-spacing:.5px;color:var(--dim);padding:10px 10px 5px;cursor:pointer;list-style:none;display:flex;align-items:center;gap:4px;}}
+.d-box summary::-webkit-details-marker{{display:none;}}
+.d-box summary::before{{content:'▶';font-size:8px;transition:transform .2s;}}
+.d-box[open] summary::before{{transform:rotate(90deg);}}
+.d-box .d-body{{padding:0 10px 10px;}}
+.d-box h4{{font-size:9px;text-transform:uppercase;letter-spacing:.5px;color:var(--dim);margin:0;display:inline;}}
 .d-box .val{{font-size:16px;font-weight:700;color:var(--br);}}
 .d-box .det{{font-size:10px;color:var(--dim);margin-top:3px;}}
 .d-box .items{{font-size:10px;margin-top:5px;}}
@@ -678,73 +683,93 @@ def _build_diagnostics(failures, bn, flow, ctx, retries=None, cost=None, error_r
 <h3>Orchestration Diagnostics</h3>
 <div class="diag-grid">
 
-<div class="d-box">
-<h4>🔴 Failure Propagation</h4>
+<details class="d-box" open>
+<summary><h4>🔴 Failure Propagation</h4></summary>
+<div class="d-body">
 <div class="val" style="color:{res_color}">{failures.resilience_score:.0%} resilience</div>
 <div class="det">{failures.total_failed_spans} failed · {failures.handled_count} handled · {failures.unhandled_count} unhandled</div>
 <div class="items">{fail_html}</div>
 </div>
+</details>
 
-<div class="d-box">
-<h4>🐢 Bottleneck</h4>
+<details class="d-box" open>
+<summary><h4>🐢 Bottleneck</h4></summary>
+<div class="d-body">
 <div class="val">{_esc(bn.bottleneck_span) if bn else "N/A"}</div>
 <div class="det">{f"{bn.bottleneck_duration_ms:.0f}ms ({bn.bottleneck_pct:.0f}%)" if bn else ""}</div>
 <div class="items">{bn_html}</div>
 </div>
+</details>
 
-<div class="d-box">
-<h4>🔀 Handoff Flow</h4>
+<details class="d-box" open>
+<summary><h4>🔀 Handoff Flow</h4></summary>
+<div class="d-body">
 <div class="val">{len(flow.handoffs)} handoffs</div>
 <div class="det">Total: {ctx.total_context_bytes:,}B · Anomalies: {len(ctx.anomalies)}</div>
 <div class="items">{ho_html}</div>
 </div>
+</details>
 
-<div class="d-box">
-<h4>📊 Critical Path</h4>
+<details class="d-box" open>
+<summary><h4>📊 Critical Path</h4></summary>
+<div class="d-body">
 <div class="val" style="font-size:12px">{_esc(cp)}</div>
 <div class="det">{flow.critical_path_duration_ms:.0f}ms · {len(flow.critical_path)} hops</div>
 <div class="items">{ctx_note}</div>
 </div>
+</details>
 
-<div class="d-box">
-<h4>💰 Cost & Tokens</h4>
+<details class="d-box" open>
+<summary><h4>💰 Cost & Tokens</h4></summary>
+<div class="d-body">
 <div class="val">${cost["total_cost_usd"]:.4f}</div>
 <div class="det">{cost["total_tokens"]:,} tokens · {_esc(cost.get("most_expensive", "N/A"))} most expensive</div>
 </div>
+</details>
 
-<div class="d-box">
-<h4>🔄 Retries</h4>
+<details class="d-box" open>
+<summary><h4>🔄 Retries</h4></summary>
+<div class="d-body">
 <div class="val">{retries["retry_count"]} retries</div>
 <div class="det">{retries["total_wasted_attempts"]} wasted attempts</div>
 </div>
+</details>
 
-<div class="d-box">
-<h4>🐛 Error Classification</h4>
+<details class="d-box" open>
+<summary><h4>🐛 Error Classification</h4></summary>
+<div class="d-body">
 <div class="val">{error_report.total_errors if error_report else 0} errors</div>
 <div class="det">{error_report.retryable_count if error_report else 0} retryable</div>
 <div class="items">{"".join(f'<div class="item"><span style="color:var(--dim)">{_esc(cat)}: {count}</span></div>' for cat, count in (error_report.by_category if error_report else {{}}).items())}</div>
 </div>
+</details>
 
-<div class="d-box">
-<h4>📈 Cost-Yield Analysis</h4>
+<details class="d-box" open>
+<summary><h4>📈 Cost-Yield Analysis</h4></summary>
+<div class="d-body">
 <div class="val">{cy_wasteful}</div>
 <div class="det">{cy_detail}</div>
 <div class="items">{cy_items}</div>
 </div>
+</details>
 
-<div class="d-box">
-<h4>🎯 Orchestration Decisions</h4>
+<details class="d-box" open>
+<summary><h4>🎯 Orchestration Decisions</h4></summary>
+<div class="d-body">
 <div class="val">{dec_quality}</div>
 <div class="det">{dec_detail}</div>
 <div class="items">{dec_items}</div>
 </div>
+</details>
 
-<div class="d-box">
-<h4>💥 Causal Chains</h4>
+<details class="d-box" open>
+<summary><h4>💥 Causal Chains</h4></summary>
+<div class="d-body">
 <div class="val">{prop_containment}</div>
 <div class="det">{prop_detail}</div>
 <div class="items">{prop_items}</div>
 </div>
+</details>
 
 </div></div>'''
 

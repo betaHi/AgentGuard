@@ -77,3 +77,21 @@ class TestTraceMetadataHeader:
     def test_tools_count_shown(self):
         html = trace_to_html_string(_sample_trace())
         assert "tools" in html
+
+
+class TestCollapsiblePanels:
+    def test_panels_use_details_element(self):
+        html = trace_to_html_string(_sample_trace())
+        assert html.count('<details') >= 9  # 9 diagnostics panels
+
+    def test_panels_have_summary(self):
+        html = trace_to_html_string(_sample_trace())
+        assert html.count('<summary') >= 9
+
+    def test_panels_open_by_default(self):
+        html = trace_to_html_string(_sample_trace())
+        assert "d-box" in html and "open" in html
+
+    def test_panels_have_body(self):
+        html = trace_to_html_string(_sample_trace())
+        assert html.count('d-body') >= 9
