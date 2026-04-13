@@ -22,7 +22,7 @@
 
 ### P3: Testing
 - [S] Property-based test: hypothesis strategy for random traces, verify serialization roundtrip (SKIPPED: 3x REJECT)
-- [ ] Stress test: generate 1000-span trace, verify analyze_bottleneck/flow/failures complete in <5s
+- [S] Stress test: generate 1000-span trace, verify analyze_bottleneck/flow/failures complete in <5s (SKIPPED: 3x REJECT)
 
 ### P4: Docs
 - [ ] CONTRIBUTING.md enhancement: add architecture overview, PR review criteria
