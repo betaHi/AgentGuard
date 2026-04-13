@@ -551,65 +551,44 @@ def _detect_false_bottleneck(
     return None, ""
 
 
-def analyze_bottleneck(trace: ExecutionTrace) -> BottleneckReport:
-    """Identify the performance bottleneck in a trace.
+def _identify_bottleneck_span(
+    trace: ExecutionTrace,
+    critical_path: list[str],
+    children_map: dict[str, list[Span]],
+) -> Span | None:
+    """Find the slowest leaf-work span on the critical path.
 
-    Answers: "Which agent is the performance bottleneck?"
+    Excludes container/coordinator spans (parents of other spans) because
+    they cover the entire subtree duration and aren't the real bottleneck.
+    Falls back to all path spans if everything is a container.
     """
-    span_map = {s.span_id: s for s in trace.spans}
-    children_map: dict[str, list[Span]] = {}
-    for s in trace.spans:
-        if s.parent_span_id:
-            children_map.setdefault(s.parent_span_id, []).append(s)
-
-    # Find critical path (longest chain)
-    def longest_path(span_id: str) -> tuple[list[str], float]:
-        span = span_map.get(span_id)
-        if not span:
-            return [], 0
-        children = children_map.get(span_id, [])
-        if not children:
-            return [span.name], span.duration_ms or 0
-        best_path, best_dur = [], 0
-        for child in children:
-            cp, cd = longest_path(child.span_id)
-            if cd > best_dur:
-                best_path, best_dur = cp, cd
-        return [span.name] + best_path, (span.duration_ms or 0)
-
-    roots = [s for s in trace.spans if s.parent_span_id is None or s.parent_span_id not in span_map]
-    critical_path, critical_dur = [], 0
-    for root in roots:
-        path, dur = longest_path(root.span_id)
-        if dur > critical_dur:
-            critical_path, critical_dur = path, dur
-
-    # Find bottleneck: slowest WORK span on critical path
-    # Exclude container/coordinator spans (spans that are parents of other spans)
-    # because they naturally cover the entire duration and aren't the real bottleneck.
-    total_dur = trace.duration_ms or 1
     parent_ids = set(children_map.keys())
-
-    # Work spans = spans on critical path that are NOT container nodes
     path_spans = [s for s in trace.spans if s.name in critical_path]
     work_spans = [s for s in path_spans if s.span_id not in parent_ids]
-
-    # If all spans are containers (unlikely), fall back to all path spans
     if not work_spans:
         work_spans = path_spans
+    if not work_spans:
+        return trace.spans[0] if trace.spans else None
+    return max(work_spans, key=lambda s: s.duration_ms or 0)
 
-    bottleneck = max(work_spans, key=lambda s: s.duration_ms or 0) if work_spans else (trace.spans[0] if trace.spans else None)
 
-    # Rank agents by OWN duration (exclude time spent in children)
-    agent_rankings = []
+def _rank_bottlenecks(
+    trace: ExecutionTrace,
+    children_map: dict[str, list[Span]],
+) -> list[dict]:
+    """Rank agents by own duration (total minus children).
+
+    Own duration isolates the real work an agent does, excluding time
+    delegated to sub-agents or tools. Sorted descending by own_duration_ms.
+    """
+    total_dur = trace.duration_ms or 1
+    parent_ids = set(children_map.keys())
+    rankings = []
     for s in trace.agent_spans:
         total_d = s.duration_ms or 0
-        # Calculate own time = total - sum of direct children durations
         child_dur = sum(c.duration_ms or 0 for c in children_map.get(s.span_id, []))
         own_d = max(total_d - child_dur, 0)
-
-        # Use own duration for ranking, but show total for context
-        agent_rankings.append({
+        rankings.append({
             "name": s.name,
             "duration_ms": total_d,
             "own_duration_ms": own_d,
@@ -621,11 +600,28 @@ def analyze_bottleneck(trace: ExecutionTrace) -> BottleneckReport:
                 s, own_d, total_d, children_map.get(s.span_id, [])
             ),
         })
-    # Sort by own duration (real work), not total duration
-    agent_rankings.sort(key=lambda x: x["own_duration_ms"], reverse=True)
+    rankings.sort(key=lambda x: x["own_duration_ms"], reverse=True)
+    return rankings
 
-    # Detect false bottleneck: agent with highest wall time but <=20% own work
+
+def analyze_bottleneck(trace: ExecutionTrace) -> BottleneckReport:
+    """Identify the performance bottleneck in a trace.
+
+    Answers Q1: "Which agent is the performance bottleneck?"
+    Uses critical path analysis + own-duration ranking to separate
+    real work from container/delegation overhead.
+    """
+    span_map = {s.span_id: s for s in trace.spans}
+    children_map: dict[str, list[Span]] = {}
+    for s in trace.spans:
+        if s.parent_span_id:
+            children_map.setdefault(s.parent_span_id, []).append(s)
+
+    critical_path, critical_dur = _find_critical_path(trace, span_map, children_map)
+    bottleneck = _identify_bottleneck_span(trace, critical_path, children_map)
+    agent_rankings = _rank_bottlenecks(trace, children_map)
     fb_name, fb_detail = _detect_false_bottleneck(agent_rankings)
+    total_dur = trace.duration_ms or 1
 
     return BottleneckReport(
         critical_path=critical_path,
