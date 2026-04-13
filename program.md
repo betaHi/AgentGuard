@@ -3,7 +3,7 @@
 ## Current Stories
 
 ### P0: Cost/Token data not flowing to analysis
-- [ ] Fix: multi_model_pipeline.py — agent output has cost_usd/tokens but span.estimated_cost_usd is None → cost-yield analysis shows "free" for all agents. Root cause: record_agent/record_tool decorators don't extract cost_usd/token_count from output_data into span fields. Fix: either (a) auto-extract known keys from output_data, or (b) update examples to explicitly set span cost via SDK API. Preferred: option (a) — if output_data contains "cost_usd" or "tokens_used"/"token_count", copy to span fields automatically
+- [x] Fix: multi_model_pipeline.py — agent output has cost_usd/tokens but span.estimated_cost_usd is None → cost-yield analysis shows "free" for all agents. Root cause: record_agent/record_tool decorators don't extract cost_usd/token_count from output_data into span fields. Fix: either (a) auto-extract known keys from output_data, or (b) update examples to explicitly set span cost via SDK API. Preferred: option (a) — if output_data contains "cost_usd" or "tokens_used"/"token_count", copy to span fields automatically
 - [ ] Fix: coding_pipeline.py — same issue, total_cost shows $0.0766 in output but analyze_cost shows $0.00
 - [ ] Test: verify cost-yield analysis returns non-zero costs when agents report cost in output_data
 
