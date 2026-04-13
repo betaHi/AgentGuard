@@ -92,6 +92,111 @@ DEFAULT_WEIGHTS: dict[str, float] = {
 }
 
 
+def _score_success_rate(trace: ExecutionTrace) -> ScoreComponent:
+    """Score based on ratio of completed spans to total spans."""
+    total = len(trace.spans)
+    if total == 0:
+        return ScoreComponent(name="Success Rate", score=0.0, weight=0, details="No spans recorded")
+    completed = sum(1 for s in trace.spans if s.status == SpanStatus.COMPLETED)
+    rate = completed / total
+    failed = total - completed
+    return ScoreComponent(
+        name="Success Rate", score=rate * 100, weight=0,
+        details=f"{completed}/{total} spans completed ({failed} failed/running)",
+    )
+
+
+def _score_performance(trace: ExecutionTrace, expected_ms: float | None) -> ScoreComponent:
+    """Score based on actual vs expected duration."""
+    if expected_ms and trace.duration_ms:
+        ratio = trace.duration_ms / expected_ms
+        if ratio <= 1.0:
+            score = 100.0
+        elif ratio <= 2.0:
+            score = 100 - (ratio - 1.0) * 50
+        else:
+            score = max(0, 50 - (ratio - 2.0) * 25)
+        detail = f"{trace.duration_ms:.0f}ms vs {expected_ms:.0f}ms expected ({ratio:.1f}x)"
+    elif trace.duration_ms:
+        score = 80.0 if trace.status == SpanStatus.COMPLETED else 40.0
+        detail = f"{trace.duration_ms:.0f}ms (no baseline)"
+    else:
+        score, detail = 50.0, "No duration data"
+    return ScoreComponent(name="Performance", score=score, weight=0, details=detail)
+
+
+def _score_context_integrity(trace: ExecutionTrace) -> ScoreComponent:
+    """Score based on handoff context preservation and utilization."""
+    handoff_spans = [s for s in trace.spans if s.span_type == SpanType.HANDOFF]
+    if not handoff_spans:
+        return ScoreComponent(name="Context Integrity", score=100.0, weight=0,
+                              details="No handoffs recorded (neutral)")
+    utilizations = [s.metadata.get("handoff.utilization", 1.0) for s in handoff_spans]
+    avg_util = sum(utilizations) / len(utilizations)
+    dropped = sum(len(s.context_dropped_keys or []) for s in handoff_spans)
+    total_keys = sum(len(s.metadata.get("handoff.context_keys", [])) for s in handoff_spans)
+    preservation = 1.0 - (dropped / max(total_keys, 1))
+    score = ((avg_util + preservation) / 2) * 100
+    return ScoreComponent(
+        name="Context Integrity", score=score, weight=0,
+        details=f"Utilization: {avg_util:.0%}, Preservation: {preservation:.0%}, {len(handoff_spans)} handoffs",
+    )
+
+
+def _score_resilience(trace: ExecutionTrace) -> ScoreComponent:
+    """Score based on ratio of handled failures to total failures."""
+    failed_spans = [s for s in trace.spans if s.status == SpanStatus.FAILED]
+    if not failed_spans:
+        return ScoreComponent(name="Resilience", score=100.0, weight=0,
+                              details="No failures (perfect resilience)")
+    handled = sum(1 for s in failed_spans if s.failure_handled)
+    span_map = {s.span_id: s for s in trace.spans}
+    for s in failed_spans:
+        if not s.failure_handled and s.parent_span_id:
+            parent = span_map.get(s.parent_span_id)
+            if parent and parent.status == SpanStatus.COMPLETED:
+                handled += 1
+    rate = handled / len(failed_spans)
+    return ScoreComponent(
+        name="Resilience", score=rate * 100, weight=0,
+        details=f"{handled}/{len(failed_spans)} failures handled",
+    )
+
+
+def _score_efficiency(trace: ExecutionTrace) -> ScoreComponent:
+    """Score based on retry count and parallelism utilization."""
+    retries = sum(s.retry_count for s in trace.spans)
+    agent_count = len(trace.agent_spans)
+    retry_penalty = min(retries * 5, 50)
+    parallel_bonus = 0.0
+    if agent_count >= 2:
+        from agentguard.flowgraph import build_flow_graph
+        try:
+            graph = build_flow_graph(trace)
+            parallel_bonus = (1 - graph.sequential_fraction) * 20
+        except Exception:
+            pass
+    score = max(0, min(100, 80 - retry_penalty + parallel_bonus))
+    detail = f"{retries} retries, {agent_count} agents"
+    if parallel_bonus > 0:
+        detail += f", +{parallel_bonus:.0f} parallelism bonus"
+    return ScoreComponent(name="Efficiency", score=score, weight=0, details=detail)
+
+
+def _summarize_score(overall: float, grade: str, components: list[ScoreComponent]) -> str:
+    """Generate a human-readable summary from score and components."""
+    if grade in ("A", "B"):
+        summary = "✅ Trace executed well with good quality metrics."
+    elif grade == "C":
+        summary = "⚠️ Trace completed but has areas for improvement."
+    else:
+        summary = "🔴 Trace has significant quality issues that need attention."
+    weak = min(components, key=lambda c: c.score)
+    if weak.score < 70:
+        summary += f" Weakest area: {weak.name} ({weak.score:.0f}/100)."
+    return summary
+
+
 def score_trace(
     trace: ExecutionTrace,
     expected_duration_ms: float | None = None,
@@ -99,152 +204,31 @@ def score_trace(
 ) -> TraceScore:
     """Score a trace on multiple quality dimensions.
 
+    Dimensions: success rate, performance, context integrity,
+    resilience, and efficiency. Each scored 0-100, weighted.
+
     Args:
         trace: The execution trace to score.
         expected_duration_ms: Optional expected duration for performance scoring.
-        weights: Custom component weights. Keys are component names
-            (``"success_rate"``, ``"performance"``, ``"context_integrity"``,
-            ``"resilience"``, ``"efficiency"``). Values are floats that should
-            sum to 1.0. Missing keys fall back to ``DEFAULT_WEIGHTS``.
-
-    Returns:
-        TraceScore with overall score, grade, and component breakdown.
+        weights: Custom component weights (keys: success_rate, performance,
+            context_integrity, resilience, efficiency). Sum should be 1.0.
     """
     w = {**DEFAULT_WEIGHTS, **(weights or {})}
+    scorers = [
+        ("success_rate", _score_success_rate(trace)),
+        ("performance", _score_performance(trace, expected_duration_ms)),
+        ("context_integrity", _score_context_integrity(trace)),
+        ("resilience", _score_resilience(trace)),
+        ("efficiency", _score_efficiency(trace)),
+    ]
     components = []
+    for key, comp in scorers:
+        comp.weight = w[key]
+        components.append(comp)
 
-    # 1. Success Rate (weight: 0.30)
-    total_spans = len(trace.spans)
-    if total_spans == 0:
-        success_score = 0.0
-        success_detail = "No spans recorded"
-    else:
-        completed = sum(1 for s in trace.spans if s.status == SpanStatus.COMPLETED)
-        rate = completed / total_spans
-        success_score = rate * 100
-        failed = total_spans - completed
-        success_detail = f"{completed}/{total_spans} spans completed ({failed} failed/running)"
-
-    components.append(ScoreComponent(
-        name="Success Rate", score=success_score, weight=w["success_rate"],
-        details=success_detail,
-    ))
-
-    # 2. Performance (weight: 0.20)
-    if expected_duration_ms and trace.duration_ms:
-        ratio = trace.duration_ms / expected_duration_ms
-        if ratio <= 1.0:
-            perf_score = 100.0
-        elif ratio <= 2.0:
-            perf_score = 100 - (ratio - 1.0) * 50  # linear decay
-        else:
-            perf_score = max(0, 50 - (ratio - 2.0) * 25)
-        perf_detail = f"{trace.duration_ms:.0f}ms vs {expected_duration_ms:.0f}ms expected ({ratio:.1f}x)"
-    elif trace.duration_ms:
-        # No expected duration — score based on whether it completed
-        perf_score = 80.0 if trace.status == SpanStatus.COMPLETED else 40.0
-        perf_detail = f"{trace.duration_ms:.0f}ms (no baseline)"
-    else:
-        perf_score = 50.0
-        perf_detail = "No duration data"
-
-    components.append(ScoreComponent(
-        name="Performance", score=perf_score, weight=w["performance"],
-        details=perf_detail,
-    ))
-
-    # 3. Context Integrity (weight: 0.20)
-    handoff_spans = [s for s in trace.spans if s.span_type == SpanType.HANDOFF]
-    if handoff_spans:
-        utilizations = [s.metadata.get("handoff.utilization", 1.0) for s in handoff_spans]
-        avg_util = sum(utilizations) / len(utilizations)
-        dropped = sum(len(s.context_dropped_keys or []) for s in handoff_spans)
-        total_keys = sum(len(s.metadata.get("handoff.context_keys", [])) for s in handoff_spans)
-        preservation = 1.0 - (dropped / max(total_keys, 1))
-        ctx_score = ((avg_util + preservation) / 2) * 100
-        ctx_detail = f"Utilization: {avg_util:.0%}, Preservation: {preservation:.0%}, {len(handoff_spans)} handoffs"
-    else:
-        ctx_score = 100.0  # no handoffs = no context issues (neutral)
-        ctx_detail = "No handoffs recorded (neutral)"
-
-    components.append(ScoreComponent(
-        name="Context Integrity", score=ctx_score, weight=w["context_integrity"],
-        details=ctx_detail,
-    ))
-
-    # 4. Resilience (weight: 0.15)
-    failed_spans = [s for s in trace.spans if s.status == SpanStatus.FAILED]
-    if failed_spans:
-        # Check how many failures were handled
-        handled = sum(1 for s in failed_spans if s.failure_handled)
-        # Also check if parent succeeded despite child failure
-        span_map = {s.span_id: s for s in trace.spans}
-        for s in failed_spans:
-            if not s.failure_handled and s.parent_span_id:
-                parent = span_map.get(s.parent_span_id)
-                if parent and parent.status == SpanStatus.COMPLETED:
-                    handled += 1
-
-        resilience_rate = handled / len(failed_spans)
-        res_score = resilience_rate * 100
-        res_detail = f"{handled}/{len(failed_spans)} failures handled"
-    else:
-        res_score = 100.0
-        res_detail = "No failures (perfect resilience)"
-
-    components.append(ScoreComponent(
-        name="Resilience", score=res_score, weight=w["resilience"],
-        details=res_detail,
-    ))
-
-    # 5. Efficiency (weight: 0.15)
-    retries = sum(s.retry_count for s in trace.spans)
-    agent_count = len(trace.agent_spans)
-
-    # Penalize excessive retries
-    retry_penalty = min(retries * 5, 50)  # max 50 point penalty
-
-    # Reward parallelism (if multiple agents exist)
-    if agent_count >= 2:
-        # Check for parallel execution (simplified)
-        from agentguard.flowgraph import build_flow_graph
-        try:
-            graph = build_flow_graph(trace)
-            parallel_bonus = (1 - graph.sequential_fraction) * 20  # up to 20 bonus
-        except Exception:
-            parallel_bonus = 0
-    else:
-        parallel_bonus = 0
-
-    eff_score = max(0, min(100, 80 - retry_penalty + parallel_bonus))
-    eff_detail = f"{retries} retries, {agent_count} agents"
-    if parallel_bonus > 0:
-        eff_detail += f", +{parallel_bonus:.0f} parallelism bonus"
-
-    components.append(ScoreComponent(
-        name="Efficiency", score=eff_score, weight=w["efficiency"],
-        details=eff_detail,
-    ))
-
-    # Calculate overall score
     overall = sum(c.score * c.weight for c in components)
     grade = _grade(overall)
-
-    # Generate summary
-    if grade in ("A", "B"):
-        summary = "✅ Trace executed well with good quality metrics."
-    elif grade == "C":
-        summary = "⚠️ Trace completed but has areas for improvement."
-    else:
-        summary = "🔴 Trace has significant quality issues that need attention."
-
-    weak = min(components, key=lambda c: c.score)
-    if weak.score < 70:
-        summary += f" Weakest area: {weak.name} ({weak.score:.0f}/100)."
-
     return TraceScore(
-        overall=overall,
-        grade=grade,
-        components=components,
-        summary=summary,
+        overall=overall, grade=grade, components=components,
+        summary=_summarize_score(overall, grade, components),
     )
