@@ -38,7 +38,7 @@
 ### P4: Test edge cases
 - [x] Test: trace with 0 spans (empty trace through full pipeline)
 - [x] Test: trace with duplicate agent names (same agent called multiple times)
-- [ ] Test: trace with circular handoffs (A→B→A)
+- [x] Test: trace with circular handoffs (A→B→A)
 - [ ] Test: Unicode agent names, emoji in metadata, very long strings
 - [ ] Test: concurrent recording from multiple threads simultaneously
 
