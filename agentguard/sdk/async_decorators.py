@@ -13,12 +13,19 @@ Usage:
 
 from __future__ import annotations
 
+import logging
+
+_logger = logging.getLogger(__name__)
+
 import functools
 from typing import Any, Callable, Optional
 
 from agentguard.core.trace import Span, SpanType
 from agentguard.sdk.recorder import get_recorder
-from agentguard.sdk.decorators import _safe_serialize
+from agentguard.sdk.decorators import (
+    _safe_serialize, _try_start_span, _try_start_tool_span,
+    _try_complete_span, _try_fail_span, _try_pop_span,
+)
 
 
 def record_agent_async(
@@ -39,24 +46,16 @@ def record_agent_async(
     def decorator(func: Callable) -> Callable:
         @functools.wraps(func)
         async def wrapper(*args, **kwargs) -> Any:
-            recorder = get_recorder()
-            span = Span(
-                span_type=SpanType.AGENT,
-                name=name,
-                parent_span_id=recorder.current_span_id,
-                input_data=_safe_serialize({"args": args, "kwargs": kwargs}),
-                metadata={"agent_version": version, **(metadata or {})},
-            )
-            recorder.push_span(span)
+            span = _try_start_span(name, version, metadata, args, kwargs)
             try:
                 result = await func(*args, **kwargs)
-                span.complete(output=_safe_serialize(result))
+                _try_complete_span(span, result)
                 return result
             except Exception as e:
-                span.fail(error=f"{type(e).__name__}: {str(e)}")
+                _try_fail_span(span, e)
                 raise
             finally:
-                recorder.pop_span(span)
+                _try_pop_span(span)
         return wrapper
     return decorator
 
@@ -77,23 +76,15 @@ def record_tool_async(
     def decorator(func: Callable) -> Callable:
         @functools.wraps(func)
         async def wrapper(*args, **kwargs) -> Any:
-            recorder = get_recorder()
-            span = Span(
-                span_type=SpanType.TOOL,
-                name=name,
-                parent_span_id=recorder.current_span_id,
-                input_data=_safe_serialize({"args": args, "kwargs": kwargs}),
-                metadata=metadata or {},
-            )
-            recorder.push_span(span)
+            span = _try_start_tool_span(name, metadata, args, kwargs)
             try:
                 result = await func(*args, **kwargs)
-                span.complete(output=_safe_serialize(result))
+                _try_complete_span(span, result)
                 return result
             except Exception as e:
-                span.fail(error=f"{type(e).__name__}: {str(e)}")
+                _try_fail_span(span, e)
                 raise
             finally:
-                recorder.pop_span(span)
+                _try_pop_span(span)
         return wrapper
     return decorator
