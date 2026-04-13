@@ -40,7 +40,7 @@
 - [x] Test: trace with duplicate agent names (same agent called multiple times)
 - [x] Test: trace with circular handoffs (A→B→A)
 - [x] Test: Unicode agent names, emoji in metadata, very long strings
-- [ ] Test: concurrent recording from multiple threads simultaneously
+- [x] Test: concurrent recording from multiple threads simultaneously
 
 ## Progress Log
 - 2026-04-13: Sprint 3 started — focus on production depth, not feature breadth
