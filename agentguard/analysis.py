@@ -588,33 +588,56 @@ def _identify_bottleneck_span(
     return max(work_spans, key=lambda s: s.duration_ms or 0)
 
 
+def _compute_work_wait(span: Span, children: list[Span]) -> tuple[float, float]:
+    """Compute work_time vs wait_time for an agent span.
+
+    work_time: time children are actively executing (sum of child durations).
+    wait_time: agent wall time minus work_time — gaps, scheduling, overhead.
+
+    This distinguishes "slow because LLM call is slow" (high work_time)
+    from "slow because waiting for dependency" (high wait_time).
+
+    Returns:
+        (work_time_ms, wait_time_ms)
+    """
+    total = span.duration_ms or 0
+    work = sum(c.duration_ms or 0 for c in children)
+    # Work can exceed total if children overlap (parallel), cap at total
+    work = min(work, total)
+    wait = max(total - work, 0)
+    return work, wait
+
+
 def _rank_bottlenecks(
     trace: ExecutionTrace,
     children_map: dict[str, list[Span]],
 ) -> list[dict]:
-    """Rank agents by own duration (total minus children).
+    """Rank agents by own duration with work/wait breakdown.
 
-    Own duration isolates the real work an agent does, excluding time
-    delegated to sub-agents or tools. Sorted descending by own_duration_ms.
+    - own_duration_ms: total minus children (agent's own CPU work)
+    - work_time_ms: time children are executing (LLM calls, tools)
+    - wait_time_ms: idle time — gaps, scheduling, dependency waits
     """
     total_dur = trace.duration_ms or 1
     parent_ids = set(children_map.keys())
     rankings = []
     for s in trace.agent_spans:
         total_d = s.duration_ms or 0
-        child_dur = sum(c.duration_ms or 0 for c in children_map.get(s.span_id, []))
+        children = children_map.get(s.span_id, [])
+        child_dur = sum(c.duration_ms or 0 for c in children)
         own_d = max(total_d - child_dur, 0)
+        work, wait = _compute_work_wait(s, children)
         rankings.append({
             "name": s.name,
             "duration_ms": total_d,
             "own_duration_ms": own_d,
+            "work_time_ms": work,
+            "wait_time_ms": wait,
             "pct": (total_d / max(total_dur, 1)) * 100,
             "own_pct": (own_d / max(total_dur, 1)) * 100,
             "status": s.status.value,
             "is_container": s.span_id in parent_ids,
-            "category": _classify_span_category(
-                s, own_d, total_d, children_map.get(s.span_id, [])
-            ),
+            "category": _classify_span_category(s, own_d, total_d, children),
         })
     rankings.sort(key=lambda x: x["own_duration_ms"], reverse=True)
     return rankings
