@@ -570,6 +570,7 @@ class ContextFlowPoint:
     anomaly: str = ""  # "loss", "bloat", "compression", "truncation", "ok"
     truncation_detail: str = ""  # description if truncation detected
     retention_ratio: Optional[float] = None  # bytes_received / bytes_sent (1.0 = perfect)
+    transformations: list[dict] = field(default_factory=list)  # semantic changes detected
 
     def to_dict(self) -> dict:
         return {
@@ -579,6 +580,7 @@ class ContextFlowPoint:
             "anomaly": self.anomaly,
             "truncation_detail": self.truncation_detail,
             "retention_ratio": round(self.retention_ratio, 3) if self.retention_ratio is not None else None,
+            "transformations": self.transformations,
         }
 
 
@@ -665,6 +667,96 @@ def _detect_truncation(
     return False, ""
 
 
+def _detect_transformations(
+    sender_data: Any, receiver_data: Any,
+    sent_keys: list[str], received_keys: list[str],
+) -> list[dict]:
+    """Detect semantic transformations between handoff sender and receiver.
+
+    Checks for: summarization (value shrunk significantly),
+    filtering (list shortened), type changes, and key renaming.
+
+    Returns:
+        List of dicts with 'type', 'key', and 'detail' for each transform.
+    """
+    if not isinstance(sender_data, dict) or not isinstance(receiver_data, dict):
+        return []
+    transforms: list[dict] = []
+    common = set(sent_keys) & set(received_keys)
+    for key in common:
+        s_val = sender_data.get(key)
+        r_val = receiver_data.get(key)
+        t = _classify_value_transform(key, s_val, r_val)
+        if t:
+            transforms.append(t)
+    # Check for possible key renaming
+    transforms.extend(_detect_key_renames(sender_data, receiver_data, sent_keys, received_keys))
+    return transforms
+
+
+def _classify_value_transform(key: str, sent: Any, received: Any) -> Optional[dict]:
+    """Classify how a value changed between sender and receiver."""
+    if sent == received:
+        return None
+    if type(sent) != type(received):
+        return {"type": "type_change", "key": key,
+                "detail": f"{type(sent).__name__} -> {type(received).__name__}"}
+    if isinstance(sent, str) and isinstance(received, str):
+        return _classify_string_transform(key, sent, received)
+    if isinstance(sent, list) and isinstance(received, list):
+        return _classify_list_transform(key, sent, received)
+    if isinstance(sent, dict) and isinstance(received, dict):
+        if len(received) < len(sent):
+            return {"type": "filtering", "key": key,
+                    "detail": f"dict shrunk from {len(sent)} to {len(received)} keys"}
+    return {"type": "modified", "key": key, "detail": "value changed"}
+
+
+def _classify_string_transform(key: str, sent: str, received: str) -> Optional[dict]:
+    """Detect summarization or truncation in string values."""
+    ratio = len(received) / max(len(sent), 1)
+    if ratio < 0.5 and len(sent) > 50:
+        return {"type": "summarization", "key": key,
+                "detail": f"{len(sent)} chars -> {len(received)} chars ({ratio:.0%} retained)"}
+    if ratio < 0.9 and len(sent) > 20:
+        return {"type": "compression", "key": key,
+                "detail": f"{len(sent)} -> {len(received)} chars"}
+    if ratio > 2.0:
+        return {"type": "expansion", "key": key,
+                "detail": f"{len(sent)} -> {len(received)} chars"}
+    return {"type": "modified", "key": key, "detail": "string changed"}
+
+
+def _classify_list_transform(key: str, sent: list, received: list) -> Optional[dict]:
+    """Detect filtering in list values."""
+    if len(received) < len(sent):
+        return {"type": "filtering", "key": key,
+                "detail": f"list filtered from {len(sent)} to {len(received)} items"}
+    if len(received) > len(sent):
+        return {"type": "expansion", "key": key,
+                "detail": f"list grew from {len(sent)} to {len(received)} items"}
+    if sent != received:
+        return {"type": "reordered", "key": key, "detail": "list items changed"}
+    return None
+
+
+def _detect_key_renames(
+    sender: dict, receiver: dict,
+    sent_keys: list[str], received_keys: list[str],
+) -> list[dict]:
+    """Detect possible key renames (lost key + new key with similar value)."""
+    lost = set(sent_keys) - set(received_keys)
+    gained = set(received_keys) - set(sent_keys)
+    renames: list[dict] = []
+    for lk in lost:
+        for gk in gained:
+            if sender.get(lk) == receiver.get(gk) and sender.get(lk) is not None:
+                renames.append({"type": "rename", "key": lk,
+                                "detail": f"'{lk}' likely renamed to '{gk}'"})
+                break
+    return renames
+
+
 def analyze_context_flow(trace: ExecutionTrace) -> ContextFlowReport:
     """Analyze how context flows between agents via handoffs.
     
@@ -746,6 +838,9 @@ def analyze_context_flow(trace: ExecutionTrace) -> ContextFlowReport:
 
                 retention = r_size / s_size if s_size > 0 else None
 
+                transforms = _detect_transformations(
+                    sender_output, receiver_input, s_keys, r_keys
+                )
                 points.append(ContextFlowPoint(
                     from_agent=sender.name, to_agent=receiver.name,
                     keys_sent=s_keys, size_bytes=s_size,
@@ -754,6 +849,7 @@ def analyze_context_flow(trace: ExecutionTrace) -> ContextFlowReport:
                     anomaly=anomaly,
                     truncation_detail=trunc_desc if is_trunc else "",
                     retention_ratio=retention,
+                    transformations=transforms,
                 ))
     
     total_bytes = sum(p.size_bytes for p in points)
