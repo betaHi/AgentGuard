@@ -30,9 +30,13 @@ from agentguard.web.viewer import generate_report_from_trace
 
 # ── Your existing tools (add @record_tool) ──
 @record_tool(name="llm_call")
-def call_llm(prompt: str, model: str = "claude-3-sonnet") -> str:
+def call_llm(prompt: str, model: str = "claude-3-sonnet") -> dict:
     time.sleep(random.uniform(0.1, 0.3))
-    return f"LLM response to: {prompt[:30]}..."
+    return {
+        "response": f"LLM response to: {prompt[:30]}...",
+        "tokens_used": random.randint(200, 500),
+        "cost_usd": round(random.uniform(0.002, 0.008), 4),
+    }
 
 @record_tool(name="web_search")
 def search_web(query: str) -> list:
@@ -49,12 +53,14 @@ def query_db(sql: str) -> list:
 @record_agent(name="researcher", version="v2.1")
 def research(topic: str) -> dict:
     web_results = search_web(topic)
-    analysis = call_llm(f"Analyze: {topic}")
+    llm_result = call_llm(f"Analyze: {topic}")
+    analysis = llm_result["response"]
     return {"results": web_results, "analysis": analysis}
 
 @record_agent(name="writer", version="v1.3")
 def write(research_data: dict) -> str:
-    return call_llm(f"Write report based on: {research_data['analysis']}")
+    result = call_llm(f"Write report based on: {research_data['analysis']}")
+    return result["response"]
 
 
 # ══════════════════════════════════════
