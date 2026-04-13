@@ -95,3 +95,26 @@ class TestCollapsiblePanels:
     def test_panels_have_body(self):
         html = trace_to_html_string(_sample_trace())
         assert html.count('d-body') >= 9
+
+
+class TestSearchFilter:
+    def test_search_input_present(self):
+        html = trace_to_html_string(_sample_trace())
+        assert 'span-search' in html
+
+    def test_status_filter_present(self):
+        html = trace_to_html_string(_sample_trace())
+        assert 'status-filter' in html
+
+    def test_duration_filters_present(self):
+        html = trace_to_html_string(_sample_trace())
+        assert 'min-dur' in html
+        assert 'max-dur' in html
+
+    def test_filter_js_present(self):
+        html = trace_to_html_string(_sample_trace())
+        assert 'filterSpans' in html
+
+    def test_filter_count_present(self):
+        html = trace_to_html_string(_sample_trace())
+        assert 'filter-count' in html

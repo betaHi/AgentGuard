@@ -247,6 +247,36 @@ document.querySelectorAll(".g-row").forEach(function(row){{
 document.addEventListener("keydown",function(e){{
   if(e.key==="Escape")document.querySelectorAll(".g-detail").forEach(function(d){{d.remove();}});
 }});
+function filterSpans(){{
+  var q=(document.getElementById("span-search").value||"").toLowerCase();
+  var st=document.getElementById("status-filter").value;
+  var minD=parseFloat(document.getElementById("min-dur").value)||0;
+  var maxD=parseFloat(document.getElementById("max-dur").value)||Infinity;
+  var rows=document.querySelectorAll(".g-row");
+  var shown=0;
+  rows.forEach(function(row){{
+    var nm=row.querySelector(".nm");
+    var name=nm?(nm.textContent||"").toLowerCase():"";
+    var bar=row.querySelector(".g-bar");
+    var durText=bar?bar.textContent.replace(/[^0-9.]/g,""):"";
+    var dur=parseFloat(durText)||0;
+    var isErr=bar&&bar.classList.contains("err");
+    var isSlow=bar&&bar.classList.contains("slow");
+    var statusOk=!st||(st==="err"&&isErr)||(st==="slow"&&isSlow)||(st==="ok"&&!isErr&&!isSlow);
+    var nameOk=!q||name.indexOf(q)!==-1;
+    var durOk=dur>=minD&&dur<=maxD;
+    var show=nameOk&&statusOk&&durOk;
+    row.style.display=show?"":"none";
+    if(show)shown++;
+  }});
+  var ct=document.getElementById("filter-count");
+  if(ct)ct.textContent=shown+"/"+rows.length+" spans";
+}}
+["span-search","status-filter","min-dur","max-dur"].forEach(function(id){{
+  var el=document.getElementById(id);
+  if(el)el.addEventListener("input",filterSpans);
+}});
+filterSpans();
 var _zoomLevel=100;
 function zoomGantt(dir){{
   if(dir===0){{_zoomLevel=100;}}
@@ -289,6 +319,36 @@ document.querySelectorAll(".g-row").forEach(function(row){{
 document.addEventListener("keydown",function(e){{
   if(e.key==="Escape")document.querySelectorAll(".g-detail").forEach(function(d){{d.remove();}});
 }});
+function filterSpans(){{
+  var q=(document.getElementById("span-search").value||"").toLowerCase();
+  var st=document.getElementById("status-filter").value;
+  var minD=parseFloat(document.getElementById("min-dur").value)||0;
+  var maxD=parseFloat(document.getElementById("max-dur").value)||Infinity;
+  var rows=document.querySelectorAll(".g-row");
+  var shown=0;
+  rows.forEach(function(row){{
+    var nm=row.querySelector(".nm");
+    var name=nm?(nm.textContent||"").toLowerCase():"";
+    var bar=row.querySelector(".g-bar");
+    var durText=bar?bar.textContent.replace(/[^0-9.]/g,""):"";
+    var dur=parseFloat(durText)||0;
+    var isErr=bar&&bar.classList.contains("err");
+    var isSlow=bar&&bar.classList.contains("slow");
+    var statusOk=!st||(st==="err"&&isErr)||(st==="slow"&&isSlow)||(st==="ok"&&!isErr&&!isSlow);
+    var nameOk=!q||name.indexOf(q)!==-1;
+    var durOk=dur>=minD&&dur<=maxD;
+    var show=nameOk&&statusOk&&durOk;
+    row.style.display=show?"":"none";
+    if(show)shown++;
+  }});
+  var ct=document.getElementById("filter-count");
+  if(ct)ct.textContent=shown+"/"+rows.length+" spans";
+}}
+["span-search","status-filter","min-dur","max-dur"].forEach(function(id){{
+  var el=document.getElementById(id);
+  if(el)el.addEventListener("input",filterSpans);
+}});
+filterSpans();
 var _zoomLevel=100;
 function zoomGantt(dir){
   if(dir===0){_zoomLevel=100;}
