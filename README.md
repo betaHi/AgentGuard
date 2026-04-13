@@ -346,7 +346,7 @@ See [docs/architecture.md](docs/architecture.md) for details.
 | **CLI** | 33 commands: show, analyze, diff, summary, score, aggregate, timeline, metrics, and more |
 | **Export** | JSON, JSONL, OTel, Prometheus text format |
 
-**1170+ tests • 20 examples • Zero external dependencies for core**
+**1330+ tests • 20 examples • Zero external dependencies for core**
 
 ## Install
 
