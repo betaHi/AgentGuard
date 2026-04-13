@@ -17,7 +17,7 @@ from typing import Any, Optional
 
 from agentguard.core.trace import ExecutionTrace, Span, SpanType, SpanStatus
 
-__all__ = ['FailureNode', 'FailureAnalysis', 'analyze_failures', 'HandoffInfo', 'FlowAnalysis', 'analyze_flow', 'BottleneckReport', 'analyze_bottleneck', 'ContextFlowPoint', 'ContextFlowReport', 'analyze_context_flow', 'analyze_retries', 'analyze_cost', 'analyze_cost_yield', 'CostYieldEntry', 'CostYieldReport', 'DecisionRecord', 'DecisionAnalysis', 'analyze_decisions', 'DurationAnomaly', 'DurationAnomalyReport', 'detect_duration_anomalies', 'analyze_timing', 'CounterfactualResult', 'CounterfactualAnalysis', 'analyze_counterfactual']
+__all__ = ['FailureNode', 'FailureAnalysis', 'analyze_failures', 'HandoffInfo', 'FlowAnalysis', 'analyze_flow', 'BottleneckReport', 'analyze_bottleneck', 'ContextFlowPoint', 'ContextFlowReport', 'analyze_context_flow', 'analyze_retries', 'analyze_cost', 'analyze_cost_yield', 'CostYieldEntry', 'CostYieldReport', 'DecisionRecord', 'DecisionAnalysis', 'analyze_decisions', 'DurationAnomaly', 'DurationAnomalyReport', 'detect_duration_anomalies', 'analyze_timing', 'CounterfactualResult', 'CounterfactualAnalysis', 'analyze_counterfactual', 'RepeatedBadDecision', 'detect_repeated_bad_decisions']
 
 
 @dataclass
@@ -880,20 +880,18 @@ class CostYieldReport:
         return "\n".join(lines)
 
 
-def _compute_waste_score(entry: CostYieldEntry) -> float:
+def _compute_waste_score(entry: CostYieldEntry, max_tokens: int = 1) -> float:
     """Compute waste score for one agent.
 
-    Waste = normalized_cost × (100 - yield_score).
-    High cost + low yield = high waste.
+    Waste = cost_factor × (1 - yield_factor) × 100.
+    High cost + low yield = high waste. Range: 0-100.
     Failed agents get maximum waste penalty.
     """
     if entry.status == "failed":
         return 100.0
-    # Yield is 0-100, invert so low yield = high waste factor
     waste_factor = (100 - entry.yield_score) / 100
-    # Cost factor: use tokens as proxy (0 tokens = 0 cost waste)
-    cost_factor = min(entry.tokens / max(1, 1), 1.0) if entry.tokens > 0 else 0
-    return waste_factor * 100
+    cost_factor = (entry.tokens / max(max_tokens, 1)) if entry.tokens > 0 else 0.0
+    return round(cost_factor * waste_factor * 100, 1)
 
 
 def _find_most_wasteful(
@@ -902,7 +900,8 @@ def _find_most_wasteful(
     """Find the agent with highest waste score."""
     if not entries:
         return "", 0.0
-    scored = [(e, _compute_waste_score(e)) for e in entries]
+    max_tok = max((e.tokens for e in entries if e.tokens > 0), default=1)
+    scored = [(e, _compute_waste_score(e, max_tok)) for e in entries]
     scored.sort(key=lambda x: -x[1])
     return scored[0][0].agent, scored[0][1]
 
@@ -915,9 +914,10 @@ def _generate_cost_recommendations(
     Each recommendation targets a specific inefficiency pattern
     with a concrete suggestion for improvement.
     """
+    max_tok = max((e.tokens for e in entries if e.tokens > 0), default=1)
     recs = []
     for e in entries:
-        waste = _compute_waste_score(e)
+        waste = _compute_waste_score(e, max_tok)
         if e.status == "failed" and e.tokens > 0:
             recs.append(
                 f"'{e.agent}' consumed {e.tokens:,} tokens but failed. "
@@ -1089,6 +1089,85 @@ class DecisionAnalysis:
                          f"{f' ({d.downstream_duration_ms:.0f}ms)' if d.downstream_duration_ms else ''}")
             lines.append("")
         return "\n".join(lines)
+
+
+@dataclass
+class RepeatedBadDecision:
+    """Detection of an agent repeatedly chosen despite prior failures.
+
+    This is a strong signal of Q5 degradation: the orchestrator
+    keeps picking the same failing agent instead of learning.
+    """
+    agent: str
+    times_chosen: int
+    times_failed: int
+    coordinators: list[str]  # which coordinators made this mistake
+    failure_rate: float  # times_failed / times_chosen
+
+    def to_dict(self) -> dict[str, Any]:
+        return {
+            "agent": self.agent,
+            "times_chosen": self.times_chosen,
+            "times_failed": self.times_failed,
+            "coordinators": self.coordinators,
+            "failure_rate": round(self.failure_rate, 2),
+        }
+
+
+def detect_repeated_bad_decisions(
+    trace: ExecutionTrace,
+) -> list[RepeatedBadDecision]:
+    """Detect agents chosen multiple times despite prior failures.
+
+    Scans all orchestration decisions chronologically. If an agent
+    was chosen after it previously failed, that's a repeated bad
+    decision. Returns agents with failure_rate > 0 and times_chosen >= 2.
+
+    Why this matters: orchestrators that don't learn from failures
+    waste tokens and time on agents that keep failing.
+    """
+    da = analyze_decisions(trace)
+    if not da.decisions:
+        return []
+
+    agent_stats = _collect_agent_decision_stats(da.decisions)
+    return _filter_repeated_failures(agent_stats)
+
+
+def _collect_agent_decision_stats(
+    decisions: list[DecisionRecord],
+) -> dict[str, dict]:
+    """Aggregate per-agent decision outcomes."""
+    stats: dict[str, dict] = {}
+    for d in decisions:
+        agent = d.chosen_agent
+        if agent not in stats:
+            stats[agent] = {
+                "chosen": 0, "failed": 0, "coordinators": set()
+            }
+        stats[agent]["chosen"] += 1
+        stats[agent]["coordinators"].add(d.coordinator)
+        if d.led_to_failure:
+            stats[agent]["failed"] += 1
+    return stats
+
+
+def _filter_repeated_failures(
+    stats: dict[str, dict],
+) -> list[RepeatedBadDecision]:
+    """Filter to agents chosen ≥2 times with failures."""
+    results = []
+    for agent, s in stats.items():
+        if s["chosen"] >= 2 and s["failed"] > 0:
+            results.append(RepeatedBadDecision(
+                agent=agent,
+                times_chosen=s["chosen"],
+                times_failed=s["failed"],
+                coordinators=sorted(s["coordinators"]),
+                failure_rate=s["failed"] / s["chosen"],
+            ))
+    results.sort(key=lambda r: -r.failure_rate)
+    return results
 
 
 def _has_descendant_failure(
