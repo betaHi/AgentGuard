@@ -1,33 +1,28 @@
-# AgentGuard — Sprint 4: Polish & Depth
+# AgentGuard — Sprint 5: Bug Fixes & Quality
 
 ## Current Stories
 
-### P0: Deepen the 5 Questions further
-- [x] Q1: bottleneck should detect "false bottleneck" — agent that appears slow but is actually waiting on a dependency
-- [x] Q2: handoff should track context transformation — not just keys sent/received but semantic changes (summarization, filtering)
-- [x] Q3: failure propagation should distinguish recoverable vs fatal failures in the causal chain
-- [x] Q4: cost-yield should support custom cost models (not just token count) — allow user-defined cost functions
-- [x] Q5: decision analysis should suggest optimal agent selection based on historical performance
+### P0: Cost/Token data not flowing to analysis
+- [ ] Fix: multi_model_pipeline.py — agent output has cost_usd/tokens but span.estimated_cost_usd is None → cost-yield analysis shows "free" for all agents. Root cause: record_agent/record_tool decorators don't extract cost_usd/token_count from output_data into span fields. Fix: either (a) auto-extract known keys from output_data, or (b) update examples to explicitly set span cost via SDK API. Preferred: option (a) — if output_data contains "cost_usd" or "tokens_used"/"token_count", copy to span fields automatically
+- [ ] Fix: coding_pipeline.py — same issue, total_cost shows $0.0766 in output but analyze_cost shows $0.00
+- [ ] Test: verify cost-yield analysis returns non-zero costs when agents report cost in output_data
 
-### P1: Viewer & CLI polish
-- [x] Viewer: add collapsible sections in diagnostics panel (expand/collapse each analysis)
-- [x] Viewer: add trace search/filter — find spans by agent name, status, or duration range
-- [x] CLI: add `agentguard diff trace1.json trace2.json` — compare two traces with colored output
-- [x] CLI: add `agentguard summary` — one-line summary of trace health (like git status)
+### P1: Context Flow false positives in parallel pipelines
+- [ ] Fix: parallel_pipeline.py context flow reports truncation between parallel agents (web_researcher → academic_researcher: -85%) — these are independent parallel agents, NOT a handoff chain. Context flow should only analyze actual handoff pairs, not sequential siblings
+- [ ] Test: parallel pipeline context flow should NOT report truncation between independent parallel agents
 
-### P2: SDK production hardening
-- [x] SDK: add sampling — record only N% of traces in production (configurable)
-- [x] SDK: add span annotations — user can attach arbitrary key-value metadata to spans
-- [x] SDK: add trace correlation ID — link related traces across service boundaries
-- [x] SDK: add batch export — accumulate spans and flush periodically (reduce I/O)
+### P2: deep_analysis_demo duration is 0ms
+- [ ] Fix: deep_analysis_demo.py — TraceBuilder-constructed spans have 0ms duration because timestamps aren't set. TraceBuilder.add_agent/add_tool should accept duration_ms parameter and auto-set started_at/ended_at
+- [ ] Test: TraceBuilder with duration_ms produces spans with correct timestamps
 
-### P3: Advanced testing
-- [x] Test: replay a trace, mutate one agent's timing, verify analysis changes correctly
-- [x] Test: generate adversarial traces (contradictory timestamps, missing parents) — verify graceful handling
-- [x] Test: verify all CLI commands work end-to-end with real trace files
-- [x] Test: verify HTML viewer renders correctly with 50+ agent traces
+### P3: Correlation analysis always empty on single trace
+- [ ] Fix: correlation analysis returns 0 correlations on single trace — it should still detect patterns within a single trace (e.g., failed spans sharing same parent, timing clusters). If single-trace correlation is inherently limited, document this clearly and show a multi-trace example
+- [ ] Test: correlation analysis on a complex single trace returns at least basic patterns
 
-### P4: Documentation & best practices
-- [x] Update docs/best-practices.md with Sprint 3 lessons
-- [x] Create docs/faq.md — common questions and troubleshooting
-- [x] Update README with Sprint 3 features (1000+ tests, new analysis capabilities)
+### P4: Screenshot generation script
+- [ ] Create scripts/generate_screenshots.py — Playwright script to regenerate all 8 README screenshots from live HTML report + CLI output. Should be runnable with `python scripts/generate_screenshots.py`. Document in CONTRIBUTING.md
+
+### P5: Review all examples output quality
+- [ ] Review: run ALL 20 examples, verify each produces correct non-zero metrics, no misleading output
+- [ ] Fix any examples that show incorrect/misleading data
+- [ ] Test: add integration test that runs all examples and checks exit code 0 + output sanity
