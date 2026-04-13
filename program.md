@@ -28,6 +28,6 @@
 - [x] Test: verify HTML viewer renders correctly with 50+ agent traces
 
 ### P4: Documentation & best practices
-- [ ] Update docs/best-practices.md with Sprint 3 lessons
+- [x] Update docs/best-practices.md with Sprint 3 lessons
 - [ ] Create docs/faq.md — common questions and troubleshooting
 - [ ] Update README with Sprint 3 features (1000+ tests, new analysis capabilities)
