@@ -4,8 +4,8 @@
 
 ### Phase 1: CI & Code Quality (fix the broken build first)
 
-- [ ] Fix: ruff lint — run `ruff check --fix` to auto-fix 2677 fixable errors (W293 whitespace, F401 unused imports, I001 import order), then manually fix remaining ~389 (F841 unused vars, E722 bare except, F821 undefined names in recorder.py, B904 raise-from). CI must pass green after this. Do NOT just add noqa — actually fix the code
-- [ ] Fix: ruff remaining manual fixes — F841 (58 unused variables: remove or use them), E722 (12 bare excepts: add specific exception types), F821 (2 undefined `Any` in recorder.py: add import), B904 (4 raise-from: use `raise X from Y`), E741 (14 ambiguous variable names: rename), F541 (31 f-string without placeholders: convert to regular strings)
+- [x] Fix: ruff lint — done manually by planner (3066 errors fixed, all checks passed)
+- [x] Fix: ruff remaining manual fixes — done with autofix pass (all resolved)
 - [ ] Fix: consolidate 3 redundant example test files (test_examples_smoke.py, test_examples_no_misleading.py, test_examples_integration.py) into one test_examples.py with parametrized checks. Currently running all examples 3x (~3min wasted). Single file, all 4 check types (exit code, output, no traceback, no import error)
 - [ ] Fix: remove duplicate modules — merge export_v2.py into export.py (keep best of both), merge replay_v2.py into replay.py (keep best of both). Update all imports. Remove _v2 files. No functionality loss
 
