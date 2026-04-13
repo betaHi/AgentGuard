@@ -42,6 +42,9 @@ Documentation = "https://github.com/betaHi/AgentGuard#readme"
 [tool.setuptools.packages.find]
 include = ["agentguard*"]
 
+[tool.setuptools.package-data]
+agentguard = ["py.typed"]
+
 [tool.pytest.ini_options]
 testpaths = ["tests"]
 
