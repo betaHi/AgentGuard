@@ -188,10 +188,19 @@ body{{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',system-ui,monospac
 <div class="top-bar">
 <h1>🛡️ AgentGuard</h1>
 <div class="meta">
-{_esc(primary.task)} · {_esc(primary.trigger)} · {dur_total/1000:.1f}s · {len(primary.spans)} spans
+{_esc(primary.task)}
 <span class="badge {status_cls}" style="margin-left:8px">{status_txt}</span>
-{f'<span style="margin-left:8px;color:var(--dim)">{trace_count} traces</span>' if trace_count > 1 else ''}
 <span class="score-badge score-{_score.grade.lower()}">{_score.overall:.0f}/100 ({_score.grade})</span>
+{f'<span style="margin-left:8px;color:var(--dim)">{trace_count} traces</span>' if trace_count > 1 else ''}
+</div>
+<div class="meta-detail" style="font-size:11px;color:var(--dim);padding:2px 16px 0">
+⏱ {dur_total/1000:.1f}s total
+· 🤖 {len(primary.agent_spans)} agents
+· 📊 {len(primary.spans)} spans
+· 🔧 {sum(1 for s in primary.spans if s.span_type.value == 'tool')} tools
+· 🔀 {sum(1 for s in primary.spans if s.span_type.value == 'handoff')} handoffs
+· 🔴 {sum(1 for s in primary.spans if s.status and s.status.value == 'failed')} failed
+· Trigger: {_esc(primary.trigger)}
 </div></div>
 
 <div class="layout">

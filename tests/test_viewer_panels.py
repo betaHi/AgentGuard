@@ -51,3 +51,29 @@ class TestViewerPanels:
         html = trace_to_html_string(_sample_trace())
         assert isinstance(html, str)
         assert len(html) > 1000
+
+
+class TestTraceMetadataHeader:
+    def test_task_name_shown(self):
+        html = trace_to_html_string(_sample_trace())
+        assert "viewer" in html  # task name
+
+    def test_agent_count_shown(self):
+        html = trace_to_html_string(_sample_trace())
+        assert "agents" in html
+
+    def test_span_count_shown(self):
+        html = trace_to_html_string(_sample_trace())
+        assert "spans" in html
+
+    def test_duration_shown(self):
+        html = trace_to_html_string(_sample_trace())
+        assert "total" in html
+
+    def test_failed_count_shown(self):
+        html = trace_to_html_string(_sample_trace())
+        assert "failed" in html
+
+    def test_tools_count_shown(self):
+        html = trace_to_html_string(_sample_trace())
+        assert "tools" in html
