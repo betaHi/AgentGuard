@@ -28,8 +28,10 @@ def main():
         .agent("researcher", duration_ms=8000,
                output_data={"articles": ["a1", "a2", "a3"], "raw": "x" * 3000, "meta": {"src": "web"}},
                token_count=2000, cost_usd=0.06)
-            .tool("web_search", duration_ms=3000)
-            .tool("arxiv_fetch", duration_ms=2000)
+            .tool("web_search", duration_ms=3000, retry_count=2)
+            .tool("arxiv_fetch", duration_ms=2000, status="failed",
+                  error="ArXiv rate limit", retry_count=3)
+            .tool("arxiv_fetch", duration_ms=1500, retry_count=1)  # retry succeeded
             .llm_call("claude-summarize", duration_ms=2500, token_count=1500, cost_usd=0.04)
         .end()
         .handoff("researcher", "analyst", context_size=3500, dropped_keys=["raw"])
@@ -38,6 +40,8 @@ def main():
                output_data={"insights": ["i1", "i2"], "analysis": "deep analysis..."},
                token_count=3000, cost_usd=0.09)
             .llm_call("claude-analyze", duration_ms=4000, token_count=2500, cost_usd=0.08)
+            .tool("web_search", duration_ms=1000, status="failed",
+                  error="DNS timeout", retry_count=2)
         .end()
         .handoff("analyst", "writer", context_size=1500)
         .agent("writer", duration_ms=10000,
@@ -47,10 +51,14 @@ def main():
             .llm_call("claude-write", duration_ms=8000, token_count=4000, cost_usd=0.12)
             .tool("grammar_check", duration_ms=1000)
         .end()
+        .handoff("writer", "reviewer", context_size=2000, dropped_keys=["draft_history", "revision_notes"])
         .agent("reviewer", duration_ms=4000,
                status="failed", error="Review service timeout",
                token_count=1000, cost_usd=0.03)
-            .tool("style_check", duration_ms=500, status="failed", error="Connection refused", retry_count=3)
+            .tool("style_check", duration_ms=500, status="failed",
+                  error="Connection refused", retry_count=3)
+            .tool("plagiarism_check", duration_ms=300, status="failed",
+                  error="Service unavailable", retry_count=2)
         .end()
         .build())
 

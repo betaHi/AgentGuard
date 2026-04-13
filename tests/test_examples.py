@@ -95,9 +95,11 @@ class TestExamples:
             )
 
     def test_no_zero_spans(self, example_result):
-        """Should not report '0 spans'."""
+        """Should not report '0 spans' (but '10 spans' is fine)."""
+        import re
         name, r = example_result
-        assert "0 spans" not in r.stdout, f"{name} shows 0 spans"
+        # Match "0 spans" only when preceded by whitespace/punctuation, not a digit
+        assert not re.search(r"(?<!\d)0 spans", r.stdout), f"{name} shows 0 spans"
 
 
 def test_example_count():
