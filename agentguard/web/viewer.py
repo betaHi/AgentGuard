@@ -16,7 +16,9 @@ from pathlib import Path
 from typing import Any
 
 from agentguard.core.trace import ExecutionTrace, Span, SpanType, SpanStatus
-from agentguard.analysis import analyze_failures, analyze_flow, analyze_bottleneck, analyze_context_flow, analyze_retries, analyze_cost
+from agentguard.analysis import (analyze_failures, analyze_flow, analyze_bottleneck,
+    analyze_context_flow, analyze_retries, analyze_cost, analyze_cost_yield,
+    analyze_decisions, analyze_counterfactual, detect_repeated_bad_decisions)
 from agentguard.errors import analyze_errors
 
 def _try_evolve(trace):
@@ -84,7 +86,12 @@ def _build_full_html(traces: list[ExecutionTrace]) -> str:
     retries = analyze_retries(primary)
     cost = analyze_cost(primary)
     error_report = analyze_errors(primary)
-    diagnostics = _build_diagnostics(failures, bn, flow, ctx, retries, cost, error_report)
+    cost_yield = analyze_cost_yield(primary)
+    decisions = analyze_decisions(primary)
+    from agentguard.propagation import analyze_propagation
+    propagation = analyze_propagation(primary)
+    diagnostics = _build_diagnostics(failures, bn, flow, ctx, retries, cost, error_report,
+                                     cost_yield, decisions, propagation)
     
     # Trace selector (if multiple traces)
     trace_count = len(traces)
@@ -592,7 +599,8 @@ def _build_context_waterfall(ctx) -> str:
     )
 
 
-def _build_diagnostics(failures, bn, flow, ctx, retries=None, cost=None, error_report=None) -> str:
+def _build_diagnostics(failures, bn, flow, ctx, retries=None, cost=None, error_report=None,
+                       cost_yield=None, decisions=None, propagation=None) -> str:
     # Failure panel
     fail_items = []
     for rc in failures.root_causes:
@@ -631,6 +639,32 @@ def _build_diagnostics(failures, bn, flow, ctx, retries=None, cost=None, error_r
             ctx_items.append(f'<div class="item" style="color:var(--yl)">⚠ {_esc(a.from_agent)} → {_esc(a.to_agent)}: +{a.size_delta_bytes:,}B</div>')
     ctx_note = "\n".join(ctx_items) if ctx_items else '<div class="item" style="color:var(--gn)">No anomalies</div>'
     
+    # Cost-yield panel
+    cy_wasteful = f"Most wasteful: {_esc(cost_yield.most_wasteful_agent)}" if cost_yield and cost_yield.most_wasteful_agent else "No waste detected"
+    cy_detail = f"Waste score: {cost_yield.waste_score:.0f}/100" if cost_yield else ""
+    cy_recs = cost_yield.recommendations[:3] if cost_yield else []
+    cy_items = "\n".join(f'<div class="item">💡 {_esc(r)}</div>' for r in cy_recs) if cy_recs else '<div class="item" style="color:var(--gn)">No recommendations</div>'
+
+    # Decisions panel
+    dec_quality = f"{decisions.decision_quality_score:.0%} quality" if decisions else "N/A"
+    dec_detail = f"{decisions.total_decisions} decisions · {decisions.decisions_leading_to_failure} led to failure" if decisions else ""
+    dec_list = []
+    if decisions:
+        for d in decisions.decisions[:3]:
+            icon = "✗" if d.led_to_failure else "✓"
+            dec_list.append(f'<div class="item">{icon} {_esc(d.coordinator)} chose {_esc(d.chosen_agent)}</div>')
+    dec_items = "\n".join(dec_list) if dec_list else '<div class="item" style="color:var(--dim)">No decisions recorded</div>'
+
+    # Propagation panel
+    prop_containment = f"{propagation.containment_rate:.0%} containment" if propagation else "N/A"
+    prop_detail = f"{propagation.total_failures} failures · depth {propagation.max_depth}" if propagation else ""
+    prop_list = []
+    if propagation:
+        for c in propagation.causal_chains[:3]:
+            icon = "🟡" if c.contained else "🔴"
+            prop_list.append(f'<div class="item">{icon} {_esc(c.root_span_name)}: {_esc(c.root_error[:40])}</div>')
+    prop_items = "\n".join(prop_list) if prop_list else '<div class="item" style="color:var(--gn)">No propagation</div>'
+
     return f'''<div class="diag">
 <h3>Orchestration Diagnostics</h3>
 <div class="diag-grid">
@@ -680,6 +714,27 @@ def _build_diagnostics(failures, bn, flow, ctx, retries=None, cost=None, error_r
 <div class="val">{error_report.total_errors if error_report else 0} errors</div>
 <div class="det">{error_report.retryable_count if error_report else 0} retryable</div>
 <div class="items">{"".join(f'<div class="item"><span style="color:var(--dim)">{_esc(cat)}: {count}</span></div>' for cat, count in (error_report.by_category if error_report else {{}}).items())}</div>
+</div>
+
+<div class="d-box">
+<h4>📈 Cost-Yield Analysis</h4>
+<div class="val">{cy_wasteful}</div>
+<div class="det">{cy_detail}</div>
+<div class="items">{cy_items}</div>
+</div>
+
+<div class="d-box">
+<h4>🎯 Orchestration Decisions</h4>
+<div class="val">{dec_quality}</div>
+<div class="det">{dec_detail}</div>
+<div class="items">{dec_items}</div>
+</div>
+
+<div class="d-box">
+<h4>💥 Causal Chains</h4>
+<div class="val">{prop_containment}</div>
+<div class="det">{prop_detail}</div>
+<div class="items">{prop_items}</div>
 </div>
 
 </div></div>'''
