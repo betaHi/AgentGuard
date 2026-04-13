@@ -26,7 +26,11 @@ Integration styles:
     from agentguard.sdk.distributed import inject_trace_context, init_recorder_from_env
 """
 
-__version__ = "0.1.0"
+try:
+    from importlib.metadata import version as _get_version
+    __version__: str = _get_version("agentguard")
+except Exception:
+    __version__ = "0.1.0"  # fallback for editable/uninstalled mode
 
 from agentguard.aggregate import aggregate_traces
 from agentguard.alerts import AlertEngine, rule_score_below, rule_trace_failed
