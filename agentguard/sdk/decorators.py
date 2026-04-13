@@ -151,13 +151,51 @@ def _try_start_tool_span(
 
 
 def _try_complete_span(span: Optional[Span], result: Any) -> None:
-    """Mark span completed, silently ignoring errors."""
+    """Mark span completed and auto-extract cost/token metadata.
+
+    If the function returns a dict containing known cost/token keys,
+    they are automatically copied to span fields so cost-yield analysis
+    works without manual SDK calls.
+    """
     if span is None:
         return
     try:
         span.complete(output=_safe_serialize(result))
+        _auto_extract_cost_fields(span, result)
     except Exception:
         _logger.debug("AgentGuard: failed to complete span", exc_info=True)
+
+
+
+# Keys to auto-extract from output_data into span fields
+_COST_KEYS = ("cost_usd", "cost", "estimated_cost_usd")
+_TOKEN_KEYS = ("token_count", "tokens_used", "total_tokens", "tokens")
+
+
+def _auto_extract_cost_fields(span: Span, result: Any) -> None:
+    """Extract cost/token fields from result dict into span attributes.
+
+    Why: Many agent functions return cost metadata in their output dict
+    (e.g., {"result": ..., "cost_usd": 0.02, "tokens_used": 150}).
+    Without extraction, cost-yield analysis sees all agents as free.
+
+    Only extracts if span fields are still None (doesn't overwrite
+    explicitly set values from TraceBuilder or manual SDK).
+    """
+    if not isinstance(result, dict):
+        return
+    if span.estimated_cost_usd is None:
+        for key in _COST_KEYS:
+            val = result.get(key)
+            if isinstance(val, (int, float)) and val > 0:
+                span.estimated_cost_usd = float(val)
+                break
+    if span.token_count is None:
+        for key in _TOKEN_KEYS:
+            val = result.get(key)
+            if isinstance(val, int) and val > 0:
+                span.token_count = val
+                break
 
 
 def _try_fail_span(span: Optional[Span], error: Exception) -> None:
