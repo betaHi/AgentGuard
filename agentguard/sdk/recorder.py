@@ -63,6 +63,24 @@ class TraceRecorder:
         stack = self._span_stack
         return stack[-1] if stack else None
 
+    def annotate_span(self, key: str, value: Any) -> None:
+        """Attach a key-value annotation to the current span.
+
+        If no span is active or recording is sampled out, this is a no-op.
+        Annotations are stored in the span's metadata dict.
+
+        Args:
+            key: Annotation key (string).
+            value: Annotation value (must be JSON-serializable).
+        """
+        span_id = self.current_span_id
+        if span_id is None:
+            return
+        for s in self.trace.spans:
+            if s.span_id == span_id:
+                s.metadata[key] = value
+                return
+
     def capture_context(self) -> tuple[str, ...]:
         """Capture the current span stack for later reuse.
 
@@ -176,6 +194,27 @@ def get_recorder() -> TraceRecorder:
             if _global_recorder is None:
                 _global_recorder = TraceRecorder()
     return _global_recorder
+
+
+def annotate(key: str, value: Any) -> None:
+    """Annotate the current span with a key-value pair.
+
+    Convenience wrapper around get_recorder().annotate_span().
+    Safe to call even if no recording is active (fail-open).
+
+    Args:
+        key: Annotation key.
+        value: JSON-serializable value.
+
+    Example:
+        from agentguard.sdk.recorder import annotate
+        annotate("model_version", "gpt-4")
+        annotate("temperature", 0.7)
+    """
+    try:
+        get_recorder().annotate_span(key, value)
+    except Exception:
+        pass  # fail-open
 
 
 def finish_recording() -> ExecutionTrace:
