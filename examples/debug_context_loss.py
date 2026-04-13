@@ -10,11 +10,13 @@ The trace shows:
 Running this example prints the context flow analysis pinpointing the lost key
 and the failure analysis linking agent_b's error to the dropped context.
 """
-import sys, os
+import os
+import sys
+
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
-from agentguard.builder import TraceBuilder
 from agentguard.analysis import analyze_context_flow, analyze_failures
+from agentguard.builder import TraceBuilder
 
 
 def build_context_loss_trace():

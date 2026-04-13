@@ -1,8 +1,9 @@
 """Tests for trace replay v2."""
 
 import pytest
-from agentguard.core.trace import ExecutionTrace, Span, SpanType, SpanStatus
+
 from agentguard.builder import TraceBuilder
+from agentguard.core.trace import ExecutionTrace, SpanStatus, SpanType
 from agentguard.replay_v2 import TraceReplay, mutate_trace
 
 
@@ -28,7 +29,7 @@ class TestTraceReplay:
             .agent("bad", duration_ms=1000, status="failed", error="crash")
             .end()
             .build())
-        
+
         replay = TraceReplay().assert_completed("bad")
         result = replay.replay(trace)
         assert not result.all_passed
@@ -80,7 +81,7 @@ class TestMutateTrace:
     def test_slow_down(self, sample_trace):
         mutated = mutate_trace(sample_trace, "slow_down")
         # Durations should be roughly doubled
-        for orig, mut in zip(sample_trace.spans, mutated.spans):
+        for orig, mut in zip(sample_trace.spans, mutated.spans, strict=False):
             if orig.duration_ms and mut.duration_ms:
                 assert mut.duration_ms >= orig.duration_ms
 
@@ -93,7 +94,8 @@ class TestMutateTrace:
 import json
 import tempfile
 from pathlib import Path
-from agentguard.replay_v2 import replay_golden, compare_golden
+
+from agentguard.replay_v2 import compare_golden, replay_golden
 
 
 class TestGoldenReplay:

@@ -9,26 +9,26 @@ Architecture:
     - Child traces are written to separate files, then merged by parent
 """
 
+import os
 import subprocess
 import sys
-import os
 import time
 
 # Add project root to path
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 from agentguard import record_agent
-from agentguard.sdk.recorder import init_recorder, finish_recording
 from agentguard.sdk.distributed import (
-    inject_trace_context,
     init_recorder_from_env,
+    inject_trace_context,
     merge_child_traces,
 )
+from agentguard.sdk.recorder import finish_recording, init_recorder
 
 
 def run_child(agent_name: str, duration: float):
     """Child process entry point — called when this script is invoked with args."""
-    recorder = init_recorder_from_env()
+    init_recorder_from_env()
 
     @record_agent(name=agent_name, version="v1.0")
     def do_work():

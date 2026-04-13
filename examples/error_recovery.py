@@ -9,19 +9,19 @@ Demonstrates how AgentGuard captures different failure handling patterns:
 6. Partial result aggregation — collects from multiple sources despite failures
 """
 
-import time
+import os
 import random
 import sys
-import os
+import time
 
 random.seed(42)
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
-from agentguard import record_agent, record_tool, record_handoff
-from agentguard.sdk.recorder import init_recorder, finish_recording
+from agentguard import record_agent, record_handoff, record_tool
+from agentguard.ascii_viz import gantt_chart
 from agentguard.propagation import analyze_propagation
 from agentguard.scoring import score_trace
-from agentguard.ascii_viz import gantt_chart
+from agentguard.sdk.recorder import finish_recording, init_recorder
 
 
 # ── Pattern 1: Retry with backoff ──
@@ -160,37 +160,37 @@ def aggregator() -> dict:
 def main():
     print("🛡️ Error Recovery Patterns Demo")
     print("=" * 50)
-    
-    recorder = init_recorder(task="Error Recovery Patterns")
-    
+
+    init_recorder(task="Error Recovery Patterns")
+
     # Pattern 1: Retry
     print("\n🔄 Pattern 1: Retry with backoff")
     result1 = resilient_fetcher()
     print(f"   Result: {result1}")
-    
+
     record_handoff("resilient_fetcher", "smart_fetcher", context=result1)
-    
+
     # Pattern 2: Circuit breaker
     print("\n🛡️ Pattern 2: Circuit breaker (fallback)")
     result2 = smart_fetcher()
     print(f"   Result: {result2}")
-    
+
     record_handoff("smart_fetcher", "enricher", context=result2)
-    
+
     # Pattern 3: Graceful degradation
     print("\n📉 Pattern 3: Graceful degradation")
     result3 = enricher(result2)
     print(f"   Result: {result3}")
-    
+
     # Pattern 4: Unhandled failure
     print("\n💥 Pattern 4: Unhandled failure")
     try:
-        result4 = critical_agent()
+        critical_agent()
     except RuntimeError as e:
         print(f"   Caught: {e}")
-    
+
     trace = finish_recording()
-    
+
     record_handoff("enricher", "timeout_searcher", context=result3)
 
     # Pattern 5: Timeout with partial results
@@ -210,13 +210,13 @@ def main():
     # Analysis
     print("\n" + "=" * 50)
     print("📊 Analysis")
-    
+
     score = score_trace(trace)
     print(f"\n🎯 Score: {score.overall:.0f}/100 ({score.grade})")
-    
+
     prop = analyze_propagation(trace)
     print(f"\n{prop.to_report()}")
-    
+
     print(f"\n{gantt_chart(trace)}")
 
 

@@ -1,8 +1,9 @@
 """Tests for auto-extraction of cost/token fields from output_data."""
 
-from unittest.mock import patch, MagicMock
-from agentguard.sdk.decorators import record_agent, _auto_extract_cost_fields
+from unittest.mock import MagicMock, patch
+
 from agentguard.core.trace import Span, SpanType
+from agentguard.sdk.decorators import _auto_extract_cost_fields, record_agent
 
 
 class TestAutoExtractCost:

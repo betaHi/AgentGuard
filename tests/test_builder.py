@@ -1,8 +1,9 @@
 """Tests for trace builder."""
 
 import pytest
-from agentguard.core.trace import SpanType, SpanStatus
+
 from agentguard.builder import TraceBuilder
+from agentguard.core.trace import SpanStatus, SpanType
 
 
 class TestTraceBuilder:
@@ -88,7 +89,7 @@ class TestTraceBuilder:
             .agent("writer", duration_ms=2000)
             .end()
             .build())
-        
+
         assert len(trace.spans) == 8
         assert trace.status == SpanStatus.COMPLETED
         agents = [s for s in trace.spans if s.span_type == SpanType.AGENT]

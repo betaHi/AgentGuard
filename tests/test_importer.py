@@ -1,8 +1,9 @@
 """Tests for trace importer."""
 
 import pytest
-from agentguard.importer import import_otel, import_generic
-from agentguard.core.trace import SpanType, SpanStatus
+
+from agentguard.core.trace import SpanStatus, SpanType
+from agentguard.importer import import_generic, import_otel
 
 
 def _otel_trace():
@@ -85,7 +86,7 @@ class TestGenericImport:
         t = ExecutionTrace(task="native")
         t.add_span(Span(name="a", status=SpanStatus.COMPLETED))
         data = t.to_dict()
-        
+
         imported = import_generic(data)
         assert imported.task == "native"
 

@@ -19,8 +19,7 @@ exactly one global config per process, matching how logging.basicConfig works.
 from __future__ import annotations
 
 import logging
-from dataclasses import dataclass, field
-from typing import Optional
+from dataclasses import dataclass
 
 _logger = logging.getLogger(__name__)
 
@@ -66,11 +65,11 @@ _settings = Settings()
 
 
 def configure(
-    output_dir: Optional[str] = None,
-    max_trace_size_mb: Optional[float] = None,
-    sampling_rate: Optional[float] = None,
-    auto_truncate: Optional[bool] = None,
-    log_level: Optional[str] = None,
+    output_dir: str | None = None,
+    max_trace_size_mb: float | None = None,
+    sampling_rate: float | None = None,
+    auto_truncate: bool | None = None,
+    log_level: str | None = None,
 ) -> None:
     """Configure global AgentGuard settings.
 

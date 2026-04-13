@@ -11,9 +11,8 @@ from __future__ import annotations
 
 import json
 from dataclasses import dataclass, field
-from typing import Optional
 
-from agentguard.core.trace import ExecutionTrace, Span, SpanType, SpanStatus
+from agentguard.core.trace import ExecutionTrace, SpanType
 
 
 @dataclass
@@ -25,8 +24,8 @@ class ContextSnapshot:
     size_bytes: int
     key_count: int
     keys: list[str]
-    timestamp: Optional[str] = None
-    
+    timestamp: str | None = None
+
     def to_dict(self) -> dict:
         return {
             "agent": self.agent_name,
@@ -50,7 +49,7 @@ class ContextTransition:
     keys_added: list[str] = field(default_factory=list)
     keys_removed: list[str] = field(default_factory=list)
     keys_preserved: list[str] = field(default_factory=list)
-    
+
     def to_dict(self) -> dict:
         return {
             "from": self.from_agent,
@@ -73,7 +72,7 @@ class ContextBandwidth:
     bytes_transferred: int
     duration_ms: float
     bandwidth_bps: float  # bytes per second
-    
+
     def to_dict(self) -> dict:
         return {
             "from": self.from_agent,
@@ -93,10 +92,10 @@ class ContextFlowAnalysis:
     total_bytes_in: int
     total_bytes_out: int
     compression_ratio: float  # output/input ratio (< 1 = compression)
-    bottleneck_agent: Optional[str]  # agent where context is most compressed
+    bottleneck_agent: str | None  # agent where context is most compressed
     truncation_events: int  # number of significant context reductions
     expansion_events: int  # number of significant context expansions
-    
+
     def to_dict(self) -> dict:
         return {
             "snapshots": [s.to_dict() for s in self.snapshots],
@@ -109,7 +108,7 @@ class ContextFlowAnalysis:
             "truncation_events": self.truncation_events,
             "expansion_events": self.expansion_events,
         }
-    
+
     def to_report(self) -> str:
         lines = [
             "# Context Flow Analysis",
@@ -122,12 +121,12 @@ class ContextFlowAnalysis:
         ]
         if self.bottleneck_agent:
             lines.append(f"- **Context bottleneck:** {self.bottleneck_agent}")
-        
+
         lines.append("")
         lines.append("## Context Transitions")
         for t in self.transitions:
             icon = {
-                "stable": "🟢", "compression": "🟡", 
+                "stable": "🟢", "compression": "🟡",
                 "truncation": "🔴", "expansion": "🔵",
                 "transformation": "🟣",
             }.get(t.event, "⚪")
@@ -137,11 +136,11 @@ class ContextFlowAnalysis:
                 lines.append(f"   ⚠ Keys removed: {', '.join(t.keys_removed)}")
             if t.keys_added:
                 lines.append(f"   ➕ Keys added: {', '.join(t.keys_added)}")
-        
+
         return "\n".join(lines)
 
 
-def _measure_data(data: Optional[object]) -> tuple[int, list[str]]:
+def _measure_data(data: object | None) -> tuple[int, list[str]]:
     """Measure the size and keys of data."""
     if data is None:
         return 0, []
@@ -154,18 +153,18 @@ def _measure_data(data: Optional[object]) -> tuple[int, list[str]]:
     return size, keys
 
 
-def _classify_transition(input_size: int, output_size: int, 
+def _classify_transition(input_size: int, output_size: int,
                           keys_removed: list, keys_added: list) -> str:
     """Classify what happened to context between two points."""
     if input_size == 0 and output_size == 0:
         return "stable"
-    
+
     if input_size == 0:
         return "expansion"
-    
+
     ratio = output_size / input_size
     key_change = len(keys_removed) > 0 or len(keys_added) > 0
-    
+
     if ratio < 0.3 and len(keys_removed) > 0:
         return "truncation"  # severe reduction with key loss
     elif ratio < 0.7:
@@ -180,28 +179,28 @@ def _classify_transition(input_size: int, output_size: int,
 
 def analyze_context_flow_deep(trace: ExecutionTrace) -> ContextFlowAnalysis:
     """Deep analysis of context flow through the agent pipeline.
-    
+
     Examines input_data and output_data of each agent span to track
     how information flows, compresses, and transforms across the pipeline.
     """
     span_map = {s.span_id: s for s in trace.spans}
     children_map: dict[str, list[str]] = {}
-    
+
     for s in trace.spans:
         if s.parent_span_id:
             children_map.setdefault(s.parent_span_id, []).append(s.span_id)
-    
+
     # Collect snapshots: input and output of each agent
     snapshots: list[ContextSnapshot] = []
     agent_io: dict[str, dict] = {}  # span_id -> {input_size, output_size, ...}
-    
+
     for s in trace.spans:
         if s.span_type != SpanType.AGENT:
             continue
-        
+
         in_size, in_keys = _measure_data(s.input_data)
         out_size, out_keys = _measure_data(s.output_data)
-        
+
         snapshots.append(ContextSnapshot(
             agent_name=s.name, span_id=s.span_id, direction="input",
             size_bytes=in_size, key_count=len(in_keys), keys=in_keys,
@@ -212,49 +211,49 @@ def analyze_context_flow_deep(trace: ExecutionTrace) -> ContextFlowAnalysis:
             size_bytes=out_size, key_count=len(out_keys), keys=out_keys,
             timestamp=s.ended_at,
         ))
-        
+
         agent_io[s.span_id] = {
             "name": s.name, "in_size": in_size, "out_size": out_size,
             "in_keys": in_keys, "out_keys": out_keys,
             "started_at": s.started_at, "ended_at": s.ended_at,
             "duration_ms": s.duration_ms or 0,
         }
-    
+
     # Build transitions: sequential agent pairs under same parent
     transitions: list[ContextTransition] = []
     bandwidth_list: list[ContextBandwidth] = []
-    
-    for parent_id, child_ids in children_map.items():
-        agents = [(cid, span_map[cid]) for cid in child_ids 
+
+    for _parent_id, child_ids in children_map.items():
+        agents = [(cid, span_map[cid]) for cid in child_ids
                   if cid in span_map and span_map[cid].span_type == SpanType.AGENT]
         agents.sort(key=lambda x: x[1].started_at or "")
-        
+
         for i in range(len(agents) - 1):
             sid_a, span_a = agents[i]
             sid_b, span_b = agents[i + 1]
-            
+
             if sid_a not in agent_io or sid_b not in agent_io:
                 continue
-            
+
             a_info = agent_io[sid_a]
             b_info = agent_io[sid_b]
-            
+
             # Context flows from A's output to B's input
             out_size = a_info["out_size"]
             in_size = b_info["in_size"]
-            
+
             out_keys = set(a_info["out_keys"])
             in_keys = set(b_info["in_keys"])
-            
+
             keys_removed = list(out_keys - in_keys)
             keys_added = list(in_keys - out_keys)
             keys_preserved = list(out_keys & in_keys)
-            
+
             delta = in_size - out_size
             delta_pct = ((in_size / max(out_size, 1)) - 1) * 100
-            
+
             event = _classify_transition(out_size, in_size, keys_removed, keys_added)
-            
+
             transitions.append(ContextTransition(
                 from_agent=a_info["name"],
                 to_agent=b_info["name"],
@@ -267,7 +266,7 @@ def analyze_context_flow_deep(trace: ExecutionTrace) -> ContextFlowAnalysis:
                 keys_removed=keys_removed,
                 keys_preserved=keys_preserved,
             ))
-            
+
             # Bandwidth: bytes transferred / time between spans
             # Time = gap between A's end and B's start, or B's duration
             gap_ms = b_info["duration_ms"] or 1
@@ -280,7 +279,7 @@ def analyze_context_flow_deep(trace: ExecutionTrace) -> ContextFlowAnalysis:
                     duration_ms=gap_ms,
                     bandwidth_bps=bps,
                 ))
-    
+
     # Also check explicit HANDOFF spans
     for s in trace.spans:
         if s.span_type == SpanType.HANDOFF:
@@ -288,11 +287,11 @@ def analyze_context_flow_deep(trace: ExecutionTrace) -> ContextFlowAnalysis:
             if ctx_size > 0:
                 fr = s.handoff_from or "unknown"
                 to = s.handoff_to or "unknown"
-                
+
                 # Check if receiver used the context
                 used_keys = s.context_used_keys or []
                 dropped_keys = s.context_dropped_keys or []
-                
+
                 if dropped_keys:
                     transitions.append(ContextTransition(
                         from_agent=fr, to_agent=to,
@@ -302,15 +301,15 @@ def analyze_context_flow_deep(trace: ExecutionTrace) -> ContextFlowAnalysis:
                         keys_removed=dropped_keys,
                         keys_preserved=used_keys,
                     ))
-    
+
     # Aggregates
     total_in = sum(t.input_size for t in transitions)
     total_out = sum(t.output_size for t in transitions)
     compression_ratio = total_out / max(total_in, 1)
-    
+
     truncation_events = sum(1 for t in transitions if t.event == "truncation")
     expansion_events = sum(1 for t in transitions if t.event == "expansion")
-    
+
     # Find bottleneck: agent with the highest compression (most context lost)
     bottleneck = None
     max_loss = 0
@@ -319,7 +318,7 @@ def analyze_context_flow_deep(trace: ExecutionTrace) -> ContextFlowAnalysis:
         if loss > max_loss:
             max_loss = loss
             bottleneck = t.to_agent  # the receiving agent is where context was lost
-    
+
     return ContextFlowAnalysis(
         snapshots=snapshots,
         transitions=transitions,

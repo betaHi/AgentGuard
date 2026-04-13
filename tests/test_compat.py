@@ -1,11 +1,13 @@
 """Tests for trace compatibility."""
 
-import pytest
-from agentguard.core.trace import ExecutionTrace, Span, SpanStatus
 from agentguard.compat import (
-    get_schema_version, needs_migration, migrate,
-    check_compatibility, CURRENT_SCHEMA_VERSION,
+    CURRENT_SCHEMA_VERSION,
+    check_compatibility,
+    get_schema_version,
+    migrate,
+    needs_migration,
 )
+from agentguard.core.trace import ExecutionTrace, Span, SpanStatus
 
 
 class TestCompat:

@@ -1,7 +1,7 @@
 """Tests for Q5 optimal agent selection suggestions."""
 
-from agentguard.builder import TraceBuilder
 from agentguard.analysis import analyze_decisions
+from agentguard.builder import TraceBuilder
 from agentguard.core.trace import ExecutionTrace
 
 

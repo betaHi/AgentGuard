@@ -1,9 +1,12 @@
 """Tests for deep handoff semantics — context usage tracking."""
 
+import contextlib
+
 import pytest
-from agentguard.core.trace import ExecutionTrace, Span, SpanType, SpanStatus
-from agentguard.sdk.handoff import record_handoff, detect_context_loss, mark_context_used
-from agentguard.sdk.recorder import init_recorder, finish_recording, get_recorder
+
+from agentguard.core.trace import ExecutionTrace, Span, SpanType
+from agentguard.sdk.handoff import detect_context_loss, mark_context_used, record_handoff
+from agentguard.sdk.recorder import finish_recording, init_recorder
 
 
 @pytest.fixture(autouse=True)
@@ -11,10 +14,8 @@ def setup_recorder():
     """Ensure a clean recorder for each test."""
     init_recorder(task="test")
     yield
-    try:
+    with contextlib.suppress(Exception):
         finish_recording()
-    except Exception:
-        pass
 
 
 class TestMarkContextUsed:
@@ -24,9 +25,9 @@ class TestMarkContextUsed:
         """Track which keys the receiver actually used."""
         ctx = {"articles": [1, 2, 3], "topic": "AI", "metadata": {"source": "web"}}
         h = record_handoff("collector", "analyst", context=ctx, summary="3 articles")
-        
+
         result = mark_context_used(h, used_keys=["articles", "topic"])
-        
+
         assert result["used_keys"] == ["articles", "topic"]
         assert result["dropped_keys"] == ["metadata"]
         assert result["utilization_ratio"] == pytest.approx(0.67, abs=0.01)
@@ -37,7 +38,7 @@ class TestMarkContextUsed:
         """All context keys used = 100% utilization."""
         ctx = {"query": "test", "results": [1]}
         h = record_handoff("search", "parser", context=ctx)
-        
+
         result = mark_context_used(h, used_keys=["query", "results"])
         assert result["utilization_ratio"] == 1.0
         assert result["dropped_keys"] == []
@@ -46,7 +47,7 @@ class TestMarkContextUsed:
         """No context keys used = 0% utilization."""
         ctx = {"a": 1, "b": 2, "c": 3}
         h = record_handoff("agent_a", "agent_b", context=ctx)
-        
+
         result = mark_context_used(h, used_keys=[])
         assert result["utilization_ratio"] == 0.0
         assert set(result["dropped_keys"]) == {"a", "b", "c"}
@@ -55,7 +56,7 @@ class TestMarkContextUsed:
         """Receiver used keys not in the original context (e.g., enrichment)."""
         ctx = {"data": "raw"}
         h = record_handoff("fetcher", "enricher", context=ctx)
-        
+
         result = mark_context_used(h, used_keys=["data", "external_source"])
         assert result["extra_used"] == ["external_source"]
         assert result["utilization_ratio"] == 1.0  # used all sent keys
@@ -64,10 +65,10 @@ class TestMarkContextUsed:
         """Track received context size for comparison."""
         ctx = {"articles": [1, 2, 3], "meta": "info"}
         h = record_handoff("collector", "analyst", context=ctx)
-        
+
         received = {"articles": [1, 2, 3]}  # meta dropped during transfer
-        result = mark_context_used(h, used_keys=["articles"], received_context=received)
-        
+        mark_context_used(h, used_keys=["articles"], received_context=received)
+
         assert h.context_received is not None
         assert h.context_received["size_bytes"] > 0
         assert "articles" in h.context_received["keys"]
@@ -77,7 +78,7 @@ class TestMarkContextUsed:
         ctx = {"x": 1, "y": 2}
         h = record_handoff("a", "b", context=ctx)
         mark_context_used(h, used_keys=["x"])
-        
+
         assert h.metadata["handoff.used_keys"] == ["x"]
         assert h.metadata["handoff.dropped_keys"] == ["y"]
         assert h.metadata["handoff.utilization"] == 0.5
@@ -140,14 +141,14 @@ class TestHandoffSerialization:
             handoff_from="a",
             handoff_to="b",
         )
-        
+
         trace = ExecutionTrace(task="test")
         trace.add_span(span)
-        
+
         d = trace.to_dict()
         restored = ExecutionTrace.from_dict(d)
         rs = restored.spans[0]
-        
+
         assert rs.context_used_keys == ["data"]
         assert rs.context_dropped_keys == ["meta"]
         assert rs.context_received == {"size_bytes": 10, "keys": ["data"]}

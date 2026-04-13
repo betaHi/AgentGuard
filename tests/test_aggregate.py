@@ -1,18 +1,18 @@
 """Tests for trace aggregation."""
 
-import pytest
-from datetime import datetime, timezone, timedelta
-from agentguard.core.trace import ExecutionTrace, Span, SpanType, SpanStatus
-from agentguard.aggregate import aggregate_traces, AggregateReport
+from datetime import UTC, datetime, timedelta
+
+from agentguard.aggregate import aggregate_traces
+from agentguard.core.trace import ExecutionTrace, Span, SpanStatus, SpanType
 
 
 def _ts(offset_s: float = 0) -> str:
-    base = datetime(2026, 4, 12, 0, 0, 0, tzinfo=timezone.utc)
+    base = datetime(2026, 4, 12, 0, 0, 0, tzinfo=UTC)
     return (base + timedelta(seconds=offset_s)).isoformat()
 
 
 def _good_trace(idx: int = 0) -> ExecutionTrace:
-    trace = ExecutionTrace(task=f"good_{idx}", started_at=_ts(idx * 10), 
+    trace = ExecutionTrace(task=f"good_{idx}", started_at=_ts(idx * 10),
                           ended_at=_ts(idx * 10 + 5), status=SpanStatus.COMPLETED)
     trace.add_span(Span(name="agent_a", span_type=SpanType.AGENT, status=SpanStatus.COMPLETED,
                        started_at=_ts(idx * 10), ended_at=_ts(idx * 10 + 3)))
@@ -54,7 +54,7 @@ class TestAggregateTraces:
     def test_agent_stats(self):
         traces = [_good_trace(0), _bad_trace(1)]
         result = aggregate_traces(traces)
-        
+
         agent_a = next((a for a in result.agent_stats if a.name == "agent_a"), None)
         assert agent_a is not None
         assert agent_a.total_invocations == 2

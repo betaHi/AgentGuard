@@ -1,8 +1,9 @@
 """Tests for agentguard.configure() global settings."""
 
 import pytest
+
 import agentguard
-from agentguard.settings import configure, get_settings, reset_settings, Settings
+from agentguard.settings import Settings, configure, get_settings, reset_settings
 
 
 class TestConfigure:

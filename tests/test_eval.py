@@ -1,12 +1,19 @@
 """Tests for evaluation engine."""
 
-from agentguard.eval.rules import (
-    evaluate_rules, eval_min_count, eval_each_has, eval_recency,
-    eval_no_duplicates, eval_contains, eval_regex, eval_range, _resolve_path
-)
-from agentguard.core.eval_schema import EvaluationResult, RuleResult, RuleVerdict
-from datetime import datetime, timezone, timedelta
+from datetime import UTC, datetime
 
+from agentguard.core.eval_schema import EvaluationResult, RuleResult, RuleVerdict
+from agentguard.eval.rules import (
+    _resolve_path,
+    eval_contains,
+    eval_each_has,
+    eval_min_count,
+    eval_no_duplicates,
+    eval_range,
+    eval_recency,
+    eval_regex,
+    evaluate_rules,
+)
 
 # --- Path resolution ---
 
@@ -50,7 +57,7 @@ def test_each_has_fail():
 # --- recency ---
 
 def test_recency_pass():
-    today = datetime.now(timezone.utc).strftime("%Y-%m-%d")
+    today = datetime.now(UTC).strftime("%Y-%m-%d")
     data = {"dates": [today, today]}
     r = eval_recency(data, target="dates", within_days=2)
     assert r.verdict == RuleVerdict.PASS
@@ -118,8 +125,8 @@ def test_range_fail():
 
 def test_evaluate_rules_batch():
     data = {"articles": [
-        {"title": "AI News", "url": "http://a.com", "date": datetime.now(timezone.utc).strftime("%Y-%m-%d")},
-        {"title": "ML Update", "url": "http://b.com", "date": datetime.now(timezone.utc).strftime("%Y-%m-%d")},
+        {"title": "AI News", "url": "http://a.com", "date": datetime.now(UTC).strftime("%Y-%m-%d")},
+        {"title": "ML Update", "url": "http://b.com", "date": datetime.now(UTC).strftime("%Y-%m-%d")},
     ]}
     rules = [
         {"type": "min_count", "target": "articles", "value": 2},
@@ -137,7 +144,7 @@ def test_evaluation_result_report():
     er = EvaluationResult(trace_id="test", agent_name="my-agent", agent_version="v1")
     er.rules = [
         RuleResult(name="check1", rule_type="min_count", verdict=RuleVerdict.PASS),
-        RuleResult(name="check2", rule_type="each_has", verdict=RuleVerdict.FAIL, 
+        RuleResult(name="check2", rule_type="each_has", verdict=RuleVerdict.FAIL,
                    expected="all fields", actual="missing url", detail="item[0] missing 'url'"),
     ]
     assert er.passed == 1

@@ -6,8 +6,8 @@ sequential siblings as if they were a handoff chain, causing false
 'loss' and 'truncation' anomalies between independent parallel agents.
 """
 
-from agentguard.builder import TraceBuilder
 from agentguard.analysis import analyze_context_flow
+from agentguard.builder import TraceBuilder
 
 
 def _fan_out_trace():

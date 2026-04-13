@@ -13,18 +13,17 @@ Pipeline:
 Run: python examples/multi_model_pipeline.py
 """
 
-import time
+import os
 import random
 import sys
-import os
+import time
 
 random.seed(42)
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
-from agentguard import record_agent, record_tool, record_handoff
-from agentguard.sdk.recorder import init_recorder, finish_recording
-from agentguard.analysis import analyze_cost_yield, analyze_bottleneck
-
+from agentguard import record_agent, record_handoff, record_tool
+from agentguard.analysis import analyze_bottleneck, analyze_cost_yield
+from agentguard.sdk.recorder import finish_recording, init_recorder
 
 # ── Tools (simulated LLM calls with model-specific costs) ──
 
@@ -141,7 +140,7 @@ def main():
 
     # Cost-yield analysis
     cy = analyze_cost_yield(trace)
-    print(f"\n  Cost-Yield Analysis:")
+    print("\n  Cost-Yield Analysis:")
     print(f"  Highest cost:  {cy.highest_cost_agent}")
     print(f"  Lowest yield:  {cy.lowest_yield_agent}")
     print(f"  Best ratio:    {cy.best_ratio_agent}")

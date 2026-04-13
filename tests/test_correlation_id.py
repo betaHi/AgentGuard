@@ -1,8 +1,9 @@
 """Tests for trace correlation ID — linking traces across services."""
 
 import json
-from agentguard.sdk.recorder import TraceRecorder, set_correlation_id, set_parent_trace
+
 from agentguard.core.trace import ExecutionTrace
+from agentguard.sdk.recorder import TraceRecorder, set_correlation_id, set_parent_trace
 
 
 class TestCorrelationId:

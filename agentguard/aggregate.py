@@ -9,10 +9,9 @@ When you run the same pipeline many times, aggregate analysis reveals:
 
 from __future__ import annotations
 
-from dataclasses import dataclass, field
-from typing import Optional
+from dataclasses import dataclass
 
-from agentguard.core.trace import ExecutionTrace, Span, SpanType, SpanStatus
+from agentguard.core.trace import ExecutionTrace, SpanStatus, SpanType
 from agentguard.scoring import score_trace
 
 
@@ -27,15 +26,15 @@ class AgentStats:
     min_duration_ms: float = float("inf")
     max_duration_ms: float = 0
     total_retries: int = 0
-    
+
     @property
     def success_rate(self) -> float:
         return self.successes / max(self.total_invocations, 1)
-    
+
     @property
     def avg_duration_ms(self) -> float:
         return self.total_duration_ms / max(self.total_invocations, 1)
-    
+
     def to_dict(self) -> dict:
         return {
             "name": self.name,
@@ -60,11 +59,11 @@ class AggregateReport:
     duration_trend: list[float]  # durations over time
     agent_stats: list[AgentStats]
     common_errors: list[dict]  # most frequent errors
-    
+
     @property
     def success_rate(self) -> float:
         return self.success_count / max(self.trace_count, 1)
-    
+
     def to_dict(self) -> dict:
         return {
             "trace_count": self.trace_count,
@@ -76,7 +75,7 @@ class AggregateReport:
             "agent_stats": [a.to_dict() for a in self.agent_stats],
             "common_errors": self.common_errors[:10],
         }
-    
+
     def to_report(self) -> str:
         lines = [
             f"# Aggregate Report ({self.trace_count} traces)",
@@ -93,13 +92,13 @@ class AggregateReport:
             icon = "🟢" if a.success_rate >= 0.9 else "🟡" if a.success_rate >= 0.7 else "🔴"
             lines.append(f"{icon} **{a.name}** — {a.success_rate:.0%} success, "
                         f"{a.avg_duration_ms:.0f}ms avg, {a.total_retries} retries")
-        
+
         if self.common_errors:
             lines.append("")
             lines.append("## Common Errors")
             for err in self.common_errors[:5]:
                 lines.append(f"- **{err['error'][:80]}** — {err['count']} occurrences ({err.get('agent', 'unknown')})")
-        
+
         # Trend
         if len(self.score_trend) >= 2:
             lines.append("")
@@ -111,16 +110,16 @@ class AggregateReport:
                 lines.append("📉 **Trend: Declining** — scores are going down")
             else:
                 lines.append("➡️ **Trend: Stable** — scores are consistent")
-        
+
         return "\n".join(lines)
 
 
 def aggregate_traces(traces: list[ExecutionTrace]) -> AggregateReport:
     """Aggregate analysis across multiple traces.
-    
+
     Args:
         traces: List of traces to aggregate (ideally from the same pipeline).
-    
+
     Returns:
         AggregateReport with trends, agent stats, and common errors.
     """
@@ -130,60 +129,60 @@ def aggregate_traces(traces: list[ExecutionTrace]) -> AggregateReport:
             avg_score=0, score_trend=[], avg_duration_ms=0,
             duration_trend=[], agent_stats=[], common_errors=[],
         )
-    
+
     scores = []
     durations = []
     agent_map: dict[str, AgentStats] = {}
     error_counts: dict[str, dict] = {}
     success_count = 0
-    
+
     for trace in traces:
         # Score each trace
         ts = score_trace(trace)
         scores.append(ts.overall)
-        
+
         # Duration
         dur = trace.duration_ms or 0
         durations.append(dur)
-        
+
         # Success
         if trace.status == SpanStatus.COMPLETED:
             success_count += 1
-        
+
         # Per-agent stats
         for span in trace.spans:
             if span.span_type not in (SpanType.AGENT, SpanType.TOOL):
                 continue
-            
+
             name = span.name
             if name not in agent_map:
                 agent_map[name] = AgentStats(name=name)
-            
+
             stats = agent_map[name]
             stats.total_invocations += 1
-            
+
             if span.status == SpanStatus.COMPLETED:
                 stats.successes += 1
             elif span.status == SpanStatus.FAILED:
                 stats.failures += 1
-            
+
             if span.duration_ms:
                 stats.total_duration_ms += span.duration_ms
                 stats.min_duration_ms = min(stats.min_duration_ms, span.duration_ms)
                 stats.max_duration_ms = max(stats.max_duration_ms, span.duration_ms)
-            
+
             stats.total_retries += span.retry_count
-            
+
             # Error tracking
             if span.error:
                 key = span.error[:100]
                 if key not in error_counts:
                     error_counts[key] = {"error": span.error, "count": 0, "agent": name}
                 error_counts[key]["count"] += 1
-    
+
     # Sort errors by frequency
     common_errors = sorted(error_counts.values(), key=lambda x: -x["count"])
-    
+
     return AggregateReport(
         trace_count=len(traces),
         success_count=success_count,

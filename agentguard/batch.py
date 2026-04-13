@@ -8,13 +8,13 @@ Provides:
 
 from __future__ import annotations
 
+from collections.abc import Callable
 from dataclasses import dataclass, field
-from typing import Any, Callable, Optional
 
 from agentguard.core.trace import ExecutionTrace
-from agentguard.scoring import score_trace
 from agentguard.metrics import extract_metrics
-from agentguard.stats import describe, DescriptiveStats
+from agentguard.scoring import score_trace
+from agentguard.stats import DescriptiveStats, describe
 
 
 @dataclass
@@ -28,7 +28,7 @@ class BatchAnalysis:
     total_tokens: int
     total_cost_usd: float
     custom_results: dict = field(default_factory=dict)
-    
+
     def to_dict(self) -> dict:
         return {
             "trace_count": self.trace_count,
@@ -40,7 +40,7 @@ class BatchAnalysis:
             "total_cost_usd": round(self.total_cost_usd, 4),
             "custom": self.custom_results,
         }
-    
+
     def to_report(self) -> str:
         lines = [
             f"# Batch Analysis ({self.trace_count} traces)",
@@ -57,10 +57,10 @@ class BatchAnalysis:
 
 def batch_analyze(
     traces: list[ExecutionTrace],
-    custom_analyzers: Optional[dict[str, Callable]] = None,
+    custom_analyzers: dict[str, Callable] | None = None,
 ) -> BatchAnalysis:
     """Run batch analysis on multiple traces.
-    
+
     Args:
         traces: Traces to analyze.
         custom_analyzers: Optional dict of name → function to run on each trace.
@@ -75,7 +75,7 @@ def batch_analyze(
             total_tokens=0,
             total_cost_usd=0,
         )
-    
+
     scores_list = []
     durations_list = []
     span_counts_list = []
@@ -83,28 +83,28 @@ def batch_analyze(
     total_tokens = 0
     total_cost = 0.0
     custom_results: dict[str, list] = {name: [] for name in (custom_analyzers or {})}
-    
+
     for trace in traces:
         s = score_trace(trace)
         m = extract_metrics(trace)
-        
+
         scores_list.append(s.overall)
         if trace.duration_ms:
             durations_list.append(trace.duration_ms)
         span_counts_list.append(len(trace.spans))
-        
+
         if trace.status.value == "completed":
             success_count += 1
-        
+
         total_tokens += m.total_tokens
         total_cost += m.total_cost_usd
-        
+
         for name, fn in (custom_analyzers or {}).items():
             try:
                 custom_results[name].append(fn(trace))
             except Exception as e:
                 custom_results[name].append({"error": str(e)})
-    
+
     return BatchAnalysis(
         trace_count=len(traces),
         scores=describe(scores_list),

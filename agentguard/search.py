@@ -10,10 +10,9 @@ Search through trace stores for:
 from __future__ import annotations
 
 import re
-from dataclasses import dataclass, field
-from typing import Optional
+from dataclasses import dataclass
 
-from agentguard.core.trace import ExecutionTrace, Span, SpanType, SpanStatus
+from agentguard.core.trace import ExecutionTrace
 
 
 @dataclass
@@ -26,7 +25,7 @@ class SearchHit:
     match_field: str  # which field matched
     match_text: str   # the matched text
     context: str = ""  # surrounding context
-    
+
     def to_dict(self) -> dict:
         return {
             "trace_id": self.trace_id,
@@ -44,7 +43,7 @@ class SearchResults:
     hits: list[SearchHit]
     traces_searched: int
     spans_searched: int
-    
+
     def to_dict(self) -> dict:
         return {
             "query": self.query,
@@ -53,7 +52,7 @@ class SearchResults:
             "spans_searched": self.spans_searched,
             "hits": [h.to_dict() for h in self.hits[:50]],
         }
-    
+
     def to_report(self) -> str:
         lines = [
             f"# Search: '{self.query}'",
@@ -70,11 +69,11 @@ class SearchResults:
 def search_traces(
     traces: list[ExecutionTrace],
     query: str,
-    fields: Optional[list[str]] = None,
+    fields: list[str] | None = None,
     case_sensitive: bool = False,
 ) -> SearchResults:
     """Search across multiple traces for matching text.
-    
+
     Args:
         traces: Traces to search.
         query: Text to search for (supports regex).
@@ -86,17 +85,17 @@ def search_traces(
         pattern = re.compile(query, flags)
     except re.error:
         pattern = re.compile(re.escape(query), flags)
-    
+
     if fields is None:
         fields = ["name", "error", "metadata", "tags", "input_data", "output_data"]
-    
+
     hits: list[SearchHit] = []
     total_spans = 0
-    
+
     for trace in traces:
         for span in trace.spans:
             total_spans += 1
-            
+
             # Search each field
             if "name" in fields and pattern.search(span.name):
                 hits.append(SearchHit(
@@ -104,14 +103,14 @@ def search_traces(
                     span_name=span.name, span_type=span.span_type.value,
                     match_field="name", match_text=span.name,
                 ))
-            
+
             if "error" in fields and span.error and pattern.search(span.error):
                 hits.append(SearchHit(
                     trace_id=trace.trace_id, span_id=span.span_id,
                     span_name=span.name, span_type=span.span_type.value,
                     match_field="error", match_text=span.error,
                 ))
-            
+
             if "tags" in fields:
                 for tag in span.tags:
                     if pattern.search(tag):
@@ -120,7 +119,7 @@ def search_traces(
                             span_name=span.name, span_type=span.span_type.value,
                             match_field="tag", match_text=tag,
                         ))
-            
+
             if "metadata" in fields:
                 for key, val in span.metadata.items():
                     text = f"{key}={val}"
@@ -130,7 +129,7 @@ def search_traces(
                             span_name=span.name, span_type=span.span_type.value,
                             match_field=f"metadata.{key}", match_text=text,
                         ))
-    
+
     return SearchResults(
         query=query,
         hits=hits,

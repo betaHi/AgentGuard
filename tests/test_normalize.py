@@ -1,13 +1,13 @@
 """Tests for trace normalization."""
 
-import pytest
-from datetime import datetime, timezone, timedelta
-from agentguard.core.trace import ExecutionTrace, Span, SpanType, SpanStatus
+from datetime import UTC, datetime, timedelta
+
+from agentguard.core.trace import ExecutionTrace, Span, SpanStatus
 from agentguard.normalize import normalize_trace
 
 
 def _ts(offset_s: float = 0) -> str:
-    base = datetime(2026, 4, 12, 0, 0, 0, tzinfo=timezone.utc)
+    base = datetime(2026, 4, 12, 0, 0, 0, tzinfo=UTC)
     return (base + timedelta(seconds=offset_s)).isoformat()
 
 
@@ -45,13 +45,13 @@ class TestNormalize:
         trace = ExecutionTrace(task="no_start")
         trace.started_at = ""
         trace.add_span(Span(name="a", started_at=_ts(3), ended_at=_ts(5)))
-        result = normalize_trace(trace)
+        normalize_trace(trace)
         assert trace.started_at == _ts(3)
 
     def test_fix_trace_status(self):
         trace = ExecutionTrace(task="bad_status", started_at=_ts(0), ended_at=_ts(5), status=SpanStatus.COMPLETED)
         trace.add_span(Span(name="fail", status=SpanStatus.FAILED, error="boom"))
-        result = normalize_trace(trace)
+        normalize_trace(trace)
         assert trace.status == SpanStatus.FAILED
 
     def test_to_dict(self):

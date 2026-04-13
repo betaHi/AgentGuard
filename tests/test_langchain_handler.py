@@ -25,21 +25,24 @@ _mock_lc.callbacks = _mock_cb
 sys.modules["langchain_core"] = _mock_lc
 sys.modules["langchain_core.callbacks"] = _mock_cb
 
+import contextlib
+
+from agentguard.core.trace import SpanStatus, SpanType
 from agentguard.integrations.langchain import (
-    AgentGuardHandler, _make_span_id, _extract_model_name, _ts_now,
+    AgentGuardHandler,
+    _extract_model_name,
+    _make_span_id,
+    _ts_now,
 )
-from agentguard.sdk.recorder import init_recorder, finish_recording
-from agentguard.core.trace import SpanType, SpanStatus
+from agentguard.sdk.recorder import finish_recording, init_recorder
 
 
 @pytest.fixture(autouse=True)
 def _fresh_recorder():
     init_recorder(task="langchain test", trigger="test")
     yield
-    try:
+    with contextlib.suppress(Exception):
         finish_recording()
-    except Exception:
-        pass
 
 
 class TestAgentGuardHandler:

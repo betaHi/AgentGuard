@@ -11,13 +11,13 @@ import logging
 
 _trace_logger = logging.getLogger(__name__)
 import uuid
-from dataclasses import dataclass, field, asdict
-from datetime import datetime, timezone
-from enum import Enum
-from typing import Any, Optional
+from dataclasses import asdict, dataclass, field
+from datetime import UTC, datetime
+from enum import StrEnum
+from typing import Any
 
 
-class SpanStatus(str, Enum):
+class SpanStatus(StrEnum):
     """Status of a span execution.
 
     Values:
@@ -32,7 +32,7 @@ class SpanStatus(str, Enum):
     TIMEOUT = "timeout"
 
 
-class SpanType(str, Enum):
+class SpanType(StrEnum):
     """Type of span in the trace.
 
     Values:
@@ -50,15 +50,15 @@ class SpanType(str, Enum):
 @dataclass
 class Span:
     """A single unit of work within a trace.
-    
+
     Spans form a tree structure via parent_span_id, allowing representation
     of nested agent → tool → llm_call hierarchies.
-    
+
     Schema Stability:
         - Fields marked [stable] are part of the public contract and will not
           change without a major version bump.
         - Fields marked [experimental] may change in minor versions.
-    
+
     Attributes (stable):
         span_id: Unique identifier for this span.
         trace_id: ID of the parent trace.
@@ -76,42 +76,42 @@ class Span:
     """
     span_id: str = field(default_factory=lambda: str(uuid.uuid4())[:12])
     trace_id: str = ""
-    parent_span_id: Optional[str] = None
+    parent_span_id: str | None = None
     span_type: SpanType = SpanType.AGENT
     name: str = ""
     status: SpanStatus = SpanStatus.RUNNING
-    started_at: str = field(default_factory=lambda: datetime.now(timezone.utc).isoformat())
-    ended_at: Optional[str] = None
-    input_data: Optional[Any] = None
-    output_data: Optional[Any] = None
-    error: Optional[str] = None
+    started_at: str = field(default_factory=lambda: datetime.now(UTC).isoformat())
+    ended_at: str | None = None
+    input_data: Any | None = None
+    output_data: Any | None = None
+    error: str | None = None
     metadata: dict[str, Any] = field(default_factory=dict)
     children: list[Span] = field(default_factory=list)
-    
+
     # Handoff tracking [experimental]: populated when span_type is HANDOFF
-    handoff_from: Optional[str] = None      # agent_id that initiated the handoff
-    handoff_to: Optional[str] = None        # agent_id that received the handoff
-    context_passed: Optional[dict] = None   # keys/summary of context passed
-    context_size_bytes: Optional[int] = None  # size of context at handoff point
-    context_received: Optional[dict] = None   # what the receiver actually got
-    context_used_keys: Optional[list] = None  # which context keys the receiver used
-    context_dropped_keys: Optional[list] = None  # keys that were sent but not used
-    
+    handoff_from: str | None = None      # agent_id that initiated the handoff
+    handoff_to: str | None = None        # agent_id that received the handoff
+    context_passed: dict | None = None   # keys/summary of context passed
+    context_size_bytes: int | None = None  # size of context at handoff point
+    context_received: dict | None = None   # what the receiver actually got
+    context_used_keys: list | None = None  # which context keys the receiver used
+    context_dropped_keys: list | None = None  # keys that were sent but not used
+
     # Retry tracking [experimental]
     retry_count: int = 0               # number of retries before this span succeeded/failed
-    retry_of: Optional[str] = None     # span_id of the original attempt (if this is a retry)
+    retry_of: str | None = None     # span_id of the original attempt (if this is a retry)
     tags: list[str] = field(default_factory=list)  # user-defined labels for filtering
-    
+
     # Cost tracking [experimental]
-    token_count: Optional[int] = None        # tokens consumed by this span
-    estimated_cost_usd: Optional[float] = None  # estimated cost in USD
-    
+    token_count: int | None = None        # tokens consumed by this span
+    estimated_cost_usd: float | None = None  # estimated cost in USD
+
     # Failure propagation tracking [experimental]
-    caused_by: Optional[str] = None         # span_id of the root cause failure
+    caused_by: str | None = None         # span_id of the root cause failure
     failure_handled: bool = False           # True if error was caught (try/except)
 
     @property
-    def duration_ms(self) -> Optional[float]:
+    def duration_ms(self) -> float | None:
         """Calculate duration in milliseconds.
 
         Returns:
@@ -133,7 +133,7 @@ class Span:
             output: Result data to store. Must be JSON-serializable.
         """
         self.status = SpanStatus.COMPLETED
-        self.ended_at = datetime.now(timezone.utc).isoformat()
+        self.ended_at = datetime.now(UTC).isoformat()
         if output is not None:
             self.output_data = output
 
@@ -146,7 +146,7 @@ class Span:
             error: Human-readable error message describing the failure.
         """
         self.status = SpanStatus.FAILED
-        self.ended_at = datetime.now(timezone.utc).isoformat()
+        self.ended_at = datetime.now(UTC).isoformat()
         self.error = error
 
     def to_dict(self) -> dict[str, Any]:
@@ -171,10 +171,10 @@ class Span:
 @dataclass
 class ExecutionTrace:
     """Complete record of a multi-agent task execution.
-    
+
     An ExecutionTrace is the top-level container that holds all spans
     from a single task execution, potentially involving multiple agents.
-    
+
     Attributes:
         trace_id: Unique identifier for this trace.
         task: Human-readable task description.
@@ -188,13 +188,13 @@ class ExecutionTrace:
     trace_id: str = field(default_factory=lambda: str(uuid.uuid4())[:16])
     task: str = ""
     trigger: str = "manual"
-    started_at: str = field(default_factory=lambda: datetime.now(timezone.utc).isoformat())
-    ended_at: Optional[str] = None
+    started_at: str = field(default_factory=lambda: datetime.now(UTC).isoformat())
+    ended_at: str | None = None
     status: SpanStatus = SpanStatus.RUNNING
     spans: list[Span] = field(default_factory=list)
     metadata: dict[str, Any] = field(default_factory=dict)
-    correlation_id: Optional[str] = None  # links related traces across services
-    parent_trace_id: Optional[str] = None  # trace that spawned this one
+    correlation_id: str | None = None  # links related traces across services
+    parent_trace_id: str | None = None  # trace that spawned this one
 
     def add_span(self, span: Span) -> None:
         """Add a span to this trace.
@@ -213,7 +213,7 @@ class ExecutionTrace:
         Sets status to COMPLETED and records the end timestamp.
         """
         self.status = SpanStatus.COMPLETED
-        self.ended_at = datetime.now(timezone.utc).isoformat()
+        self.ended_at = datetime.now(UTC).isoformat()
 
     def fail(self, error: str = "") -> None:
         """Mark this trace as failed.
@@ -224,10 +224,10 @@ class ExecutionTrace:
             error: Optional error message describing the failure cause.
         """
         self.status = SpanStatus.FAILED
-        self.ended_at = datetime.now(timezone.utc).isoformat()
+        self.ended_at = datetime.now(UTC).isoformat()
 
     @property
-    def duration_ms(self) -> Optional[float]:
+    def duration_ms(self) -> float | None:
         """Total trace duration in milliseconds.
 
         Returns:

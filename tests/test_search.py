@@ -1,7 +1,6 @@
 """Tests for trace search."""
 
-import pytest
-from agentguard.core.trace import ExecutionTrace, Span, SpanType, SpanStatus
+from agentguard.core.trace import ExecutionTrace, Span, SpanType
 from agentguard.search import search_traces
 
 
@@ -9,12 +8,12 @@ def _make_traces():
     t1 = ExecutionTrace(trace_id="t1", task="pipeline_1")
     t1.add_span(Span(name="researcher", error=None, tags=["critical"]))
     t1.add_span(Span(name="web_search", span_type=SpanType.TOOL, error="timeout"))
-    
+
     t2 = ExecutionTrace(trace_id="t2", task="pipeline_2")
     t2.add_span(Span(name="writer", tags=["experimental"]))
     t2.add_span(Span(name="api_call", span_type=SpanType.TOOL,
                     metadata={"model": "gpt-4", "provider": "openai"}))
-    
+
     return [t1, t2]
 
 

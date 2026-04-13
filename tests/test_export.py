@@ -3,6 +3,7 @@
 import json
 import tempfile
 from pathlib import Path
+
 from agentguard.core.trace import ExecutionTrace, Span, SpanType
 from agentguard.export import export_jsonl, export_otel_spans, trace_statistics
 

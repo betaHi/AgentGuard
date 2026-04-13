@@ -4,23 +4,28 @@ Real-world traces from buggy instrumentation may contain invalid data.
 Every module must handle these gracefully without crashes.
 """
 
-from datetime import datetime, timezone, timedelta
-from agentguard.core.trace import ExecutionTrace, Span, SpanType, SpanStatus
+from datetime import UTC, datetime, timedelta
+
 from agentguard.analysis import (
-    analyze_failures, analyze_flow, analyze_bottleneck,
-    analyze_context_flow, analyze_cost_yield, analyze_decisions,
+    analyze_bottleneck,
+    analyze_context_flow,
+    analyze_cost_yield,
+    analyze_decisions,
+    analyze_failures,
+    analyze_flow,
 )
+from agentguard.core.trace import ExecutionTrace, Span, SpanStatus, SpanType
+from agentguard.normalize import normalize_trace
 from agentguard.propagation import analyze_propagation
 from agentguard.scoring import score_trace
-from agentguard.web.viewer import trace_to_html_string
 from agentguard.tree import tree_to_text
-from agentguard.normalize import normalize_trace
+from agentguard.web.viewer import trace_to_html_string
 
 
 def _trace_with_reversed_timestamps():
     """Span where ended_at < started_at (negative duration)."""
     t = ExecutionTrace(task="reversed timestamps")
-    now = datetime.now(timezone.utc)
+    now = datetime.now(UTC)
     s = Span(
         span_type=SpanType.AGENT, name="backwards",
         started_at=(now + timedelta(hours=1)).isoformat(),
@@ -36,13 +41,13 @@ def _trace_with_orphan_spans():
     """Spans referencing non-existent parent IDs."""
     t = ExecutionTrace(task="orphans")
     t.add_span(Span(span_type=SpanType.AGENT, name="root", status=SpanStatus.COMPLETED,
-                     started_at=datetime.now(timezone.utc).isoformat(),
-                     ended_at=datetime.now(timezone.utc).isoformat()))
+                     started_at=datetime.now(UTC).isoformat(),
+                     ended_at=datetime.now(UTC).isoformat()))
     t.add_span(Span(span_type=SpanType.AGENT, name="orphan",
                      parent_span_id="nonexistent-parent-id",
                      status=SpanStatus.COMPLETED,
-                     started_at=datetime.now(timezone.utc).isoformat(),
-                     ended_at=datetime.now(timezone.utc).isoformat()))
+                     started_at=datetime.now(UTC).isoformat(),
+                     ended_at=datetime.now(UTC).isoformat()))
     t.complete()
     return t
 
@@ -61,12 +66,12 @@ def _trace_with_duplicate_span_ids():
     """Two spans sharing the same span_id (corrupt data)."""
     t = ExecutionTrace(task="dup ids")
     s1 = Span(span_type=SpanType.AGENT, name="first", status=SpanStatus.COMPLETED,
-              started_at=datetime.now(timezone.utc).isoformat(),
-              ended_at=datetime.now(timezone.utc).isoformat())
+              started_at=datetime.now(UTC).isoformat(),
+              ended_at=datetime.now(UTC).isoformat())
     s2 = Span(span_type=SpanType.AGENT, name="second", status=SpanStatus.FAILED,
               span_id=s1.span_id,  # duplicate!
-              started_at=datetime.now(timezone.utc).isoformat(),
-              ended_at=datetime.now(timezone.utc).isoformat(),
+              started_at=datetime.now(UTC).isoformat(),
+              ended_at=datetime.now(UTC).isoformat(),
               error="dup")
     t.add_span(s1)
     t.add_span(s2)
@@ -79,8 +84,8 @@ def _trace_with_circular_parent():
     t = ExecutionTrace(task="self-ref")
     s = Span(span_type=SpanType.AGENT, name="loop",
              status=SpanStatus.COMPLETED,
-             started_at=datetime.now(timezone.utc).isoformat(),
-             ended_at=datetime.now(timezone.utc).isoformat())
+             started_at=datetime.now(UTC).isoformat(),
+             ended_at=datetime.now(UTC).isoformat())
     s.parent_span_id = s.span_id  # self-reference
     t.add_span(s)
     t.complete()

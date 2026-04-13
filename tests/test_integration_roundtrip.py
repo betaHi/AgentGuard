@@ -5,15 +5,19 @@ data loss or corruption across format boundaries.
 """
 
 import json
-from agentguard import record_agent, record_tool, record_handoff, record_decision
-from agentguard.sdk.recorder import init_recorder, finish_recording
+
+from agentguard import record_agent, record_decision, record_handoff, record_tool
 from agentguard.analysis import (
-    analyze_failures, analyze_bottleneck, analyze_flow,
-    analyze_cost_yield, analyze_decisions,
+    analyze_bottleneck,
+    analyze_cost_yield,
+    analyze_decisions,
+    analyze_failures,
+    analyze_flow,
 )
+from agentguard.core.trace import SpanStatus
 from agentguard.export import export_otel
 from agentguard.importer import import_otel
-from agentguard.core.trace import SpanType, SpanStatus
+from agentguard.sdk.recorder import finish_recording, init_recorder
 
 
 def _build_realistic_trace():

@@ -10,13 +10,11 @@ Provides a composable filter API for querying spans and traces:
 
 from __future__ import annotations
 
-import re
 import random
-from dataclasses import dataclass
-from typing import Callable, Optional, Union
+import re
+from collections.abc import Callable
 
-from agentguard.core.trace import ExecutionTrace, Span, SpanType, SpanStatus
-
+from agentguard.core.trace import ExecutionTrace, Span, SpanStatus, SpanType
 
 # Type alias for filter functions
 SpanFilter = Callable[[Span], bool]
@@ -41,7 +39,7 @@ def by_name(pattern: str) -> SpanFilter:
     return lambda span: bool(compiled.search(span.name))
 
 
-def by_duration(min_ms: Optional[float] = None, max_ms: Optional[float] = None) -> SpanFilter:
+def by_duration(min_ms: float | None = None, max_ms: float | None = None) -> SpanFilter:
     """Filter spans by duration range."""
     def _filter(span: Span) -> bool:
         dur = span.duration_ms
@@ -49,9 +47,7 @@ def by_duration(min_ms: Optional[float] = None, max_ms: Optional[float] = None) 
             return False
         if min_ms is not None and dur < min_ms:
             return False
-        if max_ms is not None and dur > max_ms:
-            return False
-        return True
+        return not (max_ms is not None and dur > max_ms)
     return _filter
 
 
@@ -61,14 +57,12 @@ def by_tag(*tags: str) -> SpanFilter:
     return lambda span: tag_set.issubset(set(span.tags))
 
 
-def by_metadata(key: str, value: Optional[object] = None) -> SpanFilter:
+def by_metadata(key: str, value: object | None = None) -> SpanFilter:
     """Filter spans by metadata key (and optionally value)."""
     def _filter(span: Span) -> bool:
         if key not in span.metadata:
             return False
-        if value is not None and span.metadata[key] != value:
-            return False
-        return True
+        return not (value is not None and span.metadata[key] != value)
     return _filter
 
 
@@ -114,7 +108,7 @@ def trace_has_failures() -> TraceFilter:
     return lambda trace: any(s.status == SpanStatus.FAILED for s in trace.spans)
 
 
-def trace_duration(min_ms: Optional[float] = None, max_ms: Optional[float] = None) -> TraceFilter:
+def trace_duration(min_ms: float | None = None, max_ms: float | None = None) -> TraceFilter:
     """Filter traces by total duration."""
     def _filter(trace: ExecutionTrace) -> bool:
         dur = trace.duration_ms
@@ -122,9 +116,7 @@ def trace_duration(min_ms: Optional[float] = None, max_ms: Optional[float] = Non
             return False
         if min_ms is not None and dur < min_ms:
             return False
-        if max_ms is not None and dur > max_ms:
-            return False
-        return True
+        return not (max_ms is not None and dur > max_ms)
     return _filter
 
 
@@ -142,13 +134,14 @@ def filter_spans(trace: ExecutionTrace, *filters: SpanFilter) -> list[Span]:
 
 def filter_traces(traces: list[ExecutionTrace], *filters: TraceFilter) -> list[ExecutionTrace]:
     """Apply filters to get matching traces."""
-    combined = lambda t: all(f(t) for f in filters)
+    def combined(t):
+        return all(f(t) for f in filters)
     return [t for t in traces if combined(t)]
 
 
 def sample_traces(traces: list[ExecutionTrace], n: int, method: str = "random") -> list[ExecutionTrace]:
     """Sample n traces from a list.
-    
+
     Args:
         traces: Source traces.
         n: Number to sample.
@@ -156,7 +149,7 @@ def sample_traces(traces: list[ExecutionTrace], n: int, method: str = "random") 
     """
     if n >= len(traces):
         return traces
-    
+
     if method == "head":
         return traces[:n]
     elif method == "tail":

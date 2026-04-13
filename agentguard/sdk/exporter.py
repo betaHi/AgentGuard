@@ -18,12 +18,13 @@ Usage:
 
 from __future__ import annotations
 
+import contextlib
 import json
 import logging
 import threading
 import time
+from collections.abc import Callable
 from pathlib import Path
-from typing import Callable, Optional
 
 from agentguard.core.trace import ExecutionTrace
 
@@ -47,7 +48,7 @@ class BatchExporter:
         output_dir: str = ".agentguard/traces",
         batch_size: int = 10,
         max_age_seconds: float = 0,
-        on_flush: Optional[Callable[[list[ExecutionTrace]], None]] = None,
+        on_flush: Callable[[list[ExecutionTrace]], None] | None = None,
     ):
         self._output_dir = Path(output_dir)
         self._batch_size = max(1, batch_size)
@@ -55,7 +56,7 @@ class BatchExporter:
         self._on_flush = on_flush
         self._buffer: list[ExecutionTrace] = []
         self._lock = threading.Lock()
-        self._first_add_time: Optional[float] = None
+        self._first_add_time: float | None = None
         self._flush_count = 0
 
     @property
@@ -129,7 +130,5 @@ class BatchExporter:
     def __del__(self):
         """Flush remaining traces on garbage collection."""
         if self._buffer:
-            try:
+            with contextlib.suppress(Exception):
                 self.flush()
-            except Exception:
-                pass

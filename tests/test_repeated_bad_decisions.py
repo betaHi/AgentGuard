@@ -1,9 +1,10 @@
 """Tests for repeated bad decision detection (Q5)."""
 
-import time
+import contextlib
+
 from agentguard import record_agent, record_decision
-from agentguard.sdk.recorder import init_recorder, finish_recording
 from agentguard.analysis import detect_repeated_bad_decisions
+from agentguard.sdk.recorder import finish_recording, init_recorder
 
 
 class TestRepeatedBadDecisions:
@@ -23,10 +24,8 @@ class TestRepeatedBadDecisions:
                     alternatives=["stable"], rationale="bad habit",
                     confidence=0.5,
                 )
-                try:
+                with contextlib.suppress(ValueError):
                     flaky()
-                except ValueError:
-                    pass
 
         coord()
         trace = finish_recording()
@@ -52,10 +51,8 @@ class TestRepeatedBadDecisions:
                 alternatives=[], rationale="only option",
                 confidence=1.0,
             )
-            try:
+            with contextlib.suppress(RuntimeError):
                 once()
-            except RuntimeError:
-                pass
 
         coord()
         trace = finish_recording()
@@ -114,10 +111,8 @@ class TestRepeatedBadDecisions:
                     coordinator="coord", chosen_agent="bad",
                     alternatives=[], rationale="x", confidence=0.5,
                 )
-                try:
+                with contextlib.suppress(RuntimeError):
                     bad()
-                except RuntimeError:
-                    pass
 
         coord()
         trace = finish_recording()
@@ -148,19 +143,15 @@ class TestRepeatedBadDecisions:
                     coordinator="coord", chosen_agent="sometimes_bad",
                     alternatives=[], rationale="x", confidence=0.5,
                 )
-                try:
+                with contextlib.suppress(RuntimeError):
                     sometimes_bad(fail=(i == 0))
-                except RuntimeError:
-                    pass
             for _ in range(2):
                 record_decision(
                     coordinator="coord", chosen_agent="always_bad",
                     alternatives=[], rationale="x", confidence=0.5,
                 )
-                try:
+                with contextlib.suppress(RuntimeError):
                     always_bad()
-                except RuntimeError:
-                    pass
 
         coord()
         trace = finish_recording()

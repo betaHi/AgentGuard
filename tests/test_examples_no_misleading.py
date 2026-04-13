@@ -8,10 +8,11 @@ Checks for patterns that indicate broken instrumentation:
 - Python tracebacks (unhandled errors)
 """
 
+import glob
+import os
 import subprocess
 import sys
-import os
-import glob
+
 import pytest
 
 EXAMPLES_DIR = os.path.join(os.path.dirname(os.path.dirname(__file__)), "examples")

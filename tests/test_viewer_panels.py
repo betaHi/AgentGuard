@@ -1,7 +1,7 @@
 """Tests for HTML viewer diagnostics panel completeness."""
 
-from agentguard.web.viewer import trace_to_html_string
 from agentguard.builder import TraceBuilder
+from agentguard.web.viewer import trace_to_html_string
 
 
 def _sample_trace():

@@ -4,12 +4,13 @@ Sampling decision is made ONCE per TraceRecorder instance, not per-span.
 This ensures all spans in a trace are either all recorded or all skipped.
 """
 
-import agentguard
-from agentguard.sdk.recorder import TraceRecorder, init_recorder, get_recorder
-from agentguard.sdk.decorators import record_agent
-from agentguard.settings import reset_settings
-from agentguard.core.trace import Span, SpanType
 import pytest
+
+import agentguard
+from agentguard.core.trace import Span, SpanType
+from agentguard.sdk.decorators import record_agent
+from agentguard.sdk.recorder import TraceRecorder
+from agentguard.settings import reset_settings
 
 
 class TestTraceLevelSampling:

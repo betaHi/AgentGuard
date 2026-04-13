@@ -13,16 +13,16 @@ Inspired by:
 
 Usage:
     from agentguard.evolve import EvolutionEngine
-    
+
     engine = EvolutionEngine()
-    
+
     # After a trace is captured:
     reflection = engine.reflect(trace)
     print(reflection.lessons)
-    
+
     # Accumulate knowledge across runs:
     engine.learn(trace)
-    
+
     # Get improvement suggestions:
     suggestions = engine.suggest()
 """
@@ -31,18 +31,20 @@ Usage:
 
 from __future__ import annotations
 
+import contextlib
 import json
 from dataclasses import dataclass, field
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from pathlib import Path
-from typing import Any, Optional
 
-from agentguard.core.trace import ExecutionTrace, Span, SpanType, SpanStatus
-from agentguard.scoring import score_trace
 from agentguard.analysis import (
-    analyze_failures, analyze_flow, analyze_bottleneck, analyze_context_flow,
-    FailureAnalysis, FlowAnalysis,
+    analyze_bottleneck,
+    analyze_context_flow,
+    analyze_failures,
+    analyze_flow,
 )
+from agentguard.core.trace import ExecutionTrace
+from agentguard.scoring import score_trace
 
 __all__ = ['Lesson', 'Reflection', 'KnowledgeBase', 'EvolutionEngine']
 
@@ -111,7 +113,7 @@ class Reflection:
 @dataclass
 class KnowledgeBase:
     """Persistent knowledge accumulated from trace analysis.
-    
+
     Like A-MEM's Zettelkasten, but specialized for agent orchestration.
     Each lesson is a 'card' that gets reinforced with repeated observations.
     """
@@ -143,14 +145,14 @@ class KnowledgeBase:
 
 class EvolutionEngine:
     """Self-reflection and learning engine for agent orchestration.
-    
+
     Accumulates knowledge across traces and produces actionable suggestions.
     """
-    
+
     def __init__(self, knowledge_dir: str = ".agentguard/knowledge"):
         self.knowledge_dir = Path(knowledge_dir)
-        self._kb: Optional[KnowledgeBase] = None
-    
+        self._kb: KnowledgeBase | None = None
+
     @property
     def kb(self) -> KnowledgeBase:
         """Load or create the knowledge base."""
@@ -163,26 +165,26 @@ class EvolutionEngine:
             else:
                 self._kb = KnowledgeBase()
         return self._kb
-    
+
     def _save_kb(self) -> None:
         """Persist the knowledge base to disk."""
         self.knowledge_dir.mkdir(parents=True, exist_ok=True)
         kb_path = self.knowledge_dir / "knowledge.json"
         kb_path.write_text(json.dumps(self.kb.to_dict(), indent=2, ensure_ascii=False), encoding="utf-8")
-    
+
     def reflect(self, trace: ExecutionTrace) -> Reflection:
         """Reflect on a single trace and extract lessons.
-        
+
         This is the 'think' step — analyze what happened and why.
         """
-        now = datetime.now(timezone.utc).isoformat()
+        now = datetime.now(UTC).isoformat()
         reflection = Reflection(trace_id=trace.trace_id)
-        
+
         failures = analyze_failures(trace)
         flow = analyze_flow(trace)
         bn = analyze_bottleneck(trace) if trace.agent_spans else None
         ctx = analyze_context_flow(trace)
-        
+
         # Lesson 1: Unhandled failures — agent needs error handling
         for rc in failures.root_causes:
             if not rc.was_handled:
@@ -194,7 +196,7 @@ class EvolutionEngine:
                     confidence=0.7,
                     first_seen=now, last_seen=now,
                 ))
-        
+
         # Lesson 2: Handled failures — good pattern, but track frequency
         for rc in failures.root_causes:
             if rc.was_handled:
@@ -206,7 +208,7 @@ class EvolutionEngine:
                     confidence=0.5,
                     first_seen=now, last_seen=now,
                 ))
-        
+
         # Lesson 3: Bottleneck detection
         if bn and bn.bottleneck_pct > 30 and len(trace.agent_spans) > 1:
             reflection.lessons.append(Lesson(
@@ -217,7 +219,7 @@ class EvolutionEngine:
                 confidence=0.6,
                 first_seen=now, last_seen=now,
             ))
-        
+
         # Lesson 4: Context flow anomalies
         for anomaly in ctx.anomalies:
             if anomaly.anomaly == "loss":
@@ -234,37 +236,37 @@ class EvolutionEngine:
                     category="handoff",
                     agent=anomaly.from_agent,
                     observation=f"Context bloat: +{anomaly.size_delta_bytes:,}B between {anomaly.from_agent} → {anomaly.to_agent}",
-                    suggestion=f"Consider filtering or summarizing output before handoff to reduce context size",
+                    suggestion="Consider filtering or summarizing output before handoff to reduce context size",
                     confidence=0.5,
                     first_seen=now, last_seen=now,
                 ))
-        
+
         # Lesson 5: Low resilience pattern
         if failures.total_failed_spans > 0 and failures.resilience_score < 0.5:
             reflection.patterns_detected.append(
                 f"Low resilience ({failures.resilience_score:.0%}): {failures.unhandled_count} unhandled failures out of {len(failures.root_causes)} root causes"
             )
-        
+
         # Lesson 6: Long critical path
         if flow.critical_path and len(flow.critical_path) > 4:
             reflection.patterns_detected.append(
                 f"Long critical path ({len(flow.critical_path)} steps): consider parallelizing independent agents"
             )
-        
+
         return reflection
-    
+
     def learn(self, trace: ExecutionTrace) -> Reflection:
         """Reflect on a trace AND accumulate lessons into the knowledge base.
-        
+
         This is reflect + persist. Repeated observations increase confidence.
         """
         reflection = self.reflect(trace)
-        now = datetime.now(timezone.utc).isoformat()
-        
+        now = datetime.now(UTC).isoformat()
+
         for lesson in reflection.lessons:
             # Create a stable key for deduplication
             key = f"{lesson.category}:{lesson.agent}:{hash(lesson.observation) % 10000}"
-            
+
             if key in self.kb.lessons:
                 # Reinforce existing lesson
                 existing = self.kb.lessons[key]
@@ -277,16 +279,16 @@ class EvolutionEngine:
                 lesson.first_seen = now
                 lesson.last_seen = now
                 self.kb.lessons[key] = lesson
-        
+
         self.kb.trace_count += 1
         self.kb.last_updated = now
         self._save_kb()
-        
+
         return reflection
-    
+
     def suggest(self, min_confidence: float = 0.5) -> list[Lesson]:
         """Get improvement suggestions from accumulated knowledge.
-        
+
         Returns lessons sorted by confidence (most confident first).
         Only returns lessons above the confidence threshold.
         """
@@ -295,20 +297,20 @@ class EvolutionEngine:
             if l.confidence >= min_confidence
         ]
         return sorted(suggestions, key=lambda l: (-l.confidence, -l.occurrences))
-    
 
-    
 
-    
+
+
+
     def agent_performance_history(self) -> dict[str, list[dict]]:
         """Get per-agent performance across all learned traces.
-        
+
         Returns dict keyed by agent name with list of:
         {duration_ms, status, trace_id, timestamp}
         """
         history: dict[str, list[dict]] = {}
-        
-        for key, lesson in self.kb.lessons.items():
+
+        for _key, lesson in self.kb.lessons.items():
             agent = lesson.agent
             if agent not in history:
                 history[agent] = []
@@ -319,11 +321,11 @@ class EvolutionEngine:
                 "occurrences": lesson.occurrences,
                 "last_seen": lesson.last_seen,
             })
-        
+
         return history
 
 
-    
+
     def compare_to_best(self, current_trace: ExecutionTrace) -> dict:
         """Compare current trace against the historical best for this pipeline.
 
@@ -349,7 +351,7 @@ class EvolutionEngine:
                 "score": round(current_score.overall, 1),
                 "grade": current_score.grade,
                 "trace_id": current_trace.trace_id,
-                "timestamp": datetime.now(timezone.utc).isoformat(),
+                "timestamp": datetime.now(UTC).isoformat(),
             }
             self._save_kb()
 
@@ -377,22 +379,22 @@ class EvolutionEngine:
 
     def detect_trends(self, window: int = 10) -> list[dict]:
         """Detect improving/degrading trends across recent traces.
-        
+
         Compares recent lessons against historical baseline to detect:
         - Agents getting worse (more failures, more bottleneck time)
         - Agents getting better (fewer failures, faster execution)
         - New issues appearing
         - Old issues resolving
-        
+
         Args:
             window: Number of recent traces to analyze.
-        
+
         Returns:
             List of trend observations.
         """
         trends = []
-        
-        for key, lesson in self.kb.lessons.items():
+
+        for _key, lesson in self.kb.lessons.items():
             if lesson.occurrences >= 3:
                 if lesson.category == "failure" and "unhandled" in lesson.observation.lower():
                     trends.append({
@@ -410,7 +412,7 @@ class EvolutionEngine:
                         "message": f"'{lesson.agent}' is consistently the bottleneck ({lesson.occurrences} times)",
                         "occurrences": lesson.occurrences,
                     })
-            
+
             # New issue (seen only once, recently)
             if lesson.occurrences == 1 and lesson.confidence >= 0.6:
                 trends.append({
@@ -420,7 +422,7 @@ class EvolutionEngine:
                     "message": f"New: {lesson.observation}",
                     "occurrences": 1,
                 })
-        
+
         return sorted(trends, key=lambda t: {"high": 0, "medium": 1, "low": 2}.get(t["severity"], 3))
 
 
@@ -515,15 +517,14 @@ class EvolutionEngine:
             cp = Path("agentguard.json")
             cfg = {}
             if cp.exists():
-                try: cfg = json.loads(cp.read_text(encoding="utf-8"))
-                except: pass
+                with contextlib.suppress(BaseException): cfg = json.loads(cp.read_text(encoding="utf-8"))
             ac = {a.get("name", ""): a for a in cfg.get("agents", [])}
             for p in patches:
                 nm = p["agent"]
                 if nm not in ac: ac[nm] = {"name": nm}
                 ac[nm].update(p["config"])
             cfg["agents"] = list(ac.values())
-            cfg["_auto_applied"] = datetime.now(timezone.utc).isoformat()
+            cfg["_auto_applied"] = datetime.now(UTC).isoformat()
             cp.write_text(json.dumps(cfg, indent=2, ensure_ascii=False) + "\n", encoding="utf-8")
             result["config_path"] = str(cp)
         return result
@@ -538,7 +539,7 @@ class EvolutionEngine:
             f"- Last updated: {self.kb.last_updated}",
             "",
         ]
-        
+
         suggestions = self.suggest()
         if suggestions:
             lines.append("## Top Suggestions")
@@ -551,5 +552,5 @@ class EvolutionEngine:
                 lines.append("")
         else:
             lines.append("No suggestions yet. Analyze more traces to accumulate knowledge.")
-        
+
         return "\n".join(lines)

@@ -15,26 +15,27 @@ Built-in rule types:
 from __future__ import annotations
 
 import re
-from datetime import datetime, timezone, timedelta
-from typing import Any, Callable, Optional
+from collections.abc import Callable
+from datetime import UTC, datetime, timedelta
+from typing import Any
 
 from agentguard.core.eval_schema import RuleResult, RuleVerdict
 
 
 def _resolve_path(data: Any, path: str) -> Any:
     """Resolve a dot-separated path in nested data.
-    
+
     Examples:
         _resolve_path({"a": {"b": [1,2]}}, "a.b") → [1, 2]
         _resolve_path([{"x": 1}, {"x": 2}], "x") → [1, 2]  (maps over list)
     """
     if not path:
         return data
-    
+
     parts = path.split(".", 1)
     key = parts[0]
     rest = parts[1] if len(parts) > 1 else ""
-    
+
     if isinstance(data, dict):
         if key in data:
             return _resolve_path(data[key], rest)
@@ -50,7 +51,7 @@ def _resolve_path(data: Any, path: str) -> Any:
                 else:
                     results.append(val)
         return results if results else None
-    
+
     return None
 
 
@@ -60,7 +61,7 @@ def eval_min_count(data: Any, target: str, value: int, **_) -> RuleResult:
     if resolved is None:
         return RuleResult(name=f"min_count({target})", rule_type="min_count",
                          verdict=RuleVerdict.FAIL, expected=f">= {value}", actual="None (path not found)")
-    
+
     count = len(resolved) if isinstance(resolved, (list, tuple)) else 1
     passed = count >= value
     return RuleResult(
@@ -89,7 +90,7 @@ def eval_each_has(data: Any, target: str, fields: list[str], **_) -> RuleResult:
     if not isinstance(resolved, (list, tuple)):
         return RuleResult(name=f"each_has({target})", rule_type="each_has",
                          verdict=RuleVerdict.FAIL, detail="Target is not a list")
-    
+
     missing = []
     for i, item in enumerate(resolved):
         if not isinstance(item, dict):
@@ -98,7 +99,7 @@ def eval_each_has(data: Any, target: str, fields: list[str], **_) -> RuleResult:
         for f in fields:
             if f not in item or item[f] is None:
                 missing.append(f"item[{i}] missing '{f}'")
-    
+
     return RuleResult(
         name=f"each_has({target})", rule_type="each_has",
         verdict=RuleVerdict.PASS if not missing else RuleVerdict.FAIL,
@@ -114,14 +115,14 @@ def eval_recency(data: Any, target: str, within_days: int, **_) -> RuleResult:
     if resolved is None:
         return RuleResult(name=f"recency({target})", rule_type="recency",
                          verdict=RuleVerdict.FAIL, detail="Target not found")
-    
+
     if not isinstance(resolved, list):
         resolved = [resolved]
-    
-    now = datetime.now(timezone.utc)
+
+    now = datetime.now(UTC)
     cutoff = now - timedelta(days=within_days)
     stale = []
-    
+
     for i, val in enumerate(resolved):
         try:
             if isinstance(val, str):
@@ -130,28 +131,28 @@ def eval_recency(data: Any, target: str, within_days: int, **_) -> RuleResult:
                 try:
                     dt = datetime.fromisoformat(val.replace("Z", "+00:00"))
                     if dt.tzinfo is None:
-                        dt = dt.replace(tzinfo=timezone.utc)
+                        dt = dt.replace(tzinfo=UTC)
                 except (ValueError, TypeError):
                     pass
-                
+
                 # Try common date-only formats
                 if dt is None:
                     for fmt in ["%Y-%m-%d", "%Y/%m/%d", "%d-%m-%Y"]:
                         try:
-                            dt = datetime.strptime(val, fmt).replace(tzinfo=timezone.utc)
+                            dt = datetime.strptime(val, fmt).replace(tzinfo=UTC)
                             break
                         except (ValueError, TypeError):
                             continue
-                
+
                 if dt is None:
                     stale.append(f"item[{i}]: unparseable date \'{val}\'")
                     continue
-                    
+
                 if dt < cutoff:
                     stale.append(f"item[{i}]: {val} is older than {within_days} days")
         except Exception as e:
             stale.append(f"item[{i}]: error parsing \'{val}\': {e}")
-    
+
     return RuleResult(
         name=f"recency({target})", rule_type="recency",
         verdict=RuleVerdict.PASS if not stale else RuleVerdict.FAIL,
@@ -161,18 +162,15 @@ def eval_recency(data: Any, target: str, within_days: int, **_) -> RuleResult:
     )
 
 
-def eval_no_duplicates(data: Any, target: str, field: Optional[str] = None, **_) -> RuleResult:
+def eval_no_duplicates(data: Any, target: str, field: str | None = None, **_) -> RuleResult:
     """Check for unique values."""
     resolved = _resolve_path(data, target)
     if not isinstance(resolved, (list, tuple)):
         return RuleResult(name=f"no_duplicates({target})", rule_type="no_duplicates",
                          verdict=RuleVerdict.FAIL, detail="Target is not a list")
-    
-    if field:
-        values = [_resolve_path(item, field) for item in resolved if isinstance(item, dict)]
-    else:
-        values = list(resolved)
-    
+
+    values = [_resolve_path(item, field) for item in resolved if isinstance(item, dict)] if field else list(resolved)
+
     seen = set()
     dupes = []
     for v in values:
@@ -180,7 +178,7 @@ def eval_no_duplicates(data: Any, target: str, field: Optional[str] = None, **_)
         if key in seen:
             dupes.append(key)
         seen.add(key)
-    
+
     return RuleResult(
         name=f"no_duplicates({target})", rule_type="no_duplicates",
         verdict=RuleVerdict.PASS if not dupes else RuleVerdict.FAIL,
@@ -193,9 +191,9 @@ def eval_contains(data: Any, target: str, keywords: list[str], mode: str = "any"
     """Check that target contains specified keywords."""
     resolved = _resolve_path(data, target)
     text = str(resolved).lower() if resolved else ""
-    
+
     found = [kw for kw in keywords if kw.lower() in text]
-    
+
     if mode == "all":
         passed = len(found) == len(keywords)
         missing = [kw for kw in keywords if kw not in found]
@@ -203,7 +201,7 @@ def eval_contains(data: Any, target: str, keywords: list[str], mode: str = "any"
     else:  # any
         passed = len(found) > 0
         detail = f"Found: {found}" if passed else f"None of {keywords} found"
-    
+
     return RuleResult(
         name=f"contains({target})", rule_type="contains",
         verdict=RuleVerdict.PASS if passed else RuleVerdict.FAIL,
@@ -216,7 +214,7 @@ def eval_regex(data: Any, target: str, pattern: str, **_) -> RuleResult:
     """Check that target matches a regex pattern."""
     resolved = _resolve_path(data, target)
     text = str(resolved) if resolved else ""
-    
+
     match = bool(re.search(pattern, text))
     return RuleResult(
         name=f"regex({target})", rule_type="regex",
@@ -225,7 +223,7 @@ def eval_regex(data: Any, target: str, pattern: str, **_) -> RuleResult:
     )
 
 
-def eval_range(data: Any, target: str, min_val: Optional[float] = None, max_val: Optional[float] = None, **_) -> RuleResult:
+def eval_range(data: Any, target: str, min_val: float | None = None, max_val: float | None = None, **_) -> RuleResult:
     """Check numeric value is within range."""
     resolved = _resolve_path(data, target)
     try:
@@ -233,17 +231,17 @@ def eval_range(data: Any, target: str, min_val: Optional[float] = None, max_val:
     except (ValueError, TypeError):
         return RuleResult(name=f"range({target})", rule_type="range",
                          verdict=RuleVerdict.FAIL, detail=f"Not a number: {resolved}")
-    
+
     if val is None:
         return RuleResult(name=f"range({target})", rule_type="range",
                          verdict=RuleVerdict.FAIL, detail="Value is None")
-    
+
     passed = True
     if min_val is not None and val < min_val:
         passed = False
     if max_val is not None and val > max_val:
         passed = False
-    
+
     expected = f"[{min_val or '-∞'}, {max_val or '+∞'}]"
     return RuleResult(
         name=f"range({target})", rule_type="range",
@@ -267,11 +265,11 @@ RULE_REGISTRY: dict[str, Callable] = {
 
 def evaluate_rules(data: Any, rules: list[dict]) -> list[RuleResult]:
     """Evaluate a list of rule definitions against data.
-    
+
     Args:
         data: The agent output to evaluate.
         rules: List of rule dicts, each with 'type' and rule-specific params.
-    
+
     Returns:
         List of RuleResult objects.
     """
@@ -279,7 +277,7 @@ def evaluate_rules(data: Any, rules: list[dict]) -> list[RuleResult]:
     for rule_def in rules:
         rule_type = rule_def.get("type", "")
         rule_fn = RULE_REGISTRY.get(rule_type)
-        
+
         if rule_fn is None:
             results.append(RuleResult(
                 name=rule_def.get("name", rule_type),
@@ -288,7 +286,7 @@ def evaluate_rules(data: Any, rules: list[dict]) -> list[RuleResult]:
                 detail=f"Unknown rule type: {rule_type}",
             ))
             continue
-        
+
         try:
             result = rule_fn(data, **{k: v for k, v in rule_def.items() if k != "type"})
             if rule_def.get("name"):
@@ -301,5 +299,5 @@ def evaluate_rules(data: Any, rules: list[dict]) -> list[RuleResult]:
                 verdict=RuleVerdict.ERROR,
                 detail=f"Rule execution error: {e}",
             ))
-    
+
     return results

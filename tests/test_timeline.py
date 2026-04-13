@@ -1,13 +1,13 @@
 """Tests for trace timeline."""
 
-import pytest
-from datetime import datetime, timezone, timedelta
-from agentguard.core.trace import ExecutionTrace, Span, SpanType, SpanStatus
-from agentguard.timeline import build_timeline, Timeline, EventType
+from datetime import UTC, datetime, timedelta
+
+from agentguard.core.trace import ExecutionTrace, Span, SpanStatus, SpanType
+from agentguard.timeline import EventType, build_timeline
 
 
 def _ts(offset_s: float = 0) -> str:
-    base = datetime(2026, 4, 12, 0, 0, 0, tzinfo=timezone.utc)
+    base = datetime(2026, 4, 12, 0, 0, 0, tzinfo=UTC)
     return (base + timedelta(seconds=offset_s)).isoformat()
 
 

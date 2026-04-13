@@ -3,12 +3,17 @@
 Pipeline: coordinator → extractor → validator → transformer → loader → reporter
 """
 
-import time, random, sys, os
+import os
+import random
+import sys
+import time
+
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 random.seed(42)
 
-from agentguard import record_agent, record_tool, record_handoff
-from agentguard.sdk.recorder import init_recorder, finish_recording
+from agentguard import record_agent, record_handoff, record_tool
+from agentguard.sdk.recorder import finish_recording, init_recorder
+
 
 @record_tool(name="read_csv")
 def read_csv(path):
@@ -66,16 +71,16 @@ def reporter(stats):
 def coordinator(source):
     raw = extractor(source)
     record_handoff("extractor", "validator", context=raw, summary=f"{raw['rows']} rows extracted")
-    
+
     validation = validator(raw)
     record_handoff("validator", "transformer", context=validation, summary="Schema valid")
-    
+
     transformed = transformer(raw)
     record_handoff("transformer", "loader", context=transformed, summary=f"{transformed['cleaned']['rows_cleaned']} rows ready")
-    
+
     loaded = loader(transformed)
     record_handoff("loader", "reporter", context=loaded, summary=f"{loaded['rows_written']} rows loaded")
-    
+
     report = reporter({"loaded": loaded, "transformed": transformed})
     return {"status": "complete", "report": report}
 

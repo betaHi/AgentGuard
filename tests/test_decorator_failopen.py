@@ -5,14 +5,19 @@ is broken, misconfigured, or throws exceptions.
 """
 
 import asyncio
-from unittest.mock import patch, MagicMock
+from unittest.mock import MagicMock, patch
+
 import pytest
 
-from agentguard.sdk.decorators import (
-    record_agent, record_tool,
-    _try_start_span, _try_complete_span, _try_fail_span, _try_pop_span,
-)
 from agentguard.sdk.async_decorators import record_agent_async, record_tool_async
+from agentguard.sdk.decorators import (
+    _try_complete_span,
+    _try_fail_span,
+    _try_pop_span,
+    _try_start_span,
+    record_agent,
+    record_tool,
+)
 
 
 class TestSyncFailOpen:

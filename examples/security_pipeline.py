@@ -2,12 +2,17 @@
 
 Pipeline: coordinator → scanner → analyzer → triager → remediator → verifier
 """
-import time, random, sys, os
+import os
+import random
+import sys
+import time
+
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 random.seed(42)
 
-from agentguard import record_agent, record_tool, record_handoff
-from agentguard.sdk.recorder import init_recorder, finish_recording
+from agentguard import record_agent, record_handoff, record_tool
+from agentguard.sdk.recorder import finish_recording, init_recorder
+
 
 @record_tool(name="run_sast")
 def run_sast(repo):

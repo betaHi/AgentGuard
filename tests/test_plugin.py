@@ -1,8 +1,9 @@
 """Tests for plugin system."""
 
 import pytest
+
 from agentguard.core.trace import ExecutionTrace, Span, SpanStatus
-from agentguard.plugin import PluginRegistry, get_plugin_registry
+from agentguard.plugin import PluginRegistry
 
 
 @pytest.fixture
@@ -21,7 +22,7 @@ class TestPluginRegistry:
     def test_register_analyzer(self, registry, trace):
         def my_analyzer(t):
             return {"span_count": len(t.spans)}
-        
+
         registry.register_analyzer("my_analyzer", my_analyzer, author="test")
         result = registry.run_analyzer("my_analyzer", trace)
         assert result["span_count"] == 1
@@ -29,7 +30,7 @@ class TestPluginRegistry:
     def test_register_exporter(self, registry, trace):
         def my_exporter(t):
             return f"TRACE: {t.task}"
-        
+
         registry.register_exporter("my_exporter", my_exporter)
         result = registry.run_exporter("my_exporter", trace)
         assert result == "TRACE: plugin_test"
@@ -37,7 +38,7 @@ class TestPluginRegistry:
     def test_run_all(self, registry, trace):
         registry.register_analyzer("a1", lambda t: {"count": len(t.spans)})
         registry.register_analyzer("a2", lambda t: {"task": t.task})
-        
+
         results = registry.run_all_analyzers(trace)
         assert "a1" in results
         assert "a2" in results
@@ -45,7 +46,7 @@ class TestPluginRegistry:
     def test_list_plugins(self, registry):
         registry.register_analyzer("analyzer1", lambda t: {})
         registry.register_exporter("exporter1", lambda t: "")
-        
+
         plugins = registry.list_plugins()
         assert len(plugins) == 2
         assert registry.plugin_count == 2
@@ -53,7 +54,7 @@ class TestPluginRegistry:
     def test_error_handling(self, registry, trace):
         def bad_analyzer(t):
             raise ValueError("boom")
-        
+
         registry.register_analyzer("bad", bad_analyzer)
         results = registry.run_all_analyzers(trace)
         assert "error" in results["bad"]

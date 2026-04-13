@@ -2,13 +2,16 @@
 
 import json
 import logging
-import pytest
 
-from agentguard.core.limits import (
-    check_trace_size, truncate_trace, _truncate_field,
-    TRACE_WARN_BYTES, SPAN_DATA_MAX_BYTES, TRUNCATION_MARKER,
-)
 from agentguard.builder import TraceBuilder
+from agentguard.core.limits import (
+    SPAN_DATA_MAX_BYTES,
+    TRACE_WARN_BYTES,
+    TRUNCATION_MARKER,
+    _truncate_field,
+    check_trace_size,
+    truncate_trace,
+)
 
 
 def _small_trace_dict():

@@ -1,9 +1,10 @@
 """Tests for ASCII visualization."""
 
 import pytest
+
+from agentguard.ascii_viz import gantt_chart, span_distribution, status_summary
 from agentguard.builder import TraceBuilder
-from agentguard.core.trace import ExecutionTrace, SpanStatus
-from agentguard.ascii_viz import gantt_chart, status_summary, span_distribution
+from agentguard.core.trace import ExecutionTrace
 
 
 @pytest.fixture

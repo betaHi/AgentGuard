@@ -1,10 +1,13 @@
 """Tests for traced_task — asyncio task with trace context propagation."""
 
 import asyncio
+import contextlib
+
 import pytest
+
 from agentguard.sdk.async_decorators import record_agent_async, record_tool_async
-from agentguard.sdk.recorder import init_recorder, finish_recording
 from agentguard.sdk.context import traced_task
+from agentguard.sdk.recorder import finish_recording, init_recorder
 
 
 @pytest.fixture
@@ -76,10 +79,8 @@ def test_exception_in_task():
             raise ValueError("async boom")
 
         task = traced_task(boom())
-        try:
+        with contextlib.suppress(ValueError):
             await task
-        except ValueError:
-            pass
         return finish_recording()
 
     trace = asyncio.run(run())

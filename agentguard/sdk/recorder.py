@@ -6,20 +6,20 @@ across nested agent and tool calls.
 
 from __future__ import annotations
 
-import json
+import contextlib
 import threading
-from datetime import datetime, timezone
+from collections.abc import Callable
 from pathlib import Path
-from typing import Callable, Optional, TypeVar
+from typing import Any, TypeVar
 
 from agentguard.core.trace import ExecutionTrace, Span
 
 
 class TraceRecorder:
     """Records execution spans and assembles them into traces.
-    
+
     Thread-safe via thread-local storage for the span stack.
-    
+
     Attributes:
         trace: The current execution trace being recorded.
         output_dir: Directory to write trace files.
@@ -40,6 +40,7 @@ class TraceRecorder:
         """
         try:
             import random
+
             from agentguard.settings import get_settings
             rate = get_settings().sampling_rate
             if rate >= 1.0:
@@ -58,7 +59,7 @@ class TraceRecorder:
         return self._local.span_stack
 
     @property
-    def current_span_id(self) -> Optional[str]:
+    def current_span_id(self) -> str | None:
         """Get the current parent span ID (top of stack)."""
         stack = self._span_stack
         return stack[-1] if stack else None
@@ -159,25 +160,25 @@ class TraceRecorder:
         # Handled failures (failure_handled=True, or parent succeeded) don't count.
         span_map = {s.span_id: s for s in self.trace.spans}
         has_unhandled_failure = False
-        
+
         for s in self.trace.spans:
             if s.status.value != "failed":
                 continue
-            
+
             # Check if this failure was explicitly handled
             if s.failure_handled:
                 continue
-            
+
             # Check if parent succeeded (implicit handling — circuit breaker)
             if s.parent_span_id and s.parent_span_id in span_map:
                 parent = span_map[s.parent_span_id]
                 if parent.status.value == "completed":
                     continue
-            
+
             # This is an unhandled root-level failure
             has_unhandled_failure = True
             break
-        
+
         if has_unhandled_failure:
             self.trace.fail()
         else:
@@ -194,7 +195,7 @@ class TraceRecorder:
 
 
 # Global recorder instance (per-thread via thread-local)
-_global_recorder: Optional[TraceRecorder] = None
+_global_recorder: TraceRecorder | None = None
 _lock = threading.Lock()
 _T = TypeVar("_T")
 
@@ -223,18 +224,14 @@ def set_correlation_id(correlation_id: str) -> None:
     Example:
         set_correlation_id(request.headers["X-Correlation-ID"])
     """
-    try:
+    with contextlib.suppress(Exception):
         get_recorder().set_correlation_id(correlation_id)
-    except Exception:
-        pass
 
 
 def set_parent_trace(parent_trace_id: str) -> None:
     """Set parent trace ID (this trace was spawned by another)."""
-    try:
+    with contextlib.suppress(Exception):
         get_recorder().set_parent_trace(parent_trace_id)
-    except Exception:
-        pass
 
 
 def annotate(key: str, value: Any) -> None:

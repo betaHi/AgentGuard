@@ -1,8 +1,8 @@
 """Tests for CLI diff command — compare two traces."""
 
-import json
-import tempfile
 import os
+import tempfile
+
 from agentguard.builder import TraceBuilder
 from agentguard.cli.main import cmd_diff
 

@@ -9,23 +9,22 @@ Annotations add structured metadata to spans beyond simple key-value pairs:
 
 from __future__ import annotations
 
-import json
 from dataclasses import dataclass, field
-from datetime import datetime, timezone
-from enum import Enum
-from typing import Any, Optional
+from datetime import UTC, datetime
+from enum import StrEnum
+from typing import Any
 
 from agentguard.core.trace import ExecutionTrace, Span
 
 
-class AnnotationSeverity(str, Enum):
+class AnnotationSeverity(StrEnum):
     INFO = "info"
     WARNING = "warning"
     ERROR = "error"
     CRITICAL = "critical"
 
 
-class AnnotationCategory(str, Enum):
+class AnnotationCategory(StrEnum):
     PERFORMANCE = "performance"
     CORRECTNESS = "correctness"
     SECURITY = "security"
@@ -40,12 +39,12 @@ class Annotation:
     message: str
     severity: AnnotationSeverity = AnnotationSeverity.INFO
     category: AnnotationCategory = AnnotationCategory.CUSTOM
-    timestamp: str = field(default_factory=lambda: datetime.now(timezone.utc).isoformat())
+    timestamp: str = field(default_factory=lambda: datetime.now(UTC).isoformat())
     author: str = "system"  # "system", "human", agent name
-    related_span_id: Optional[str] = None
-    link: Optional[str] = None  # URL to issue, doc, etc.
-    data: Optional[dict] = None  # arbitrary structured data
-    
+    related_span_id: str | None = None
+    link: str | None = None  # URL to issue, doc, etc.
+    data: dict | None = None  # arbitrary structured data
+
     def to_dict(self) -> dict:
         d = {
             "message": self.message,
@@ -61,7 +60,7 @@ class Annotation:
         if self.data:
             d["data"] = self.data
         return d
-    
+
     @classmethod
     def from_dict(cls, data: dict) -> Annotation:
         return cls(
@@ -78,14 +77,14 @@ class Annotation:
 
 class AnnotationStore:
     """Store and query annotations for spans in a trace."""
-    
+
     def __init__(self) -> None:
         self._annotations: dict[str, list[Annotation]] = {}  # span_id -> annotations
-    
+
     def annotate(self, span_id: str, annotation: Annotation) -> None:
         """Add an annotation to a span."""
         self._annotations.setdefault(span_id, []).append(annotation)
-    
+
     def annotate_span(
         self,
         span: Span,
@@ -102,11 +101,11 @@ class AnnotationStore:
         )
         self.annotate(span.span_id, ann)
         return ann
-    
+
     def get(self, span_id: str) -> list[Annotation]:
         """Get all annotations for a span."""
         return self._annotations.get(span_id, [])
-    
+
     def get_by_severity(self, severity: AnnotationSeverity) -> list[tuple[str, Annotation]]:
         """Get all annotations of a given severity."""
         results = []
@@ -115,7 +114,7 @@ class AnnotationStore:
                 if ann.severity == severity:
                     results.append((span_id, ann))
         return results
-    
+
     def get_by_category(self, category: AnnotationCategory) -> list[tuple[str, Annotation]]:
         """Get all annotations of a given category."""
         results = []
@@ -124,17 +123,17 @@ class AnnotationStore:
                 if ann.category == category:
                     results.append((span_id, ann))
         return results
-    
+
     @property
     def count(self) -> int:
         return sum(len(anns) for anns in self._annotations.values())
-    
+
     def to_dict(self) -> dict:
         return {
             span_id: [a.to_dict() for a in anns]
             for span_id, anns in self._annotations.items()
         }
-    
+
     @classmethod
     def from_dict(cls, data: dict) -> AnnotationStore:
         store = cls()
@@ -142,7 +141,7 @@ class AnnotationStore:
             for ann_data in anns:
                 store.annotate(span_id, Annotation.from_dict(ann_data))
         return store
-    
+
     def summary(self) -> dict:
         """Summary statistics."""
         by_severity: dict[str, int] = {}
@@ -161,7 +160,7 @@ class AnnotationStore:
 
 def auto_annotate(trace: ExecutionTrace) -> AnnotationStore:
     """Automatically annotate a trace with detected issues.
-    
+
     Scans the trace for common problems and adds annotations:
     - Slow spans (> 2x average duration)
     - Failed spans with errors
@@ -169,21 +168,21 @@ def auto_annotate(trace: ExecutionTrace) -> AnnotationStore:
     - Missing output data
     """
     store = AnnotationStore()
-    
+
     # Collect duration stats
     durations = [s.duration_ms for s in trace.spans if s.duration_ms and s.duration_ms > 0]
     avg_duration = sum(durations) / max(len(durations), 1) if durations else 0
-    
+
     for span in trace.spans:
         # Slow spans
         if span.duration_ms and avg_duration > 0 and span.duration_ms > avg_duration * 2:
             store.annotate_span(
-                span, 
+                span,
                 f"Slow span: {span.duration_ms:.0f}ms ({span.duration_ms / avg_duration:.1f}x average)",
                 severity=AnnotationSeverity.WARNING,
                 category=AnnotationCategory.PERFORMANCE,
             )
-        
+
         # Failed spans
         if span.status.value == "failed":
             store.annotate_span(
@@ -192,7 +191,7 @@ def auto_annotate(trace: ExecutionTrace) -> AnnotationStore:
                 severity=AnnotationSeverity.ERROR,
                 category=AnnotationCategory.CORRECTNESS,
             )
-        
+
         # Context loss at handoffs
         if span.context_dropped_keys:
             store.annotate_span(
@@ -201,10 +200,10 @@ def auto_annotate(trace: ExecutionTrace) -> AnnotationStore:
                 severity=AnnotationSeverity.WARNING,
                 category=AnnotationCategory.CONTEXT,
             )
-        
+
         # Missing output on completed agents
-        if (span.span_type.value == "agent" and 
-            span.status.value == "completed" and 
+        if (span.span_type.value == "agent" and
+            span.status.value == "completed" and
             span.output_data is None):
             store.annotate_span(
                 span,
@@ -212,5 +211,5 @@ def auto_annotate(trace: ExecutionTrace) -> AnnotationStore:
                 severity=AnnotationSeverity.INFO,
                 category=AnnotationCategory.QUALITY,
             )
-    
+
     return store

@@ -1,9 +1,10 @@
 """Tests for TracingProcessExecutor — multiprocessing trace propagation."""
 
 import time
-from agentguard.sdk.context import TracingProcessExecutor
-from agentguard.sdk.recorder import init_recorder, finish_recording
+
 from agentguard import record_agent
+from agentguard.sdk.context import TracingProcessExecutor
+from agentguard.sdk.recorder import finish_recording, init_recorder
 
 
 def _cpu_work(n):

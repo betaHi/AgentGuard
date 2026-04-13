@@ -9,7 +9,11 @@ Shows how to use AgentGuard in a real application:
 This is the "copy and adapt" example.
 """
 
-import sys, os, time, random, threading
+import os
+import random
+import sys
+import time
+
 random.seed(42)
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
@@ -17,13 +21,22 @@ sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 # Step 1: Import and instrument
 # ══════════════════════════════════════
 from agentguard import (
-    record_agent, record_tool, record_handoff, mark_context_used,
-    score_trace, extract_metrics, build_flow_graph,
-    analyze_propagation, analyze_context_flow_deep,
-    SLAChecker, AlertEngine, rule_trace_failed, rule_score_below,
-    TraceBuilder, summarize_trace, summarize_brief,
+    AlertEngine,
+    SLAChecker,
+    analyze_propagation,
+    build_flow_graph,
+    extract_metrics,
+    mark_context_used,
+    record_agent,
+    record_handoff,
+    record_tool,
+    rule_score_below,
+    rule_trace_failed,
+    score_trace,
+    summarize_brief,
+    summarize_trace,
 )
-from agentguard.sdk.recorder import init_recorder, finish_recording
+from agentguard.sdk.recorder import finish_recording, init_recorder
 from agentguard.store import TraceStore
 from agentguard.web.viewer import generate_report_from_trace
 
@@ -68,23 +81,23 @@ def write(research_data: dict) -> str:
 # ══════════════════════════════════════
 def run_pipeline(topic: str) -> dict:
     """Your pipeline, now fully instrumented."""
-    
+
     # Start recording
-    recorder = init_recorder(task=f"Research: {topic}")
-    
+    init_recorder(task=f"Research: {topic}")
+
     # Run agents
     data = research(topic)
-    
+
     # Record handoff (the key insight: track what flows between agents)
     h = record_handoff("researcher", "writer", context=data,
                        summary=f"Research on {topic}")
     mark_context_used(h, used_keys=["analysis"])  # writer only uses analysis
-    
+
     report = write(data)
-    
+
     # Finish recording
     trace = finish_recording()
-    
+
     return {"report": report, "trace": trace}
 
 
@@ -93,35 +106,35 @@ def run_pipeline(topic: str) -> dict:
 # ══════════════════════════════════════
 def analyze(trace):
     """Post-pipeline analysis."""
-    
+
     # Quick summary
     print(summarize_brief(trace))
-    
+
     # Detailed score
     score = score_trace(trace)
     print(f"\nScore: {score.overall:.0f}/100 ({score.grade})")
     for c in score.components:
         print(f"  {c.name}: {c.score:.0f}/100")
-    
+
     # Metrics
     m = extract_metrics(trace)
     print(f"\nMetrics: {m.agent_count} agents, {m.tool_count} tools, "
           f"{m.total_tokens} tokens, ${m.total_cost_usd:.2f}")
-    
+
     # Flow graph
     graph = build_flow_graph(trace)
     print(f"\nFlow: {graph.max_parallelism}x parallelism, "
           f"{graph.sequential_fraction:.0%} sequential")
-    
+
     # Failure check
     prop = analyze_propagation(trace)
     if prop.total_failures > 0:
         print(f"\n⚠️ Failures: {prop.total_failures} "
               f"(containment: {prop.containment_rate:.0%})")
-    
+
     # Natural language summary
     print(f"\n📝 {summarize_trace(trace)}")
-    
+
     return score
 
 
@@ -130,20 +143,20 @@ def analyze(trace):
 # ══════════════════════════════════════
 def setup_monitoring():
     """Set up SLA checks and alert rules."""
-    
+
     # Define SLA
     sla = (SLAChecker()
         .max_duration_ms(5000)
         .min_success_rate(0.95)
         .min_score(70)
         .max_cost_usd(1.0))
-    
+
     # Define alerts
     alerts = AlertEngine()
     alerts.add_rule(rule_trace_failed(severity="critical"))
     alerts.add_rule(rule_score_below(60, severity="error"))
     alerts.add_rule(rule_score_below(80, severity="warning"))
-    
+
     return sla, alerts
 
 
@@ -153,33 +166,33 @@ def setup_monitoring():
 if __name__ == "__main__":
     print("🛡️ AgentGuard — Production Usage Example")
     print("=" * 50)
-    
+
     # Run pipeline
     result = run_pipeline("AI agent observability trends 2026")
     trace = result["trace"]
-    
+
     # Analyze
     print("\n📊 Analysis")
     print("-" * 40)
     score = analyze(trace)
-    
+
     # Monitor
     print("\n🔔 Monitoring")
     print("-" * 40)
     sla, alert_engine = setup_monitoring()
-    
+
     sla_result = sla.check(trace)
     print(f"SLA: {'✅ PASS' if sla_result.passed else '❌ FAIL'}")
     for v in sla_result.violations:
         print(f"  ⚠️ {v.message}")
-    
+
     alerts = alert_engine.evaluate(trace)
     if alerts:
         for a in alerts:
             print(f"  🔔 [{a.severity}] {a.message}")
     else:
         print("  No alerts triggered")
-    
+
     # Save and generate HTML report
     store = TraceStore()
     store.save(trace)

@@ -1,0 +1,15 @@
+line-length = 120
+
+[lint]
+select = ["E", "F", "W", "B", "I"]
+
+ignore = [
+    "E402",   # module-import-not-at-top (examples use sys.path.insert)
+    "E501",   # line-too-long (120 is generous; remaining are HTML/data)
+    "E701",   # multiple-statements-on-one-line
+    "E741",   # ambiguous-variable-name
+]
+
+[lint.per-file-ignores]
+"examples/*" = ["E402"]
+"tests/*" = ["E402"]

@@ -9,10 +9,9 @@ Goes beyond parent-child to identify:
 
 from __future__ import annotations
 
-from dataclasses import dataclass, field
-from typing import Optional
+from dataclasses import dataclass
 
-from agentguard.core.trace import ExecutionTrace, Span, SpanType, SpanStatus
+from agentguard.core.trace import ExecutionTrace, Span, SpanType
 
 
 @dataclass
@@ -23,7 +22,7 @@ class Dependency:
     dep_type: str  # "data", "handoff", "temporal", "shared_tool"
     confidence: float  # 0-1
     evidence: str
-    
+
     def to_dict(self) -> dict:
         return {
             "from": self.from_agent,
@@ -41,7 +40,7 @@ class DependencyGraph:
     agents: list[str]
     root_agents: list[str]  # agents with no incoming dependencies
     leaf_agents: list[str]  # agents with no outgoing dependencies
-    
+
     def to_dict(self) -> dict:
         return {
             "agents": self.agents,
@@ -49,7 +48,7 @@ class DependencyGraph:
             "leaf_agents": self.leaf_agents,
             "dependencies": [d.to_dict() for d in self.dependencies],
         }
-    
+
     def to_mermaid(self) -> str:
         lines = ["graph LR"]
         for agent in self.agents:
@@ -59,7 +58,7 @@ class DependencyGraph:
             to = dep.to_agent.replace(' ', '_')
             lines.append(f"    {fr} -->|{dep.dep_type}| {to}")
         return "\n".join(lines)
-    
+
     def to_report(self) -> str:
         lines = [
             "# Agent Dependency Graph",
@@ -79,7 +78,7 @@ class DependencyGraph:
 
 def build_dependency_graph(trace: ExecutionTrace) -> DependencyGraph:
     """Build a dependency graph from a trace.
-    
+
     Infers dependencies from:
     1. Explicit handoffs
     2. Sequential execution under same parent (temporal)
@@ -89,30 +88,30 @@ def build_dependency_graph(trace: ExecutionTrace) -> DependencyGraph:
     span_map = {s.span_id: s for s in trace.spans}
     agent_spans = [s for s in trace.spans if s.span_type == SpanType.AGENT]
     agents = list(set(s.name for s in agent_spans))
-    
+
     deps: list[Dependency] = []
     seen_deps: set[tuple[str, str, str]] = set()
-    
+
     def add_dep(fr: str, to: str, dtype: str, conf: float, evidence: str) -> None:
         key = (fr, to, dtype)
         if key not in seen_deps and fr != to:
             seen_deps.add(key)
             deps.append(Dependency(from_agent=fr, to_agent=to, dep_type=dtype,
                                   confidence=conf, evidence=evidence))
-    
+
     # 1. Handoff dependencies
     for s in trace.spans:
         if s.span_type == SpanType.HANDOFF and s.handoff_from and s.handoff_to:
             add_dep(s.handoff_from, s.handoff_to, "handoff", 1.0,
                     f"Explicit handoff: {s.name}")
-    
+
     # 2. Temporal dependencies (sequential agents under same parent)
     children_map: dict[str, list[Span]] = {}
     for s in trace.spans:
         if s.parent_span_id:
             children_map.setdefault(s.parent_span_id, []).append(s)
-    
-    for parent_id, children in children_map.items():
+
+    for _parent_id, children in children_map.items():
         child_agents = sorted(
             [c for c in children if c.span_type == SpanType.AGENT],
             key=lambda s: s.started_at or ""
@@ -123,16 +122,16 @@ def build_dependency_graph(trace: ExecutionTrace) -> DependencyGraph:
             # Check if B starts after A ends (sequential)
             if a.ended_at and b.started_at and b.started_at >= a.ended_at:
                 add_dep(a.name, b.name, "temporal", 0.8,
-                        f"Sequential execution under same parent")
-    
+                        "Sequential execution under same parent")
+
     # 3. Data dependencies (output keys → input keys match)
-    for i, a in enumerate(agent_spans):
+    for _i, a in enumerate(agent_spans):
         if not isinstance(a.output_data, dict):
             continue
         out_keys = set(a.output_data.keys())
         if not out_keys:
             continue
-        
+
         for b in agent_spans:
             if a.span_id == b.span_id:
                 continue
@@ -144,7 +143,7 @@ def build_dependency_graph(trace: ExecutionTrace) -> DependencyGraph:
                 conf = len(overlap) / max(len(out_keys), 1)
                 add_dep(a.name, b.name, "data", min(conf, 1.0),
                         f"Shared keys: {sorted(overlap)}")
-    
+
     # 4. Shared tool dependencies
     agent_tools: dict[str, set[str]] = {}
     for s in trace.spans:
@@ -152,7 +151,7 @@ def build_dependency_graph(trace: ExecutionTrace) -> DependencyGraph:
             parent = span_map.get(s.parent_span_id)
             if parent and parent.span_type == SpanType.AGENT:
                 agent_tools.setdefault(parent.name, set()).add(s.name)
-    
+
     agent_names = list(agent_tools.keys())
     for i, a in enumerate(agent_names):
         for b in agent_names[i + 1:]:
@@ -160,13 +159,13 @@ def build_dependency_graph(trace: ExecutionTrace) -> DependencyGraph:
             if shared:
                 add_dep(a, b, "shared_tool", 0.5,
                         f"Both use: {sorted(shared)}")
-    
+
     # Find roots and leaves
     has_incoming = {d.to_agent for d in deps}
     has_outgoing = {d.from_agent for d in deps}
     root_agents = [a for a in agents if a not in has_incoming]
     leaf_agents = [a for a in agents if a not in has_outgoing]
-    
+
     return DependencyGraph(
         dependencies=deps,
         agents=agents,

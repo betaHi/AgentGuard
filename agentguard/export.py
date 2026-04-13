@@ -12,16 +12,15 @@ from __future__ import annotations
 
 import json
 from pathlib import Path
-from typing import Optional
 
-from agentguard.core.trace import ExecutionTrace, Span
+from agentguard.core.trace import ExecutionTrace
 
 __all__ = ['export_jsonl', 'export_otel_spans', 'export_otel', 'trace_statistics']
 
 
 def export_jsonl(trace: ExecutionTrace, filepath: str) -> None:
     """Export trace as JSONL (one span per line).
-    
+
     Useful for log aggregation systems (ELK, Loki, etc.)
     """
     path = Path(filepath)
@@ -58,21 +57,21 @@ def export_jsonl(trace: ExecutionTrace, filepath: str) -> None:
 
 def export_otel_spans(trace: ExecutionTrace) -> list[dict]:
     """Convert trace to OTel-compatible span format.
-    
+
     Follows OpenTelemetry GenAI semantic conventions where applicable.
     Output can be sent to any OTel-compatible collector.
-    
+
     Returns:
         List of span dicts in OTel format.
     """
     otel_spans = []
-    
+
     for span in trace.spans:
         attributes = {
             "agentguard.trace_id": trace.trace_id,
             "agentguard.task": trace.task,
         }
-        
+
         # Map to OTel GenAI conventions
         if span.span_type.value == "agent":
             attributes["gen_ai.operation.name"] = "invoke_agent"
@@ -86,12 +85,12 @@ def export_otel_spans(trace: ExecutionTrace) -> list[dict]:
             attributes["gen_ai.operation.name"] = "chat"
             if "model" in span.metadata:
                 attributes["gen_ai.request.model"] = span.metadata["model"]
-        
+
         # Add custom metadata
         for k, v in span.metadata.items():
             if k not in ("agent_version",):
                 attributes[f"agentguard.{k}"] = v
-        
+
         otel_span = {
             "traceId": trace.trace_id.replace("-", "")[:32].ljust(32, "0"),
             "spanId": span.span_id.replace("-", "")[:16].ljust(16, "0"),
@@ -106,14 +105,14 @@ def export_otel_spans(trace: ExecutionTrace) -> list[dict]:
             },
             "attributes": attributes,
         }
-        
+
         otel_spans.append(otel_span)
-    
+
     return otel_spans
 
 
 
-def export_otel(trace: ExecutionTrace, filepath: Optional[str] = None) -> dict:
+def export_otel(trace: ExecutionTrace, filepath: str | None = None) -> dict:
     """Export trace to OpenTelemetry JSON format (resourceSpans envelope).
 
     Produces the standard OTel JSON structure that can be imported back
@@ -129,9 +128,9 @@ def export_otel(trace: ExecutionTrace, filepath: Optional[str] = None) -> dict:
     Returns:
         Dict in OTel ``resourceSpans`` format.
     """
-    from datetime import datetime, timezone
+    from datetime import datetime
 
-    def _iso_to_unix_nano(iso: Optional[str]) -> int:
+    def _iso_to_unix_nano(iso: str | None) -> int:
         if not iso:
             return 0
         try:
@@ -244,7 +243,7 @@ def export_otel(trace: ExecutionTrace, filepath: Optional[str] = None) -> dict:
 
 def trace_statistics(trace: ExecutionTrace) -> dict:
     """Compute statistics for a trace.
-    
+
     Returns dict with:
     - total_spans, agent_count, tool_count
     - total_duration_ms, avg_span_duration_ms
@@ -255,10 +254,10 @@ def trace_statistics(trace: ExecutionTrace) -> dict:
     spans = trace.spans
     if not spans:
         return {"total_spans": 0}
-    
+
     durations = [s.duration_ms for s in spans if s.duration_ms is not None]
     errors = [s for s in spans if s.status.value == "failed"]
-    
+
     # Calculate nesting depth
     depth_map = {}
     for s in spans:
@@ -267,18 +266,18 @@ def trace_statistics(trace: ExecutionTrace) -> dict:
         else:
             parent_depth = depth_map.get(s.parent_span_id, 0)
             depth_map[s.span_id] = parent_depth + 1
-    
+
     max_depth = max(depth_map.values()) if depth_map else 0
-    
+
     # Find slowest span
     slowest = max(spans, key=lambda s: s.duration_ms or 0)
-    
+
     # Percentiles
     sorted_dur = sorted(durations)
     p50 = sorted_dur[len(sorted_dur) // 2] if sorted_dur else 0
     p95 = sorted_dur[int(len(sorted_dur) * 0.95)] if sorted_dur else 0
     p99 = sorted_dur[int(len(sorted_dur) * 0.99)] if sorted_dur else 0
-    
+
     return {
         "total_spans": len(spans),
         "agent_count": len(trace.agent_spans),

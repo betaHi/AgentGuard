@@ -4,12 +4,17 @@ Pipeline:
   coordinator → classifier → router → responder → escalator → followup
 """
 
-import time, random, sys, os
+import os
+import random
+import sys
+import time
+
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 random.seed(42)
 
-from agentguard import record_agent, record_tool, record_handoff
-from agentguard.sdk.recorder import init_recorder, finish_recording
+from agentguard import record_agent, record_handoff, record_tool
+from agentguard.sdk.recorder import finish_recording, init_recorder
+
 
 @record_tool(name="classify_intent")
 def classify(text):
@@ -60,13 +65,13 @@ def escalator(ticket):
 def coordinator(customer_message):
     intent = classifier(customer_message)
     record_handoff("classifier", "knowledge-retriever", context=intent, summary=f"Intent: {intent['intent']}")
-    
+
     knowledge = retriever(intent)
     record_handoff("knowledge-retriever", "responder", context=knowledge, summary=f"{len(knowledge['articles'])} articles found")
-    
+
     response = responder(knowledge)
     record_handoff("responder", "escalation-checker", context={"response": response, "sentiment": "neutral"})
-    
+
     escalation = escalator({"response": response, "sentiment": "neutral"})
     return {"response": response["response"]["message"], "escalated": escalation["should_escalate"]}
 
@@ -74,15 +79,15 @@ if __name__ == "__main__":
     print("=" * 60)
     print("  AgentGuard Example: Customer Support Pipeline")
     print("=" * 60)
-    
+
     init_recorder(task="Customer Support: Billing Dispute", trigger="incoming_message")
     result = coordinator("I was charged twice for my subscription last month and I want a refund!")
     trace = finish_recording()
-    
+
     print(f"\n  Response: {result['response'][:60]}...")
     print(f"  Escalated: {result['escalated']}")
     print(f"  Trace: {len(trace.spans)} spans, {trace.duration_ms:.0f}ms")
-    
+
     from agentguard.evolve import EvolutionEngine
     engine = EvolutionEngine()
     r = engine.learn(trace)

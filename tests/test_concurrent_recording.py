@@ -6,6 +6,7 @@ verifies that concurrent threads don't corrupt each other's traces.
 
 import threading
 import time
+
 from agentguard.sdk.decorators import record_agent, record_tool
 from agentguard.sdk.recorder import get_recorder
 

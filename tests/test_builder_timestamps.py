@@ -1,6 +1,7 @@
 """Test: TraceBuilder with duration_ms produces spans with correct timestamps."""
 
-from datetime import datetime, timezone
+from datetime import datetime
+
 from agentguard.builder import TraceBuilder
 
 

@@ -1,10 +1,11 @@
 """Tests for counterfactual decision analysis (Q5)."""
 
-from agentguard import record_agent, record_decision
-from agentguard.sdk.recorder import init_recorder, finish_recording
-from agentguard.analysis import analyze_counterfactual
-
+import contextlib
 import time
+
+from agentguard import record_agent, record_decision
+from agentguard.analysis import analyze_counterfactual
+from agentguard.sdk.recorder import finish_recording, init_recorder
 
 
 def _pipeline_with_decisions():
@@ -96,10 +97,8 @@ class TestCounterfactual:
                 rationale="bad guess",
                 confidence=0.3,
             )
-            try:
+            with contextlib.suppress(RuntimeError):
                 bad_choice()
-            except RuntimeError:
-                pass
             good_choice()
             return {}
 

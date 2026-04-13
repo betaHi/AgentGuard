@@ -4,7 +4,7 @@
   ├── planner                     — creates implementation plan
   ├── code-generator              — writes code
   ├── [PARALLEL] code-reviewer    — reviews code quality
-  ├── [PARALLEL] security-scanner — scans for vulnerabilities  
+  ├── [PARALLEL] security-scanner — scans for vulnerabilities
   ├── [PARALLEL] test-runner      — runs test suite
   │
   ├── [SEQUENTIAL] fixer          — fixes issues from all 3
@@ -13,24 +13,24 @@
 The review, security scan, and tests run in PARALLEL after code generation.
 """
 
-import time
+import os
 import random
 import sys
-import os
+import time
 
 random.seed(42)
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
-from agentguard import TraceThread, record_agent, record_tool, record_handoff, mark_context_used
-from agentguard.sdk.recorder import init_recorder, finish_recording
-from agentguard.scoring import score_trace
+from agentguard import TraceThread, mark_context_used, record_agent, record_handoff, record_tool
 from agentguard.ascii_viz import gantt_chart, status_summary
-from agentguard.web.viewer import generate_timeline_html
+from agentguard.scoring import score_trace
+from agentguard.sdk.recorder import finish_recording, init_recorder
 from agentguard.store import TraceStore
+from agentguard.web.viewer import generate_timeline_html
 
 
 @record_tool(name="llm_plan")
-def llm_plan(task): 
+def llm_plan(task):
     time.sleep(random.uniform(0.3, 0.5))
     return {"subtasks": ["endpoint", "validation", "tests"], "files": ["api.py", "tests.py"]}
 
@@ -57,7 +57,7 @@ def pytest_run(code):
     return {"passed": 15, "failed": 0, "coverage": 0.87}
 
 @record_tool(name="git_pr")
-def git_pr(changes): 
+def git_pr(changes):
     time.sleep(random.uniform(0.1, 0.2))
     return {"pr_number": 42, "url": "https://github.com/org/repo/pull/42"}
 
@@ -100,7 +100,7 @@ def orchestrate_parallel_coding(task: str) -> dict:
     """Coordinate the full parallel coding workflow under one root span."""
     # Phase 1: Plan
     plan_result = plan(task)
-    h1 = record_handoff("planner", "code-generator", context=plan_result, summary="Implementation plan")
+    record_handoff("planner", "code-generator", context=plan_result, summary="Implementation plan")
 
     # Phase 2: Generate code
     code_result = generate(plan_result)
@@ -143,18 +143,18 @@ def orchestrate_parallel_coding(task: str) -> dict:
 def main():
     print("🖥️ Parallel Coding Pipeline")
     print("=" * 50)
-    
-    recorder = init_recorder(task="Implement /api/agents/{id}/traces endpoint")
-    result = orchestrate_parallel_coding("Add traces endpoint with pagination")
-    
+
+    init_recorder(task="Implement /api/agents/{id}/traces endpoint")
+    orchestrate_parallel_coding("Add traces endpoint with pagination")
+
     trace = finish_recording()
-    
+
     # Analysis
     score = score_trace(trace)
     print(f"\n{status_summary(trace)}")
     print(f"\n{gantt_chart(trace)}")
     print(f"\n🎯 Score: {score.overall:.0f}/100 ({score.grade})")
-    
+
     # Save + HTML
     store = TraceStore()
     store.save(trace)

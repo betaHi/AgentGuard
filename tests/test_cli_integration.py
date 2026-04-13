@@ -1,11 +1,11 @@
 """CLI integration tests — verify commands work end-to-end."""
 
-import pytest
+import json
 import subprocess
 import sys
-import json
-import tempfile
-import os
+
+import pytest
+
 from agentguard.builder import TraceBuilder
 
 
@@ -20,7 +20,7 @@ def trace_file(tmp_path):
         .agent("writer", duration_ms=5000, status="failed", error="timeout")
         .end()
         .build())
-    
+
     path = tmp_path / "test_trace.json"
     path.write_text(trace.to_json())
     return str(path)
@@ -100,7 +100,7 @@ class TestCLI:
             .build())
         path2 = tmp_path / "trace2.json"
         path2.write_text(trace2.to_json())
-        
+
         result = _run_cli("diff", trace_file, str(path2))
         assert result.returncode == 0
 

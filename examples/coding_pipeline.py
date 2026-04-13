@@ -17,21 +17,20 @@ Pipeline:
   └── deployer         — creates PR, triggers CI
 """
 
-import time
 import random
+import time
 
 # Seed for reproducible demo output
 random.seed(42)
-import sys
 import os
+import sys
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
-from agentguard import record_agent, record_tool, record_handoff
-from agentguard.sdk.recorder import init_recorder, finish_recording
-from agentguard.analysis import analyze_failures, analyze_flow, analyze_bottleneck
+from agentguard import record_agent, record_handoff, record_tool
+from agentguard.analysis import analyze_bottleneck, analyze_failures, analyze_flow
+from agentguard.sdk.recorder import finish_recording, init_recorder
 from agentguard.web.viewer import generate_timeline_html
-
 
 # ──────────────────────────────────────────
 # Tools
@@ -174,10 +173,10 @@ def code_searcher(plan: dict) -> dict:
     except Exception:
         # Fallback to keyword search
         vector_results = keyword_search(plan["plan"]["subtasks"][0])
-    
+
     # Always do codebase search
     code_results = codebase_search(plan["plan"]["subtasks"][0])
-    
+
     return {
         "relevant_files": code_results,
         "similar_code": vector_results,
@@ -233,43 +232,43 @@ def notifier(deployment: dict) -> dict:
     try:
         results["alerts"] = send_slack("deploy-alerts", "New deployment queued")
     except Exception as e:
-        raise RuntimeError(f"Critical notification channel failed: {e}")
+        raise RuntimeError(f"Critical notification channel failed: {e}") from None
     return results
 
 
 @record_agent(name="coding-pipeline", version="v4.0")
 def coding_pipeline(user_request: str) -> dict:
     """Full coding pipeline coordinator."""
-    
+
     # Phase 1: Plan
     plan = planner(user_request)
     record_handoff("planner", "code-searcher", context=plan,
                    summary=f"Implementation plan with {plan['subtask_count']} subtasks")
-    
+
     # Phase 2: Search context
     context = code_searcher(plan)
     record_handoff("code-searcher", "code-generator", context=context,
                    summary=f"Found {context['total_context_files']} relevant files")
-    
+
     # Phase 3: Generate code
     code = code_generator(plan, context)
     record_handoff("code-generator", "code-reviewer", context=code,
                    summary=f"Generated {code['total_lines']} lines across {code['files_modified']} files")
-    
+
     # Phase 4: Review
     review = code_reviewer(code)
-    
+
     # Phase 5: Test
     record_handoff("code-reviewer", "test-runner", context=review,
                    summary=f"Review {'approved' if review['approved'] else 'needs fixes'}")
     tests = test_runner(code)
-    
+
     # Phase 6: Deploy (only if review passed and tests passed)
     if review["approved"] and tests["all_passed"]:
         record_handoff("test-runner", "deployer", context=tests,
                        summary=f"All {tests['test_results']['total']} tests passed, {tests['coverage']:.0%} coverage")
         deployment = deployer(code, tests)
-        
+
         # Phase 7: Notify (may fail)
         try:
             record_handoff("deployer", "notifier", context=deployment,
@@ -277,7 +276,7 @@ def coding_pipeline(user_request: str) -> dict:
             notifier(deployment)
         except Exception:
             pass  # Pipeline continues even if notification fails
-        
+
         return {
             "status": "deployed",
             "pr": deployment["pr"]["url"],
@@ -300,19 +299,19 @@ def main():
     print("=" * 70)
     print("  AgentGuard Example: Multi-Agent Coding Pipeline")
     print("=" * 70)
-    
+
     init_recorder(
         task="feat: Add /api/agents/{id}/traces endpoint",
         trigger="pull_request",
     )
-    
+
     result = coding_pipeline(
         "Add a new REST API endpoint that returns paginated trace data "
         "for a specific agent, including filtering by date range and status."
     )
-    
+
     trace = finish_recording()
-    
+
     print(f"\n{'─' * 70}")
     print(f"  Result: {result['status']}")
     if result["status"] == "deployed":
@@ -324,18 +323,18 @@ def main():
     print(f"  Spans: {len(trace.spans)} ({len(trace.agent_spans)} agents, {len(trace.tool_spans)} tools)")
     print(f"  Handoffs: {sum(1 for s in trace.spans if s.span_type.value == 'handoff')}")
     print(f"  Duration: {trace.duration_ms:.0f}ms")
-    
+
     # Analysis
     failures = analyze_failures(trace)
     bottleneck = analyze_bottleneck(trace)
     flow = analyze_flow(trace)
-    
+
     print(f"\n  Resilience: {failures.resilience_score:.0%}")
     print(f"  Bottleneck: {bottleneck.bottleneck_span} ({bottleneck.bottleneck_pct:.0f}%)")
     print(f"  Handoffs: {len(flow.handoffs)}")
     for h in flow.handoffs:
         print(f"    🔀 {h.from_agent} → {h.to_agent} ({h.context_size_bytes}B)")
-    
+
     # Generate report
     report = generate_timeline_html()
     print(f"\n  📊 CLI: agentguard show .agentguard/traces/{trace.trace_id}.json")
@@ -345,18 +344,18 @@ def main():
     from agentguard.evolve import EvolutionEngine
     engine = EvolutionEngine()
     reflection = engine.learn(trace)
-    
-    print(f"\n  🧠 Self-Reflection:")
+
+    print("\n  🧠 Self-Reflection:")
     for l in reflection.lessons[:3]:
         icon = {"failure": "🔴", "bottleneck": "🐢", "handoff": "🔀"}.get(l.category, "•")
         print(f"    {icon} {l.agent}: {l.suggestion[:60]}")
-    
+
     suggestions = engine.suggest()
     if suggestions:
         print(f"\n  💡 Top Suggestion (from {engine.kb.trace_count} runs):")
         s = suggestions[0]
         print(f"    {s.agent}: {s.suggestion} ({s.confidence:.0%} confidence)")
-    
+
     print(f"{'═' * 70}")
 
 

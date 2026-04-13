@@ -1,8 +1,9 @@
 """Tests for CLI analyze --json structured output."""
 
 import json
-from agentguard.cli.main import _build_analysis_dict, _build_trace_metadata
+
 from agentguard.builder import TraceBuilder
+from agentguard.cli.main import _build_analysis_dict, _build_trace_metadata
 
 
 def _sample_trace():

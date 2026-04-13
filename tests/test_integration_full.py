@@ -5,28 +5,29 @@ on a realistic trace without crashing.
 """
 
 import pytest
+
+from agentguard.ab_test import ab_test
+from agentguard.aggregate import aggregate_traces
+from agentguard.annotations import auto_annotate
 from agentguard.builder import TraceBuilder
-from agentguard.core.trace import SpanType, SpanStatus
+from agentguard.comparison import compare_traces
+from agentguard.context_flow import analyze_context_flow_deep
+from agentguard.core.trace import SpanStatus, SpanType
+from agentguard.correlation import analyze_correlations
+from agentguard.diff import diff_context_flow, diff_flow_graphs, diff_traces
+from agentguard.filter import by_status, by_type, filter_spans
+from agentguard.flowgraph import build_flow_graph
+from agentguard.metrics import extract_metrics
+from agentguard.normalize import normalize_trace
+from agentguard.profile import build_agent_profiles
+from agentguard.propagation import analyze_handoff_chains, analyze_propagation, compute_context_integrity
+from agentguard.schema import validate_trace_dict
 
 # Analysis modules
 from agentguard.scoring import score_trace
-from agentguard.metrics import extract_metrics
+from agentguard.summarize import summarize_brief, summarize_trace
 from agentguard.timeline import build_timeline
-from agentguard.flowgraph import build_flow_graph
-from agentguard.propagation import analyze_propagation, compute_context_integrity, analyze_handoff_chains
-from agentguard.context_flow import analyze_context_flow_deep
-from agentguard.correlation import analyze_correlations
-from agentguard.annotations import auto_annotate
-from agentguard.filter import filter_spans, by_type, by_status, is_slow
 from agentguard.tree import compute_tree_stats, tree_to_text
-from agentguard.normalize import normalize_trace
-from agentguard.summarize import summarize_trace, summarize_brief
-from agentguard.comparison import compare_traces
-from agentguard.aggregate import aggregate_traces
-from agentguard.ab_test import ab_test
-from agentguard.profile import build_agent_profiles
-from agentguard.schema import validate_trace_dict
-from agentguard.diff import diff_traces, diff_flow_graphs, diff_context_flow
 
 
 @pytest.fixture
@@ -76,7 +77,7 @@ def simple_trace():
 
 class TestFullIntegration:
     """Run every analysis module on the complex trace."""
-    
+
     def test_scoring(self, complex_trace):
         score = score_trace(complex_trace)
         assert 0 <= score.overall <= 100

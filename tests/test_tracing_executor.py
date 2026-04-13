@@ -1,10 +1,11 @@
 """Tests for TracingExecutor — thread pool with trace context propagation."""
 
+import contextlib
 import time
+
 from agentguard import record_agent, record_tool
-from agentguard.sdk.recorder import init_recorder, finish_recording
 from agentguard.sdk.context import TracingExecutor
-from agentguard.core.trace import SpanType
+from agentguard.sdk.recorder import finish_recording, init_recorder
 
 
 def test_basic_context_propagation():
@@ -68,10 +69,8 @@ def test_exception_in_worker():
 
     with TracingExecutor(max_workers=1) as executor:
         future = executor.submit(failing_worker)
-        try:
+        with contextlib.suppress(ValueError):
             future.result()
-        except ValueError:
-            pass
 
     trace = finish_recording()
     failed = [s for s in trace.spans if s.name == "failing-worker"]
@@ -94,7 +93,7 @@ def test_context_manager():
 def test_empty_submit():
     """Submitting zero tasks works fine."""
     init_recorder(task="empty")
-    with TracingExecutor(max_workers=1) as executor:
+    with TracingExecutor(max_workers=1):
         pass  # no submits
     trace = finish_recording()
     assert trace is not None

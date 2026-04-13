@@ -8,11 +8,13 @@ two execution strategies for the same task:
 Shows how AgentGuard's analysis identifies the bottleneck in sequential
 mode and confirms the parallel pipeline's superior cost-yield ratio.
 """
-import sys, os
+import os
+import sys
+
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
-from agentguard.builder import TraceBuilder
 from agentguard.analysis import analyze_bottleneck, analyze_cost_yield
+from agentguard.builder import TraceBuilder
 from agentguard.scoring import score_trace
 
 

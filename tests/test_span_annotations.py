@@ -1,8 +1,8 @@
 """Tests for SDK span annotations — user-attached key-value metadata."""
 
-from agentguard.sdk.recorder import TraceRecorder, annotate, get_recorder
-from agentguard.sdk.decorators import record_agent
 from agentguard.core.trace import Span, SpanType
+from agentguard.sdk.decorators import record_agent
+from agentguard.sdk.recorder import TraceRecorder, annotate
 
 
 class TestAnnotateSpan:

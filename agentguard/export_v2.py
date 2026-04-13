@@ -6,14 +6,12 @@ pandas, or data warehouses.
 
 from __future__ import annotations
 
-from typing import Optional
-
-from agentguard.core.trace import ExecutionTrace, Span
+from agentguard.core.trace import ExecutionTrace
 
 
 def trace_to_csv(trace: ExecutionTrace, delimiter: str = ",") -> str:
     """Export trace spans as CSV.
-    
+
     Each row is a span with flattened fields.
     """
     headers = [
@@ -22,9 +20,9 @@ def trace_to_csv(trace: ExecutionTrace, delimiter: str = ",") -> str:
         "error", "retry_count", "token_count", "cost_usd",
         "handoff_from", "handoff_to", "context_size_bytes",
     ]
-    
+
     lines = [delimiter.join(headers)]
-    
+
     for s in trace.spans:
         row = [
             trace.trace_id,
@@ -45,7 +43,7 @@ def trace_to_csv(trace: ExecutionTrace, delimiter: str = ",") -> str:
             str(s.context_size_bytes or ""),
         ]
         lines.append(delimiter.join(row))
-    
+
     return "\n".join(lines)
 
 
@@ -53,16 +51,16 @@ def traces_to_csv(traces: list[ExecutionTrace], delimiter: str = ",") -> str:
     """Export multiple traces as a single CSV."""
     if not traces:
         return ""
-    
+
     # Use first trace for headers
     result = trace_to_csv(traces[0], delimiter)
-    
+
     for trace in traces[1:]:
         csv = trace_to_csv(trace, delimiter)
         # Skip header row
         lines = csv.split("\n")[1:]
         result += "\n" + "\n".join(lines)
-    
+
     return result
 
 

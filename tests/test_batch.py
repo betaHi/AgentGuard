@@ -1,8 +1,7 @@
 """Tests for batch processing."""
 
-import pytest
-from agentguard.builder import TraceBuilder
 from agentguard.batch import batch_analyze
+from agentguard.builder import TraceBuilder
 
 
 def _traces(n=5):

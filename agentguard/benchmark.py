@@ -6,12 +6,13 @@ to identify bottlenecks and ensure scalability.
 
 from __future__ import annotations
 
+import contextlib
 import time
-from dataclasses import dataclass, field
-from typing import Callable
+from collections.abc import Callable
+from dataclasses import dataclass
 
 from agentguard.core.trace import ExecutionTrace
-from agentguard.generate import generate_trace, generate_batch
+from agentguard.generate import generate_batch
 
 
 @dataclass
@@ -23,7 +24,7 @@ class BenchmarkResult:
     avg_ms: float
     min_ms: float
     max_ms: float
-    
+
     def to_dict(self) -> dict:
         return {
             "name": self.name,
@@ -41,14 +42,14 @@ class BenchmarkSuite:
     results: list[BenchmarkResult]
     trace_count: int
     total_ms: float
-    
+
     def to_dict(self) -> dict:
         return {
             "trace_count": self.trace_count,
             "total_ms": round(self.total_ms, 1),
             "results": [r.to_dict() for r in self.results],
         }
-    
+
     def to_report(self) -> str:
         lines = [
             "# Benchmark Results",
@@ -68,13 +69,11 @@ def _bench(name: str, fn: Callable, traces: list[ExecutionTrace]) -> BenchmarkRe
     times = []
     for trace in traces:
         start = time.perf_counter()
-        try:
+        with contextlib.suppress(Exception):
             fn(trace)
-        except Exception:
-            pass
         elapsed = (time.perf_counter() - start) * 1000
         times.append(elapsed)
-    
+
     return BenchmarkResult(
         name=name,
         iterations=len(traces),
@@ -91,29 +90,29 @@ def run_benchmark(
     seed: int = 42,
 ) -> BenchmarkSuite:
     """Run the full benchmark suite.
-    
+
     Generates synthetic traces and benchmarks all analysis modules.
     """
     traces = generate_batch(count=trace_count, agents=agents_per_trace, seed=seed)
-    
+
     start = time.perf_counter()
     results = []
-    
+
     # Import all modules to benchmark
-    from agentguard.scoring import score_trace
-    from agentguard.metrics import extract_metrics
-    from agentguard.timeline import build_timeline
-    from agentguard.flowgraph import build_flow_graph
-    from agentguard.propagation import analyze_propagation
+    from agentguard.annotations import auto_annotate
     from agentguard.context_flow import analyze_context_flow_deep
     from agentguard.correlation import analyze_correlations
-    from agentguard.annotations import auto_annotate
-    from agentguard.tree import compute_tree_stats
-    from agentguard.normalize import normalize_trace
-    from agentguard.summarize import summarize_trace
-    from agentguard.schema import validate_trace_dict
     from agentguard.dependency import build_dependency_graph
-    
+    from agentguard.flowgraph import build_flow_graph
+    from agentguard.metrics import extract_metrics
+    from agentguard.normalize import normalize_trace
+    from agentguard.propagation import analyze_propagation
+    from agentguard.schema import validate_trace_dict
+    from agentguard.scoring import score_trace
+    from agentguard.summarize import summarize_trace
+    from agentguard.timeline import build_timeline
+    from agentguard.tree import compute_tree_stats
+
     benchmarks = [
         ("scoring", score_trace),
         ("metrics", extract_metrics),
@@ -129,12 +128,12 @@ def run_benchmark(
         ("schema_validate", lambda t: validate_trace_dict(t.to_dict())),
         ("dependency_graph", build_dependency_graph),
     ]
-    
+
     for name, fn in benchmarks:
         results.append(_bench(name, fn, traces))
-    
+
     total_ms = (time.perf_counter() - start) * 1000
-    
+
     return BenchmarkSuite(
         results=results,
         trace_count=trace_count,

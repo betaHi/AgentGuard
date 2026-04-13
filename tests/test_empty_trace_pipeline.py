@@ -5,23 +5,28 @@ and comparison must handle a trace with zero spans gracefully.
 """
 
 import json
-import pytest
 
-from agentguard.core.trace import ExecutionTrace, SpanStatus
 from agentguard.analysis import (
-    analyze_failures, analyze_flow, analyze_bottleneck,
-    analyze_context_flow, analyze_retries, analyze_cost,
-    analyze_cost_yield, analyze_decisions, analyze_timing,
+    analyze_bottleneck,
+    analyze_context_flow,
+    analyze_cost,
+    analyze_cost_yield,
+    analyze_decisions,
+    analyze_failures,
+    analyze_flow,
+    analyze_retries,
+    analyze_timing,
 )
+from agentguard.cli.main import _build_analysis_dict, _build_trace_metadata
+from agentguard.core.trace import ExecutionTrace
+from agentguard.filter import filter_spans
+from agentguard.normalize import normalize_trace
 from agentguard.propagation import analyze_propagation
 from agentguard.scoring import score_trace
-from agentguard.web.viewer import trace_to_html_string
-from agentguard.cli.main import _build_analysis_dict, _build_trace_metadata
-from agentguard.normalize import normalize_trace
-from agentguard.summarize import summarize_trace, summarize_brief
-from agentguard.tree import tree_to_text, compute_tree_stats
+from agentguard.summarize import summarize_brief, summarize_trace
 from agentguard.timeline import build_timeline
-from agentguard.filter import filter_spans
+from agentguard.tree import compute_tree_stats, tree_to_text
+from agentguard.web.viewer import trace_to_html_string
 
 
 def _empty_trace():

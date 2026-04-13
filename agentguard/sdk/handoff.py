@@ -5,7 +5,7 @@ capturing context transfer, timing, and potential information loss.
 
 Usage:
     from agentguard.sdk.handoff import record_handoff
-    
+
     # After agent_a completes, before agent_b starts:
     record_handoff(
         from_agent="researcher",
@@ -19,7 +19,7 @@ from __future__ import annotations
 
 import json
 import sys
-from typing import Any, Optional
+from typing import Any
 
 from agentguard.core.trace import Span, SpanType
 from agentguard.sdk.recorder import get_recorder
@@ -30,20 +30,20 @@ def record_handoff(
     to_agent: str,
     context: Any = None,
     summary: str = "",
-    metadata: Optional[dict] = None,
+    metadata: dict | None = None,
 ) -> Span:
     """Record a handoff event between two agents.
-    
+
     This creates a HANDOFF span that captures the context transfer
     between agents. Use this to make handoffs visible in traces.
-    
+
     Args:
         from_agent: Name of the agent handing off.
         to_agent: Name of the agent receiving.
         context: The data being passed (will be serialized for size tracking).
         summary: Human-readable description of what's being handed off.
         metadata: Additional metadata.
-    
+
     Returns:
         The completed handoff Span, with ``context_size_bytes`` and
         ``context_passed`` populated. Pass this span to
@@ -61,7 +61,7 @@ def record_handoff(
         analysis = analyst.run(news)
     """
     recorder = get_recorder()
-    
+
     # Calculate context size
     ctx_bytes = 0
     ctx_keys = []
@@ -71,10 +71,10 @@ def record_handoff(
             ctx_bytes = len(serialized.encode("utf-8"))
         except Exception:
             ctx_bytes = sys.getsizeof(context)
-        
+
         if isinstance(context, dict):
             ctx_keys = list(context.keys())
-    
+
     span = Span(
         span_type=SpanType.HANDOFF,
         name=f"{from_agent} → {to_agent}",
@@ -93,18 +93,18 @@ def record_handoff(
         context_passed={"keys": ctx_keys, "summary": summary} if summary else None,
         context_size_bytes=ctx_bytes,
     )
-    
+
     span.complete()
     recorder.push_span(span)
     recorder.pop_span(span)
-    
+
     return span
 
 
 def detect_context_loss(
     sent_context: dict,
     received_input: dict,
-    required_keys: Optional[list[str]] = None,
+    required_keys: list[str] | None = None,
 ) -> dict:
     """Detect if context was lost during a handoff.
 
@@ -131,17 +131,17 @@ def detect_context_loss(
     """
     sent_keys = set(sent_context.keys()) if isinstance(sent_context, dict) else set()
     recv_keys = set(received_input.keys()) if isinstance(received_input, dict) else set()
-    
+
     missing = sent_keys - recv_keys
     extra = recv_keys - sent_keys
-    
+
     sent_size = len(json.dumps(sent_context, default=str).encode("utf-8"))
     recv_size = len(json.dumps(received_input, default=str).encode("utf-8"))
-    
+
     required_missing = []
     if required_keys:
         required_missing = [k for k in required_keys if k not in recv_keys]
-    
+
     return {
         "missing_keys": list(missing),
         "extra_keys": list(extra),
@@ -189,10 +189,10 @@ def mark_context_used(
     sent_keys = handoff_span.metadata.get("handoff.context_keys", [])
     dropped = [k for k in sent_keys if k not in used_keys]
     extra_used = [k for k in used_keys if k not in sent_keys]
-    
+
     handoff_span.context_used_keys = used_keys
     handoff_span.context_dropped_keys = dropped
-    
+
     if received_context is not None:
         try:
             serialized = json.dumps(received_context, default=str)
@@ -203,15 +203,15 @@ def mark_context_used(
             "size_bytes": recv_bytes,
             "keys": list(received_context.keys()) if isinstance(received_context, dict) else [],
         }
-    
+
     # Utilization = fraction of sent keys that were used (capped at 1.0)
     used_from_sent = len([k for k in used_keys if k in sent_keys])
     utilization = used_from_sent / max(len(sent_keys), 1)
-    
+
     handoff_span.metadata["handoff.used_keys"] = used_keys
     handoff_span.metadata["handoff.dropped_keys"] = dropped
     handoff_span.metadata["handoff.utilization"] = round(utilization, 2)
-    
+
     return {
         "used_keys": used_keys,
         "dropped_keys": dropped,
@@ -223,11 +223,11 @@ def mark_context_used(
 def record_decision(
     coordinator: str,
     chosen_agent: str,
-    alternatives: Optional[list[str]] = None,
+    alternatives: list[str] | None = None,
     rationale: str = "",
-    criteria: Optional[dict] = None,
-    confidence: Optional[float] = None,
-    metadata: Optional[dict] = None,
+    criteria: dict | None = None,
+    confidence: float | None = None,
+    metadata: dict | None = None,
 ) -> Span:
     """Record an orchestration decision — why the coordinator chose one agent over others.
 

@@ -1,7 +1,7 @@
 """Tests for Q4 custom cost models in cost-yield analysis."""
 
-from agentguard.builder import TraceBuilder
 from agentguard.analysis import analyze_cost_yield
+from agentguard.builder import TraceBuilder
 
 
 def _trace():

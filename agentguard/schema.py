@@ -8,8 +8,6 @@ Provides:
 
 from __future__ import annotations
 
-from typing import Any
-
 SCHEMA_VERSION = "0.1.0"
 
 SPAN_SCHEMA = {
@@ -64,70 +62,70 @@ TRACE_SCHEMA = {
 
 def validate_trace_dict(data: dict) -> list[str]:
     """Validate a trace dictionary against the schema.
-    
+
     Returns a list of error messages (empty if valid).
     Uses manual validation (no jsonschema dependency).
     """
     errors = []
-    
+
     # Required fields
     for field in ["trace_id", "status", "spans"]:
         if field not in data:
             errors.append(f"Missing required field: {field}")
-    
+
     if errors:
         return errors
-    
+
     # Type checks
     if not isinstance(data["trace_id"], str) or not data["trace_id"]:
         errors.append("trace_id must be a non-empty string")
-    
+
     valid_statuses = {"running", "completed", "failed", "timeout"}
     if data.get("status") not in valid_statuses:
         errors.append(f"Invalid status: {data.get('status')} (must be one of {valid_statuses})")
-    
+
     if not isinstance(data.get("spans", []), list):
         errors.append("spans must be an array")
         return errors
-    
+
     # Validate each span
     valid_types = {"agent", "tool", "llm_call", "handoff"}
     span_ids = set()
-    
+
     for i, span in enumerate(data["spans"]):
         prefix = f"spans[{i}]"
-        
+
         if not isinstance(span, dict):
             errors.append(f"{prefix}: must be an object")
             continue
-        
+
         # Required span fields
         for field in ["span_id", "span_type", "name", "status"]:
             if field not in span:
                 errors.append(f"{prefix}: missing required field '{field}'")
-        
+
         if "span_id" in span:
             if span["span_id"] in span_ids:
                 errors.append(f"{prefix}: duplicate span_id '{span['span_id']}'")
             span_ids.add(span["span_id"])
-        
+
         if "span_type" in span and span["span_type"] not in valid_types:
             errors.append(f"{prefix}: invalid span_type '{span['span_type']}'")
-        
+
         if "status" in span and span["status"] not in valid_statuses:
             errors.append(f"{prefix}: invalid status '{span['status']}'")
-        
+
         # Parent reference check
         if span.get("parent_span_id") and span["parent_span_id"] not in span_ids:
             # Might be forward reference — check after all spans
             pass
-    
+
     # Second pass: check parent references
     for i, span in enumerate(data["spans"]):
         parent_id = span.get("parent_span_id")
         if parent_id and parent_id not in span_ids:
             errors.append(f"spans[{i}]: parent_span_id '{parent_id}' references non-existent span")
-    
+
     return errors
 
 

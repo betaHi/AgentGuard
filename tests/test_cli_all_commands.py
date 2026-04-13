@@ -4,9 +4,11 @@ Parametrized over every command that takes a trace file argument.
 Commands that need special args or no file are tested separately.
 """
 
-import tempfile
 import os
+import tempfile
+
 import pytest
+
 from agentguard.builder import TraceBuilder
 from agentguard.cli import main as cli
 
@@ -79,8 +81,8 @@ class TestSingleFileCommands:
                       format="text", verbose=False, rules=None,
                       sla_file=None, threshold=None)
             func(args)
-            out = capsys.readouterr()
-            assert out.out or out.err or True  # just verify no crash
+            capsys.readouterr()
+            assert True  # just verify no crash
         finally:
             os.unlink(f)
 

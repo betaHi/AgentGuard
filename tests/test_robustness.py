@@ -1,7 +1,8 @@
 """Robustness tests — verify modules handle degraded/partial traces."""
 
 import pytest
-from agentguard.core.trace import ExecutionTrace, Span, SpanType, SpanStatus
+
+from agentguard.core.trace import ExecutionTrace, Span, SpanStatus, SpanType
 
 
 def _partial_trace():
@@ -21,7 +22,7 @@ def _json_roundtrip_trace():
 
 class TestModuleRobustness:
     """Every analysis module should handle partial traces without crashing."""
-    
+
     @pytest.fixture(params=["partial", "json_roundtrip", "empty"])
     def trace(self, request):
         if request.param == "partial":
@@ -30,7 +31,7 @@ class TestModuleRobustness:
             return _json_roundtrip_trace()
         else:
             return ExecutionTrace(task="empty")
-    
+
     def test_scoring(self, trace):
         from agentguard.scoring import score_trace
         score = score_trace(trace)

@@ -1,6 +1,5 @@
 """Tests for benchmark harness."""
 
-import pytest
 from agentguard.benchmark import run_benchmark
 
 

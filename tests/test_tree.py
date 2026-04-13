@@ -1,7 +1,6 @@
 """Tests for span tree utilities."""
 
-import pytest
-from agentguard.core.trace import ExecutionTrace, Span, SpanType, SpanStatus
+from agentguard.core.trace import ExecutionTrace, Span, SpanStatus, SpanType
 from agentguard.tree import compute_tree_stats, detect_cycles, find_orphans, find_roots, tree_to_text
 
 
@@ -12,7 +11,7 @@ class TestTreeStats:
         trace.add_span(Span(span_id="c1", name="child1", parent_span_id="root"))
         trace.add_span(Span(span_id="c2", name="child2", parent_span_id="root"))
         trace.add_span(Span(span_id="gc1", name="grandchild", parent_span_id="c1"))
-        
+
         stats = compute_tree_stats(trace)
         assert stats.depth == 3
         assert stats.root_count == 1

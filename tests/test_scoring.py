@@ -1,13 +1,13 @@
 """Tests for trace scoring."""
 
-import pytest
-from datetime import datetime, timezone, timedelta
-from agentguard.core.trace import ExecutionTrace, Span, SpanType, SpanStatus
-from agentguard.scoring import score_trace, TraceScore
+from datetime import UTC, datetime, timedelta
+
+from agentguard.core.trace import ExecutionTrace, Span, SpanStatus, SpanType
+from agentguard.scoring import TraceScore, score_trace
 
 
 def _ts(offset_s: float = 0) -> str:
-    base = datetime(2026, 4, 12, 0, 0, 0, tzinfo=timezone.utc)
+    base = datetime(2026, 4, 12, 0, 0, 0, tzinfo=UTC)
     return (base + timedelta(seconds=offset_s)).isoformat()
 
 
@@ -19,7 +19,7 @@ class TestScoreTrace:
                            started_at=_ts(0), ended_at=_ts(3)))
         trace.add_span(Span(name="a2", span_type=SpanType.AGENT, status=SpanStatus.COMPLETED,
                            started_at=_ts(3), ended_at=_ts(5)))
-        
+
         score = score_trace(trace)
         assert score.overall >= 70
         assert score.grade in ("A", "B", "C")
@@ -31,7 +31,7 @@ class TestScoreTrace:
                            started_at=_ts(0), ended_at=_ts(2)))
         trace.add_span(Span(name="a2", status=SpanStatus.FAILED, error="crash",
                            started_at=_ts(2), ended_at=_ts(5)))
-        
+
         score = score_trace(trace)
         assert score.overall < 50
         assert score.grade in ("D", "F")
@@ -40,12 +40,12 @@ class TestScoreTrace:
         """Performance should degrade when exceeding expected duration."""
         trace = ExecutionTrace(task="slow", started_at=_ts(0), ended_at=_ts(10), status=SpanStatus.COMPLETED)
         trace.add_span(Span(name="a", status=SpanStatus.COMPLETED, started_at=_ts(0), ended_at=_ts(10)))
-        
+
         # Within expected duration
         fast_score = score_trace(trace, expected_duration_ms=20000)
         # Way over expected duration
         slow_score = score_trace(trace, expected_duration_ms=2000)
-        
+
         assert fast_score.overall > slow_score.overall
 
     def test_empty_trace(self):
@@ -63,7 +63,7 @@ class TestScoreTrace:
         trace.add_span(Span(name="tool", span_type=SpanType.TOOL, parent_span_id="parent",
                            status=SpanStatus.FAILED, error="retry worked", failure_handled=True,
                            started_at=_ts(0), ended_at=_ts(1)))
-        
+
         score = score_trace(trace)
         resilience = next(c for c in score.components if c.name == "Resilience")
         assert resilience.score >= 50
@@ -72,7 +72,7 @@ class TestScoreTrace:
         """Report should be a readable string."""
         trace = ExecutionTrace(task="report", started_at=_ts(0), ended_at=_ts(5))
         trace.add_span(Span(name="a", status=SpanStatus.COMPLETED, started_at=_ts(0), ended_at=_ts(5)))
-        
+
         score = score_trace(trace)
         report = score.to_report()
         assert "Score" in report
@@ -82,7 +82,7 @@ class TestScoreTrace:
         """Serialization should work."""
         trace = ExecutionTrace(task="dict")
         trace.add_span(Span(name="a", status=SpanStatus.COMPLETED))
-        
+
         score = score_trace(trace)
         d = score.to_dict()
         assert "overall" in d

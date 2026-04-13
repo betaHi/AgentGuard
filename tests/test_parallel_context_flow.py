@@ -4,8 +4,8 @@ Independent parallel agents under the same coordinator with completely
 different data should NOT be treated as a handoff chain.
 """
 
-from agentguard.builder import TraceBuilder
 from agentguard.analysis import analyze_context_flow
+from agentguard.builder import TraceBuilder
 
 
 def _parallel_trace():

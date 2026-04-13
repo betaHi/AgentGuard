@@ -1,7 +1,5 @@
 """Tests for trace optimization suggestions."""
 
-import pytest
-from agentguard.core.trace import ExecutionTrace, Span, SpanType, SpanStatus
 from agentguard.builder import TraceBuilder
 from agentguard.optimize import suggest_optimizations
 

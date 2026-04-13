@@ -3,13 +3,13 @@
 from __future__ import annotations
 
 import json
-from dataclasses import dataclass, field, asdict
-from datetime import datetime, timezone
-from enum import Enum
-from typing import Any, Optional
+from dataclasses import asdict, dataclass, field
+from datetime import UTC, datetime
+from enum import StrEnum
+from typing import Any
 
 
-class RuleVerdict(str, Enum):
+class RuleVerdict(StrEnum):
     PASS = "pass"
     FAIL = "fail"
     SKIP = "skip"
@@ -38,7 +38,7 @@ class EvaluationResult:
     trace_id: str = ""
     agent_name: str = ""
     agent_version: str = ""
-    evaluated_at: str = field(default_factory=lambda: datetime.now(timezone.utc).isoformat())
+    evaluated_at: str = field(default_factory=lambda: datetime.now(UTC).isoformat())
     rules: list[RuleResult] = field(default_factory=list)
     metadata: dict[str, Any] = field(default_factory=dict)
 
@@ -82,15 +82,15 @@ class EvaluationResult:
     def to_report(self) -> str:
         """Generate a human-readable Markdown report."""
         lines = [
-            f"# Evaluation Report",
-            f"",
+            "# Evaluation Report",
+            "",
             f"- **Agent:** {self.agent_name} ({self.agent_version})",
             f"- **Trace:** {self.trace_id}",
             f"- **Result:** {self.passed}/{self.total} passed",
             f"- **Verdict:** {'✅ PASS' if self.overall_verdict == RuleVerdict.PASS else '❌ FAIL'}",
-            f"",
-            f"## Rules",
-            f"",
+            "",
+            "## Rules",
+            "",
         ]
         for r in self.rules:
             icon = "✅" if r.verdict == RuleVerdict.PASS else "❌" if r.verdict == RuleVerdict.FAIL else "⏭️"

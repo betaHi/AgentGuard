@@ -1,8 +1,5 @@
 """Tests for dashboard data."""
 
-import pytest
-from datetime import datetime, timezone, timedelta
-from agentguard.core.trace import ExecutionTrace, Span, SpanType, SpanStatus
 from agentguard.builder import TraceBuilder
 from agentguard.dashboard import build_dashboard
 

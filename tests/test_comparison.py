@@ -1,13 +1,13 @@
 """Tests for trace comparison."""
 
-import pytest
-from datetime import datetime, timezone, timedelta
-from agentguard.core.trace import ExecutionTrace, Span, SpanType, SpanStatus
+from datetime import UTC, datetime, timedelta
+
 from agentguard.comparison import compare_traces
+from agentguard.core.trace import ExecutionTrace, Span, SpanStatus
 
 
 def _ts(offset_s: float = 0) -> str:
-    base = datetime(2026, 4, 12, 0, 0, 0, tzinfo=timezone.utc)
+    base = datetime(2026, 4, 12, 0, 0, 0, tzinfo=UTC)
     return (base + timedelta(seconds=offset_s)).isoformat()
 
 
@@ -21,10 +21,10 @@ class TestCompareTraces:
     def test_improvement(self):
         bad = ExecutionTrace(task="bad", started_at=_ts(0), ended_at=_ts(10), status=SpanStatus.FAILED)
         bad.add_span(Span(name="a", status=SpanStatus.FAILED, error="fail", started_at=_ts(0), ended_at=_ts(10)))
-        
+
         good = ExecutionTrace(task="good", started_at=_ts(0), ended_at=_ts(3), status=SpanStatus.COMPLETED)
         good.add_span(Span(name="a", status=SpanStatus.COMPLETED, started_at=_ts(0), ended_at=_ts(3)))
-        
+
         result = compare_traces(bad, good)
         assert result.score_delta > 0
         assert "improvement" in result.summary.lower()
@@ -32,11 +32,11 @@ class TestCompareTraces:
     def test_structural_diff(self):
         t1 = ExecutionTrace(task="v1")
         t1.add_span(Span(name="agent_a", status=SpanStatus.COMPLETED))
-        
+
         t2 = ExecutionTrace(task="v2")
         t2.add_span(Span(name="agent_a", status=SpanStatus.COMPLETED))
         t2.add_span(Span(name="agent_b", status=SpanStatus.COMPLETED))
-        
+
         result = compare_traces(t1, t2)
         assert "agent_b" in str(result.structural_changes)
 

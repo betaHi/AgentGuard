@@ -1,7 +1,7 @@
 """Tests for trace compression."""
 
-import pytest
 import json
+
 from agentguard.builder import TraceBuilder
 from agentguard.compress import compress_trace, measure_compression
 from agentguard.core.trace import ExecutionTrace
@@ -14,10 +14,10 @@ class TestCompress:
                 .tool("t1", duration_ms=500)
             .end()
             .build())
-        
+
         compressed = compress_trace(trace, "light")
         original = trace.to_dict()
-        
+
         # Compressed should be smaller (fewer keys)
         assert len(json.dumps(compressed)) <= len(json.dumps(original))
 
@@ -26,7 +26,7 @@ class TestCompress:
             .agent("a", output_data={"large": "x" * 1000, "data": [1, 2, 3]})
             .end()
             .build())
-        
+
         compressed = compress_trace(trace, "aggressive")
         # Output data should be replaced with keys only
         span = compressed["spans"][0]
@@ -39,7 +39,7 @@ class TestCompress:
                 .tool("t1", duration_ms=1000)
             .end()
             .build())
-        
+
         results = measure_compression(trace)
         assert "light" in results
         assert "aggressive" in results

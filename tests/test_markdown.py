@@ -1,6 +1,5 @@
 """Tests for Markdown export."""
 
-import pytest
 from agentguard.builder import TraceBuilder
 from agentguard.markdown import trace_to_markdown
 
@@ -15,7 +14,7 @@ class TestMarkdown:
             .agent("writer", duration_ms=5000)
             .end()
             .build())
-        
+
         md = trace_to_markdown(trace)
         assert "# ✅ Test Pipeline" in md
         assert "Score" in md
@@ -27,7 +26,7 @@ class TestMarkdown:
             .agent("bad", status="failed", error="API crashed")
             .end()
             .build())
-        
+
         md = trace_to_markdown(trace)
         assert "❌" in md
         assert "API crashed" in md

@@ -1,21 +1,21 @@
 """Tests for handoff recording and context loss detection."""
 
-from agentguard.sdk.handoff import record_handoff, detect_context_loss
-from agentguard.sdk.recorder import init_recorder, finish_recording
 from agentguard.core.trace import SpanType
+from agentguard.sdk.handoff import detect_context_loss, record_handoff
+from agentguard.sdk.recorder import finish_recording, init_recorder
 
 
 def test_record_handoff():
     """record_handoff creates a HANDOFF span."""
     init_recorder(task="handoff-test")
-    
-    span = record_handoff(
+
+    record_handoff(
         from_agent="researcher",
         to_agent="analyst",
         context={"articles": [1, 2, 3], "topic": "AI"},
         summary="Passing 3 articles",
     )
-    
+
     trace = finish_recording()
     assert len(trace.spans) == 1
     assert trace.spans[0].span_type == SpanType.HANDOFF
@@ -59,9 +59,10 @@ def test_detect_context_loss_required():
 
 def test_analyze_flow_prefers_explicit_handoffs():
     """analyze_flow uses explicit HANDOFF spans instead of inferring from sequence."""
-    from agentguard.core.trace import ExecutionTrace, Span, SpanType, SpanStatus
-    from agentguard.analysis import analyze_flow
     from datetime import datetime, timedelta
+
+    from agentguard.analysis import analyze_flow
+    from agentguard.core.trace import ExecutionTrace, Span, SpanStatus, SpanType
 
     now = datetime.fromisoformat("2026-01-01T00:00:00")
 
@@ -117,9 +118,10 @@ def test_analyze_flow_prefers_explicit_handoffs():
 
 def test_analyze_flow_falls_back_to_inference():
     """analyze_flow infers handoffs from sequence when no HANDOFF spans exist."""
-    from agentguard.core.trace import ExecutionTrace, Span, SpanType, SpanStatus
-    from agentguard.analysis import analyze_flow
     from datetime import datetime, timedelta
+
+    from agentguard.analysis import analyze_flow
+    from agentguard.core.trace import ExecutionTrace, Span, SpanStatus, SpanType
 
     now = datetime.fromisoformat("2026-01-01T00:00:00")
 

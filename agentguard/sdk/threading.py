@@ -8,7 +8,7 @@ restore it inside the worker thread so child spans keep the right parent.
 from __future__ import annotations
 
 import threading
-from typing import Any, Optional
+from typing import Any
 
 from agentguard.sdk.recorder import bind_current_trace_context
 
@@ -23,12 +23,12 @@ class TraceThread(threading.Thread):
     def __init__(
         self,
         group: None = None,
-        target: Optional[Any] = None,
-        name: Optional[str] = None,
+        target: Any | None = None,
+        name: str | None = None,
         args: tuple[Any, ...] = (),
-        kwargs: Optional[dict[str, Any]] = None,
+        kwargs: dict[str, Any] | None = None,
         *,
-        daemon: Optional[bool] = None,
+        daemon: bool | None = None,
     ) -> None:
         wrapped_target = bind_current_trace_context(target) if target is not None else None
         super().__init__(

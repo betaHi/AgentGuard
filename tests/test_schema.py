@@ -1,9 +1,7 @@
 """Tests for trace schema validation."""
 
-import pytest
-import json
-from agentguard.core.trace import ExecutionTrace, Span, SpanType, SpanStatus
-from agentguard.schema import validate_trace_dict, validate_trace_json, get_schema
+from agentguard.core.trace import ExecutionTrace, Span, SpanStatus, SpanType
+from agentguard.schema import get_schema, validate_trace_dict, validate_trace_json
 
 
 class TestValidateTraceDict:

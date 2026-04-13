@@ -1,7 +1,7 @@
 """Test: correlation analysis finds patterns within a single trace."""
 
 from agentguard.builder import TraceBuilder
-from agentguard.correlation import analyze_correlations, detect_patterns
+from agentguard.correlation import analyze_correlations
 
 
 def _trace_with_failure_cluster():

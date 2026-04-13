@@ -7,20 +7,18 @@ Demonstrates:
 4. HTML report generation
 """
 
-import time
+import os
 import random
 import sys
-import os
+import time
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 from agentguard import record_agent, record_tool
-from agentguard.sdk.recorder import init_recorder, finish_recording
 from agentguard.eval.rules import evaluate_rules
-from agentguard.core.eval_schema import EvaluationResult
 from agentguard.replay import ReplayEngine
+from agentguard.sdk.recorder import finish_recording, init_recorder
 from agentguard.web.viewer import generate_timeline_html
-
 
 # --- Define tools ---
 
@@ -86,14 +84,14 @@ def main():
     print("=" * 60)
     print("  AgentGuard Real-World Example")
     print("=" * 60)
-    
+
     # 1. Record execution
     print("\n1. Recording agent execution...")
     init_recorder(task="AI Research Pipeline", trigger="manual")
     result = run_pipeline("AI Agent Observability")
     trace = finish_recording()
     print(f"   ✅ Trace saved ({len(trace.spans)} spans, {trace.duration_ms:.0f}ms)")
-    
+
     # 2. Evaluate
     print("\n2. Evaluating output quality...")
     rules = [
@@ -103,14 +101,14 @@ def main():
         {"type": "contains", "target": "analysis", "keywords": ["agent", "trend"], "mode": "any", "name": "has-keywords"},
         {"type": "range", "target": "quality", "min_val": 0.5, "max_val": 1.0, "name": "quality-range"},
     ]
-    
+
     eval_results = evaluate_rules(result, rules)
     passed = sum(1 for r in eval_results if r.verdict.value == "pass")
     print(f"   ✅ {passed}/{len(eval_results)} rules passed")
     for r in eval_results:
         icon = "✓" if r.verdict.value == "pass" else "✗"
         print(f"      {icon} {r.name}: {r.verdict.value}")
-    
+
     # 3. Save as replay baseline
     print("\n3. Saving replay baseline...")
     engine = ReplayEngine()
@@ -121,12 +119,12 @@ def main():
         rules=rules,
     )
     print("   ✅ Baseline saved")
-    
+
     # 4. Generate web report
     print("\n4. Generating web report...")
     report = generate_timeline_html()
     print(f"   ✅ Report: {report}")
-    
+
     print("\n" + "=" * 60)
     print("  Done! View trace with:")
     print(f"  agentguard show .agentguard/traces/{trace.trace_id}.json")

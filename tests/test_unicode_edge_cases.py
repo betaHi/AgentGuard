@@ -5,16 +5,21 @@ long strings. Nothing should crash, corrupt, or silently drop data.
 """
 
 import json
-from agentguard.builder import TraceBuilder
+
 from agentguard.analysis import (
-    analyze_failures, analyze_flow, analyze_bottleneck,
-    analyze_context_flow, analyze_cost_yield, analyze_decisions,
+    analyze_bottleneck,
+    analyze_context_flow,
+    analyze_cost_yield,
+    analyze_decisions,
+    analyze_failures,
+    analyze_flow,
 )
-from agentguard.scoring import score_trace
-from agentguard.web.viewer import trace_to_html_string
+from agentguard.builder import TraceBuilder
 from agentguard.cli.main import _build_analysis_dict
-from agentguard.tree import tree_to_text
+from agentguard.scoring import score_trace
 from agentguard.summarize import summarize_trace
+from agentguard.tree import tree_to_text
+from agentguard.web.viewer import trace_to_html_string
 
 
 def _unicode_trace():

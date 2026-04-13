@@ -1,8 +1,8 @@
 """Tests for comparison and regression detection."""
 
-from agentguard.core.trace import ExecutionTrace, Span, SpanType, SpanStatus
 from agentguard.core.eval_schema import EvaluationResult, RuleResult, RuleVerdict
-from agentguard.eval.compare import compare_traces, compare_evals, ComparisonResult
+from agentguard.core.trace import ExecutionTrace, Span, SpanType
+from agentguard.eval.compare import ComparisonResult, compare_evals, compare_traces
 
 
 def test_compare_traces_basic():
@@ -12,13 +12,13 @@ def test_compare_traces_basic():
     s1.complete()
     t1.add_span(s1)
     t1.complete()
-    
+
     t2 = ExecutionTrace(task="test")
     s2 = Span(name="agent", span_type=SpanType.AGENT)
     s2.fail("error")
     t2.add_span(s2)
     t2.fail()
-    
+
     result = compare_traces(t1, t2)
     assert any(d.field == "error_count" for d in result.diffs)
     error_diff = [d for d in result.diffs if d.field == "error_count"][0]
@@ -32,13 +32,13 @@ def test_compare_evals():
         RuleResult(name="check1", rule_type="min_count", verdict=RuleVerdict.PASS),
         RuleResult(name="check2", rule_type="each_has", verdict=RuleVerdict.FAIL),
     ]
-    
+
     e2 = EvaluationResult(trace_id="t2", agent_name="a", agent_version="v2")
     e2.rules = [
         RuleResult(name="check1", rule_type="min_count", verdict=RuleVerdict.PASS),
         RuleResult(name="check2", rule_type="each_has", verdict=RuleVerdict.PASS),
     ]
-    
+
     result = compare_evals(e1, e2)
     assert result.improved >= 1
     assert result.recommendation == "safe_to_deploy"

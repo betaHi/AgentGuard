@@ -1,13 +1,13 @@
 """Tests for deep context flow analysis — compression, truncation, bandwidth."""
 
-import pytest
-from datetime import datetime, timezone, timedelta
-from agentguard.core.trace import ExecutionTrace, Span, SpanType, SpanStatus
-from agentguard.context_flow import analyze_context_flow_deep, ContextFlowAnalysis
+from datetime import UTC, datetime, timedelta
+
+from agentguard.context_flow import ContextFlowAnalysis, analyze_context_flow_deep
+from agentguard.core.trace import ExecutionTrace, Span, SpanStatus, SpanType
 
 
 def _ts(offset_s: float = 0) -> str:
-    base = datetime(2026, 4, 12, 0, 0, 0, tzinfo=timezone.utc)
+    base = datetime(2026, 4, 12, 0, 0, 0, tzinfo=UTC)
     return (base + timedelta(seconds=offset_s)).isoformat()
 
 
@@ -21,28 +21,28 @@ def _make_pipeline_trace():
     )
     trace.add_span(Span(span_id="orch", name="orchestrator", span_type=SpanType.AGENT,
                         status=SpanStatus.COMPLETED, started_at=_ts(0), ended_at=_ts(15)))
-    
+
     # Collector: no input, large output
     trace.add_span(Span(span_id="col", name="collector", span_type=SpanType.AGENT,
                         parent_span_id="orch", status=SpanStatus.COMPLETED,
                         started_at=_ts(0), ended_at=_ts(5),
                         input_data=None,
                         output_data={"articles": ["a" * 500, "b" * 500], "metadata": {"source": "web"}, "raw_html": "x" * 2000}))
-    
+
     # Analyzer: gets collector output, drops raw_html (truncation)
     trace.add_span(Span(span_id="ana", name="analyzer", span_type=SpanType.AGENT,
                         parent_span_id="orch", status=SpanStatus.COMPLETED,
                         started_at=_ts(5), ended_at=_ts(10),
                         input_data={"articles": ["a" * 500, "b" * 500], "metadata": {"source": "web"}},
                         output_data={"analysis": "summary of articles", "key_points": ["p1", "p2"]}))
-    
+
     # Summarizer: gets analysis, small output
     trace.add_span(Span(span_id="sum", name="summarizer", span_type=SpanType.AGENT,
                         parent_span_id="orch", status=SpanStatus.COMPLETED,
                         started_at=_ts(10), ended_at=_ts(15),
                         input_data={"analysis": "summary of articles", "key_points": ["p1", "p2"]},
                         output_data={"summary": "brief"}))
-    
+
     return trace
 
 
@@ -75,10 +75,10 @@ class TestContextFlowDeep:
         """Detect compression in a pipeline."""
         trace = _make_pipeline_trace()
         result = analyze_context_flow_deep(trace)
-        
+
         assert isinstance(result, ContextFlowAnalysis)
         assert len(result.transitions) >= 2
-        
+
         # collector → analyzer should show compression (raw_html dropped)
         first_t = result.transitions[0]
         assert first_t.from_agent == "collector"
@@ -90,7 +90,7 @@ class TestContextFlowDeep:
         """Detect expansion in enrichment pipeline."""
         trace = _make_expansion_trace()
         result = analyze_context_flow_deep(trace)
-        
+
         assert len(result.transitions) >= 1
         # enricher output should be larger than input
         has_expansion = any(t.event == "expansion" for t in result.transitions)
@@ -100,13 +100,13 @@ class TestContextFlowDeep:
         """Snapshots should capture input and output of each agent."""
         trace = _make_pipeline_trace()
         result = analyze_context_flow_deep(trace)
-        
+
         # Should have snapshots for each non-orchestrator agent
         agent_names = {s.agent_name for s in result.snapshots}
         assert "collector" in agent_names
         assert "analyzer" in agent_names
         assert "summarizer" in agent_names
-        
+
         # Each agent should have input + output snapshots
         for name in ["collector", "analyzer", "summarizer"]:
             directions = {s.direction for s in result.snapshots if s.agent_name == name}
@@ -117,7 +117,7 @@ class TestContextFlowDeep:
         """Bandwidth should be calculated for transitions."""
         trace = _make_pipeline_trace()
         result = analyze_context_flow_deep(trace)
-        
+
         if result.bandwidth:
             for b in result.bandwidth:
                 assert b.bandwidth_bps > 0
@@ -127,7 +127,7 @@ class TestContextFlowDeep:
         """Overall compression ratio should reflect data reduction."""
         trace = _make_pipeline_trace()
         result = analyze_context_flow_deep(trace)
-        
+
         # Pipeline compresses data overall
         assert result.compression_ratio > 0
 
@@ -135,7 +135,7 @@ class TestContextFlowDeep:
         """Should identify where most context is lost."""
         trace = _make_pipeline_trace()
         result = analyze_context_flow_deep(trace)
-        
+
         # Analyzer or summarizer should be the bottleneck
         if result.bottleneck_agent:
             assert result.bottleneck_agent in ["analyzer", "summarizer"]
@@ -145,7 +145,7 @@ class TestContextFlowDeep:
         trace = _make_pipeline_trace()
         result = analyze_context_flow_deep(trace)
         report = result.to_report()
-        
+
         assert "Context Flow" in report
         assert "collector" in report
 
@@ -154,7 +154,7 @@ class TestContextFlowDeep:
         trace = _make_pipeline_trace()
         result = analyze_context_flow_deep(trace)
         d = result.to_dict()
-        
+
         assert "transitions" in d
         assert "compression_ratio" in d
         assert "truncation_events" in d
@@ -163,7 +163,7 @@ class TestContextFlowDeep:
         """Empty trace should not crash."""
         trace = ExecutionTrace(task="empty")
         result = analyze_context_flow_deep(trace)
-        
+
         assert result.snapshots == []
         assert result.transitions == []
         assert result.truncation_events == 0
@@ -174,7 +174,7 @@ class TestContextFlowDeep:
         trace.add_span(Span(span_id="a", name="agent", span_type=SpanType.AGENT,
                            status=SpanStatus.COMPLETED, started_at=_ts(0), ended_at=_ts(5)))
         result = analyze_context_flow_deep(trace)
-        
+
         # Should have snapshots with size 0
         assert len(result.snapshots) == 2  # input + output
         for s in result.snapshots:

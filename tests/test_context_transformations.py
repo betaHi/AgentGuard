@@ -4,8 +4,8 @@ Detects semantic changes during handoffs: summarization, filtering,
 type changes, key renames — not just key presence/absence.
 """
 
-from agentguard.builder import TraceBuilder
 from agentguard.analysis import analyze_context_flow
+from agentguard.builder import TraceBuilder
 
 
 def _summarization_trace():

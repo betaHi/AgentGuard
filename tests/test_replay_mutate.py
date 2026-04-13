@@ -5,9 +5,10 @@ actual data changes, not just returning static results.
 """
 
 import json
+
+from agentguard.analysis import analyze_bottleneck, analyze_cost_yield, analyze_timing
 from agentguard.builder import TraceBuilder
 from agentguard.core.trace import ExecutionTrace
-from agentguard.analysis import analyze_bottleneck, analyze_cost_yield, analyze_timing
 from agentguard.scoring import score_trace
 
 
@@ -31,7 +32,7 @@ def _mutate_timing(trace, agent_name, new_duration_ms):
     for span in d["spans"]:
         if span["name"] == agent_name:
             # Adjust ended_at based on started_at + new duration
-            from datetime import datetime, timezone, timedelta
+            from datetime import datetime, timedelta
             start = datetime.fromisoformat(span["started_at"])
             end = start + timedelta(milliseconds=new_duration_ms)
             span["ended_at"] = end.isoformat()
@@ -60,7 +61,7 @@ class TestReplayMutateTiming:
         mutated = _mutate_timing(base, "fast_agent", 8000)
         bn_mut = analyze_bottleneck(mutated)
         # After mutation, fast_agent or its tool is the bottleneck
-        bn_names = [r["name"] for r in bn_mut.agent_rankings]
+        [r["name"] for r in bn_mut.agent_rankings]
         assert bn_mut.bottleneck_duration_ms > bn_base.bottleneck_duration_ms or bn_mut.bottleneck_span != bn_base.bottleneck_span
 
     def test_score_changes_when_agent_fails(self):
@@ -76,7 +77,7 @@ class TestReplayMutateTiming:
     def test_cost_yield_wasteful_changes(self):
         """Increasing cost of an agent should change waste analysis."""
         base = _base_trace()
-        cy_base = analyze_cost_yield(base)
+        analyze_cost_yield(base)
 
         # Mutate: give fast_agent huge cost
         d = base.to_dict()

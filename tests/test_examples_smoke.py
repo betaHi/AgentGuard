@@ -4,11 +4,12 @@ Audit: every example in examples/ must be tested here.
 If an example is added, a test must be added too.
 """
 
-import pytest
+import glob
+import os
 import subprocess
 import sys
-import os
-import glob
+
+import pytest
 
 EXAMPLES_DIR = os.path.join(os.path.dirname(os.path.dirname(__file__)), "examples")
 ALL_EXAMPLES = sorted(

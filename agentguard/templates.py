@@ -40,10 +40,10 @@ def research_pipeline(
                token_count=5000, cost_usd=0.15)
             .llm_call("claude-write", duration_ms=8000, token_count=4000, cost_usd=0.12)
         .end())
-    
+
     if include_failures:
         builder = builder.agent("reviewer", duration_ms=3000, status="failed", error="timeout").end()
-    
+
     return builder.build()
 
 

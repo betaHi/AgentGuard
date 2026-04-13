@@ -10,16 +10,25 @@ All diagnostics powered by analysis.py (single source of truth).
 
 from __future__ import annotations
 
+import contextlib
 import html as html_mod
 import json
 from pathlib import Path
 from typing import Any
 
-from agentguard.core.trace import ExecutionTrace, Span, SpanType, SpanStatus
-from agentguard.analysis import (analyze_failures, analyze_flow, analyze_bottleneck,
-    analyze_context_flow, analyze_retries, analyze_cost, analyze_cost_yield,
-    analyze_decisions, analyze_counterfactual, detect_repeated_bad_decisions)
+from agentguard.analysis import (
+    analyze_bottleneck,
+    analyze_context_flow,
+    analyze_cost,
+    analyze_cost_yield,
+    analyze_decisions,
+    analyze_failures,
+    analyze_flow,
+    analyze_retries,
+)
+from agentguard.core.trace import ExecutionTrace, Span, SpanStatus, SpanType
 from agentguard.errors import analyze_errors
+
 
 def _try_evolve(trace):
     """Try to get evolution suggestions if knowledge exists."""
@@ -43,16 +52,14 @@ def generate_timeline_html(
 ) -> str:
     traces_path = Path(traces_dir)
     trace_objs = []
-    
+
     if traces_path.exists():
         for f in sorted(traces_path.glob("*.json"), key=lambda x: x.stat().st_mtime, reverse=True)[:50]:
-            try:
+            with contextlib.suppress(Exception):
                 trace_objs.append(ExecutionTrace.from_dict(
                     json.loads(f.read_text(encoding="utf-8"))
                 ))
-            except Exception:
-                pass
-    
+
     out_path = Path(output)
     out_path.parent.mkdir(parents=True, exist_ok=True)
     out_path.write_text(_build_full_html(trace_objs), encoding="utf-8")
@@ -62,26 +69,26 @@ def generate_timeline_html(
 def _build_full_html(traces: list[ExecutionTrace]) -> str:
     if not traces:
         return _build_empty_html()
-    
+
     # Use the most recent trace as the primary display
     primary = traces[0]
     failures = analyze_failures(primary)
     flow = analyze_flow(primary)
     bn = analyze_bottleneck(primary) if primary.agent_spans else None
     ctx = analyze_context_flow(primary)
-    
+
     dur_total = primary.duration_ms or 1
-    
+
     # Score the trace
     from agentguard.scoring import score_trace as _score_trace
     _score = _score_trace(primary)
-    
+
     # Build sidebar agent cards
     agent_cards = _build_sidebar(primary, failures, bn)
-    
+
     # Build Gantt timeline
     timeline = _build_gantt(primary, flow, dur_total)
-    
+
     # Build diagnostics grid
     retries = analyze_retries(primary)
     cost = analyze_cost(primary)
@@ -92,10 +99,10 @@ def _build_full_html(traces: list[ExecutionTrace]) -> str:
     propagation = analyze_propagation(primary)
     diagnostics = _build_diagnostics(failures, bn, flow, ctx, retries, cost, error_report,
                                      cost_yield, decisions, propagation)
-    
+
     # Trace selector (if multiple traces)
     trace_count = len(traces)
-    
+
     # Build trace list for selector (if multiple traces)
     trace_list_html = ""
     if trace_count > 1:
@@ -108,7 +115,7 @@ def _build_full_html(traces: list[ExecutionTrace]) -> str:
         trace_list_html = f'<div style="margin-top:12px;border-top:1px solid var(--bd);padding-top:8px"><h2 style="font-size:10px;text-transform:uppercase;letter-spacing:1px;color:var(--dim);margin-bottom:6px">Recent Traces ({trace_count})</h2>{"".join(items)}</div>'
     status_txt = "PASS" if primary.status == SpanStatus.COMPLETED else "FAIL"
     status_cls = "b-pass" if primary.status == SpanStatus.COMPLETED else "b-fail"
-    
+
     return f'''<!DOCTYPE html>
 <html lang="en"><head>
 <meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1.0">
@@ -335,23 +342,23 @@ function zoomGantt(dir){
 def _build_sidebar(trace: ExecutionTrace, failures, bn) -> str:
     cards = [f'<h2>Agents ({len(trace.agent_spans)})</h2>']
     dur_total = trace.duration_ms or 1
-    
+
     # Get failure info per agent
     failed_agents = {rc.span_name for rc in failures.root_causes if not rc.was_handled}
     warned_agents = {rc.span_name for rc in failures.root_causes if rc.was_handled}
     bn_name = bn.bottleneck_span if bn else ""
-    
+
     # Sort: failed first, then by duration desc
     agents = sorted(trace.agent_spans, key=lambda s: (
         0 if s.status == SpanStatus.FAILED else 1,
         -(s.duration_ms or 0)
     ))
-    
+
     for s in agents:
         dur = s.duration_ms or 0
         pct = (dur / dur_total) * 100
         ver = _esc(s.metadata.get("agent_version", ""))
-        
+
         if s.status == SpanStatus.FAILED or s.name in failed_agents:
             dot_cls = "dot-err"
             bar_color = "var(--rd)"
@@ -368,15 +375,15 @@ def _build_sidebar(trace: ExecutionTrace, failures, bn) -> str:
             dot_cls = "dot-ok"
             bar_color = "var(--gn)"
             extra = '<span>✓ pass</span>'
-        
+
         dur_s = f"{dur:.0f}ms" if dur < 1000 else f"{dur/1000:.1f}s"
-        
+
         cards.append(f'''<div class="ag-card">
 <div class="ag-name"><span class="dot {dot_cls}"></span> {_esc(s.name)} <span style="font-size:9px;color:var(--dim)">{ver}</span></div>
 <div class="ag-stats"><span>{dur_s}</span>{extra}</div>
 <div class="ag-bar"><div class="ag-bar-fill" style="width:{max(pct,2):.0f}%;background:{bar_color}"></div></div>
 </div>''')
-    
+
 
     # Tool span bottleneck cards
     tools = sorted(trace.tool_spans, key=lambda s: -(s.duration_ms or 0))
@@ -423,7 +430,7 @@ def _build_sidebar(trace: ExecutionTrace, failures, bn) -> str:
         total_cost = sum(s.estimated_cost_usd or 0 for s in llm_spans)
         cards.append(f'<div class="ag-card"><div class="ag-stats"><span>{total_tokens:,} tokens</span><span>${total_cost:.4f}</span></div></div>')
         cards.append('</div>')
-    
+
     return "\n".join(cards)
 
 
@@ -439,16 +446,16 @@ def _build_gantt(trace: ExecutionTrace, flow, dur_total: float) -> str:
                 end = _dt.fromisoformat(s.ended_at) if s.ended_at else None
                 if start and end:
                     timed_agents.append((s, start, end))
-            except: pass
-    
+            except Exception: pass
+
     # Find overlapping spans (parallel execution)
     for i, (a, a_s, a_e) in enumerate(timed_agents):
-        for j, (b, b_s, b_e) in enumerate(timed_agents[i+1:], i+1):
+        for _j, (b, b_s, b_e) in enumerate(timed_agents[i+1:], i+1):
             if a_s < b_e and b_s < a_e:  # overlap
                 if a.parent_span_id == b.parent_span_id:  # same parent
                     parallel_span_ids.add(a.span_id)
                     parallel_span_ids.add(b.span_id)
-    
+
     # Time axis with labeled tick marks
     steps = 8
     step_ms = dur_total / steps
@@ -456,36 +463,32 @@ def _build_gantt(trace: ExecutionTrace, flow, dur_total: float) -> str:
     for i in range(steps + 1):
         ms = i * step_ms
         pct = (i / steps) * 100
-        if ms < 1000:
-            label = f"{int(ms)}ms"
-        else:
-            label = f"{ms/1000:.1f}s"
-        left = f"calc({pct:.1f}%)"
+        label = f"{int(ms)}ms" if ms < 1000 else f"{ms / 1000:.1f}s"
         tick_marks.append(
             f'<span class="tick-mark" style="left:{pct:.1f}%">{label}</span>'
             f'<span class="tick-line" style="left:{pct:.1f}%"></span>'
         )
     header = f'<div class="tl-axis">{"".join(tick_marks)}</div>'
-    
+
     # Build span tree for rendering
     span_map = {s.span_id: s for s in trace.spans}
     children_map: dict[str, list[Span]] = {}
     for s in trace.spans:
         if s.parent_span_id:
             children_map.setdefault(s.parent_span_id, []).append(s)
-    
+
     roots = [s for s in trace.spans if s.parent_span_id is None or s.parent_span_id not in span_map]
-    
+
     # Handoff pairs from analysis
     handoff_pairs = {(h.from_agent, h.to_agent): h for h in flow.handoffs}
-    
+
     # Compute time offsets — use started_at relative to trace start
     trace_start = trace.started_at
-    
+
     rows = []
     for root in roots:
         rows.extend(_render_gantt_rows(root, 0, trace_start, dur_total, children_map, span_map, handoff_pairs, parallel_span_ids))
-    
+
     zoom_bar = (
         '<div class="zoom-bar">'
         '<button class="zoom-btn" onclick="zoomGantt(-1)" title="Zoom out">−</button>'
@@ -524,23 +527,23 @@ def _render_gantt_rows(span: Span, depth: int, trace_start: str, dur_total: floa
                        children_map, span_map, handoff_pairs, parallel_ids=None) -> list[str]:
     from datetime import datetime
     rows = []
-    
+
     # Calculate position
     try:
         t_start = datetime.fromisoformat(trace_start)
         s_start = datetime.fromisoformat(span.started_at) if span.started_at else t_start
         offset_ms = (s_start - t_start).total_seconds() * 1000
-    except:
+    except Exception:
         offset_ms = 0
-    
+
     dur = span.duration_ms or 0
     left_pct = (offset_ms / max(dur_total, 1)) * 100
     width_pct = (dur / max(dur_total, 1)) * 100
-    
+
     # Determine bar style
     icons = {"agent": "🤖", "tool": "🔧", "llm_call": "🧠", "handoff": "🔀"}
     icon = icons.get(span.span_type.value, "●")
-    
+
     if span.span_type == SpanType.HANDOFF:
         # Render handoff as a special row
         ctx_size = span.context_size_bytes or 0
@@ -550,46 +553,45 @@ def _render_gantt_rows(span: Span, depth: int, trace_start: str, dur_total: floa
 {f'<span class="ctx-badge">{ctx_str}</span>' if ctx_str else ''}
 </div></div>''')
         return rows
-    
+
     bar_cls = "ok"
-    annotation = ""
     if span.status == SpanStatus.FAILED:
         bar_cls = "err"
-    
+
     dur_s = f"{dur:.0f}ms" if dur < 1000 else f"{dur/1000:.1f}s"
     ver = _esc(span.metadata.get("agent_version", ""))
     ver_html = f'<span class="vr">{ver}</span>' if ver else ""
-    
+
     opacity = "opacity:0.65;" if span.span_type == SpanType.TOOL else ""
-    
+
     # Error annotation
     err_html = ""
     if span.error:
         err_left = min(left_pct + width_pct + 1, 95)
         err_html = f'<div class="g-err" style="left:{err_left}%">⚠ {_esc(span.error)[:40]}</div>'
-    
+
     # Retry indicator
     retry_html = ""
     if span.retry_count > 0:
         retry_left = min(left_pct + width_pct + 1, 95)
         retry_html = f'<div class="g-ann" style="left:{retry_left}%;color:var(--yl)">🔄×{span.retry_count}</div>'
-    
+
     par_cls = " parallel" if (parallel_ids and span.span_id in parallel_ids) else ""
     rows.append(f'''<div class="g-row{par_cls}" style="{opacity}">
 <div class="g-lbl" style="padding-left:{depth*16}px"><span class="icon">{icon}</span><span class="nm">{_esc(span.name)}</span>{ver_html}</div>
 <div class="g-bar-area"><div class="g-bar {bar_cls}" style="left:{left_pct:.1f}%;width:{max(width_pct,0.5):.1f}%">{dur_s}</div>{err_html}{retry_html}</div>
 </div>''')
-    
+
     # Render children
     children = children_map.get(span.span_id, [])
     children_sorted = sorted(children, key=lambda s: s.started_at or "")
-    
+
     for i, child in enumerate(children_sorted):
         rows.extend(_render_gantt_rows(child, depth + 1, trace_start, dur_total, children_map, span_map, handoff_pairs, parallel_ids))
-        
+
         # Insert handoff between sequential agents (only if analysis confirmed)
-        if (child.span_type == SpanType.AGENT and 
-            i + 1 < len(children_sorted) and 
+        if (child.span_type == SpanType.AGENT and
+            i + 1 < len(children_sorted) and
             children_sorted[i + 1].span_type == SpanType.AGENT):
             pair_key = (child.name, children_sorted[i + 1].name)
             if pair_key in handoff_pairs:
@@ -599,7 +601,7 @@ def _render_gantt_rows(span: Span, depth: int, trace_start: str, dur_total: floa
 <span>🔀</span><span class="ho-arrow"></span><span>{_esc(child.name)} → {_esc(children_sorted[i+1].name)}</span>
 {f'<span class="ctx-badge">{ctx_str}</span>' if ctx_str else ''}
 </div></div>''')
-    
+
     return rows
 
 
@@ -674,28 +676,28 @@ def _build_diagnostics(failures, bn, flow, ctx, retries=None, cost=None, error_r
         label = "handled" if rc.was_handled else "unhandled"
         fail_items.append(f'<div class="item"><span class="ff-node {cls}">{_esc(rc.span_name)} · {label}</span></div>')
     fail_html = "\n".join(fail_items) if fail_items else '<div class="item" style="color:var(--gn)">No failures</div>'
-    
+
     res_color = "var(--gn)" if failures.resilience_score >= 0.8 else ("var(--yl)" if failures.resilience_score >= 0.5 else "var(--rd)")
-    
+
     # Bottleneck panel
     bn_items = []
     if bn:
         for a in bn.agent_rankings[:5]:
-            bar_w = max(a["pct"], 2)
+            max(a["pct"], 2)
             color = "var(--yl)" if a["name"] == bn.bottleneck_span else ("var(--rd)" if a["status"] == "failed" else "var(--gn)")
             bn_items.append(f'<div class="item"><span style="color:{color}">{_esc(a["name"])}</span> <span style="color:var(--dim)">{a["duration_ms"]:.0f}ms ({a["pct"]:.0f}%)</span></div>')
     bn_html = "\n".join(bn_items) if bn_items else ""
-    
-    # Handoff panel  
+
+    # Handoff panel
     ho_items = []
     for h in flow.handoffs:
         ctx_str = f"{h.context_size_bytes:,}B" if h.context_size_bytes else "?"
         ho_items.append(f'<div class="item">{_esc(h.from_agent)} → {_esc(h.to_agent)} <span class="ctx-badge">{ctx_str}</span></div>')
     ho_html = "\n".join(ho_items) if ho_items else '<div class="item" style="color:var(--dim)">No handoffs detected</div>'
-    
+
     # Critical path
     cp = " → ".join(flow.critical_path[:6]) if flow.critical_path else "N/A"
-    
+
     # Context flow anomalies
     ctx_items = []
     for a in ctx.anomalies:
@@ -704,7 +706,7 @@ def _build_diagnostics(failures, bn, flow, ctx, retries=None, cost=None, error_r
         elif a.anomaly == "bloat":
             ctx_items.append(f'<div class="item" style="color:var(--yl)">⚠ {_esc(a.from_agent)} → {_esc(a.to_agent)}: +{a.size_delta_bytes:,}B</div>')
     ctx_note = "\n".join(ctx_items) if ctx_items else '<div class="item" style="color:var(--gn)">No anomalies</div>'
-    
+
     # Cost-yield panel
     cy_wasteful = f"Most wasteful: {_esc(cost_yield.most_wasteful_agent)}" if cost_yield and cost_yield.most_wasteful_agent else "No waste detected"
     cy_detail = f"Waste score: {cost_yield.waste_score:.0f}/100" if cost_yield else ""

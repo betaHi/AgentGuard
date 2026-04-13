@@ -1,7 +1,7 @@
 """Tests for context truncation detection in handoff analysis."""
 
-from agentguard.analysis import analyze_context_flow, _detect_truncation
-from agentguard.core.trace import ExecutionTrace, Span, SpanType, SpanStatus
+from agentguard.analysis import _detect_truncation, analyze_context_flow
+from agentguard.core.trace import ExecutionTrace, Span, SpanStatus, SpanType
 
 
 def _make_sequential_trace(sender_output, receiver_input):

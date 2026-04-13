@@ -1,8 +1,8 @@
 """Tests for cost-yield analysis."""
 
-from agentguard.analysis import analyze_cost_yield, CostYieldEntry, CostYieldReport
-from agentguard.core.trace import ExecutionTrace, Span, SpanType, SpanStatus
+from agentguard.analysis import CostYieldReport, analyze_cost_yield
 from agentguard.builder import TraceBuilder
+from agentguard.core.trace import ExecutionTrace
 
 
 def _make_trace_with_costs():

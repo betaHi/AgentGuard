@@ -9,11 +9,10 @@ Allows users to extend AgentGuard with custom:
 
 from __future__ import annotations
 
-from dataclasses import dataclass, field
-from typing import Any, Callable, Optional
+from collections.abc import Callable
+from dataclasses import dataclass
 
 from agentguard.core.trace import ExecutionTrace
-
 
 # Type aliases
 Analyzer = Callable[[ExecutionTrace], dict]
@@ -28,7 +27,7 @@ class PluginInfo:
     author: str
     description: str
     plugin_type: str  # "analyzer", "exporter", "rule"
-    
+
     def to_dict(self) -> dict:
         return {
             "name": self.name,
@@ -41,11 +40,11 @@ class PluginInfo:
 
 class PluginRegistry:
     """Central registry for AgentGuard plugins."""
-    
+
     def __init__(self) -> None:
         self._analyzers: dict[str, tuple[PluginInfo, Analyzer]] = {}
         self._exporters: dict[str, tuple[PluginInfo, Exporter]] = {}
-    
+
     def register_analyzer(
         self,
         name: str,
@@ -58,7 +57,7 @@ class PluginRegistry:
         info = PluginInfo(name=name, version=version, author=author,
                          description=description, plugin_type="analyzer")
         self._analyzers[name] = (info, fn)
-    
+
     def register_exporter(
         self,
         name: str,
@@ -71,31 +70,31 @@ class PluginRegistry:
         info = PluginInfo(name=name, version=version, author=author,
                          description=description, plugin_type="exporter")
         self._exporters[name] = (info, fn)
-    
+
     def run_analyzer(self, name: str, trace: ExecutionTrace) -> dict:
         """Run a registered analyzer."""
         if name not in self._analyzers:
             raise KeyError(f"Analyzer '{name}' not registered")
         _, fn = self._analyzers[name]
         return fn(trace)
-    
+
     def run_exporter(self, name: str, trace: ExecutionTrace) -> str:
         """Run a registered exporter."""
         if name not in self._exporters:
             raise KeyError(f"Exporter '{name}' not registered")
         _, fn = self._exporters[name]
         return fn(trace)
-    
+
     def run_all_analyzers(self, trace: ExecutionTrace) -> dict:
         """Run all registered analyzers."""
         results = {}
-        for name, (info, fn) in self._analyzers.items():
+        for name, (_info, fn) in self._analyzers.items():
             try:
                 results[name] = fn(trace)
             except Exception as e:
                 results[name] = {"error": str(e)}
         return results
-    
+
     def list_plugins(self) -> list[PluginInfo]:
         """List all registered plugins."""
         plugins = []
@@ -104,7 +103,7 @@ class PluginRegistry:
         for info, _ in self._exporters.values():
             plugins.append(info)
         return plugins
-    
+
     @property
     def plugin_count(self) -> int:
         return len(self._analyzers) + len(self._exporters)

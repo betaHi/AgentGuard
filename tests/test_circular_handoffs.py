@@ -5,17 +5,22 @@ No module should infinite-loop or crash on cycles.
 """
 
 import json
-from agentguard.builder import TraceBuilder
+
 from agentguard.analysis import (
-    analyze_failures, analyze_flow, analyze_bottleneck,
-    analyze_context_flow, analyze_cost_yield, analyze_decisions,
+    analyze_bottleneck,
+    analyze_context_flow,
+    analyze_cost_yield,
+    analyze_decisions,
+    analyze_failures,
+    analyze_flow,
 )
+from agentguard.builder import TraceBuilder
+from agentguard.cli.main import _build_analysis_dict
 from agentguard.propagation import analyze_propagation
 from agentguard.scoring import score_trace
-from agentguard.web.viewer import trace_to_html_string
-from agentguard.cli.main import _build_analysis_dict
-from agentguard.tree import tree_to_text
 from agentguard.timeline import build_timeline
+from agentguard.tree import tree_to_text
+from agentguard.web.viewer import trace_to_html_string
 
 
 def _circular_trace():

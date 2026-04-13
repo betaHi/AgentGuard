@@ -10,14 +10,13 @@ Generates structured data suitable for rendering in web dashboards:
 
 from __future__ import annotations
 
-from dataclasses import dataclass, field
-from typing import Optional
+from dataclasses import dataclass
 
-from agentguard.core.trace import ExecutionTrace, SpanStatus
-from agentguard.scoring import score_trace
-from agentguard.metrics import extract_metrics
 from agentguard.aggregate import aggregate_traces
-from agentguard.stats import mean, detect_trend
+from agentguard.core.trace import ExecutionTrace
+from agentguard.metrics import extract_metrics
+from agentguard.scoring import score_trace
+from agentguard.stats import detect_trend
 
 
 @dataclass
@@ -33,7 +32,7 @@ class DashboardData:
     top_errors: list[dict]
     agent_leaderboard: list[dict]
     performance_trend: str  # "improving", "stable", "declining"
-    
+
     def to_dict(self) -> dict:
         return {
             "health": self.health_status,
@@ -58,9 +57,9 @@ def build_dashboard(traces: list[ExecutionTrace]) -> DashboardData:
             recent_traces=[], top_errors=[], agent_leaderboard=[],
             performance_trend="insufficient_data",
         )
-    
+
     agg = aggregate_traces(traces)
-    
+
     # Health status
     if agg.success_rate >= 0.95 and agg.avg_score >= 70:
         health = "healthy"
@@ -68,7 +67,7 @@ def build_dashboard(traces: list[ExecutionTrace]) -> DashboardData:
         health = "degraded"
     else:
         health = "critical"
-    
+
     # Recent traces summary
     recent = []
     for t in traces[-10:]:
@@ -84,16 +83,13 @@ def build_dashboard(traces: list[ExecutionTrace]) -> DashboardData:
             "span_count": len(t.spans),
             "cost_usd": round(m.total_cost_usd, 4),
         })
-    
+
     # Performance trend
-    if len(agg.score_trend) >= 3:
-        trend = detect_trend(agg.score_trend)
-    else:
-        trend = "insufficient_data"
-    
+    trend = detect_trend(agg.score_trend) if len(agg.score_trend) >= 3 else "insufficient_data"
+
     # Total cost
     total_cost = sum(m.total_cost_usd for m in [extract_metrics(t) for t in traces])
-    
+
     return DashboardData(
         health_status=health,
         overall_score=agg.avg_score,

@@ -1,9 +1,10 @@
 """Tests for trace manipulation."""
 
 import pytest
-from agentguard.core.trace import ExecutionTrace, Span, SpanType, SpanStatus
+
 from agentguard.builder import TraceBuilder
-from agentguard.manipulate import clone_trace, slice_trace, anonymize_trace, merge_traces
+from agentguard.core.trace import SpanStatus, SpanType
+from agentguard.manipulate import anonymize_trace, clone_trace, merge_traces, slice_trace
 
 
 @pytest.fixture
@@ -61,7 +62,7 @@ class TestMerge:
     def test_basic(self):
         t1 = TraceBuilder("a").agent("a1").end().build()
         t2 = TraceBuilder("b").agent("b1").end().build()
-        
+
         merged = merge_traces([t1, t2])
         assert len(merged.spans) == 2
         names = {s.name for s in merged.spans}
@@ -71,6 +72,6 @@ class TestMerge:
     def test_failure_propagation(self):
         t1 = TraceBuilder("a").agent("ok").end().build()
         t2 = TraceBuilder("b").agent("fail", status="failed", error="boom").end().build()
-        
+
         merged = merge_traces([t1, t2])
         assert merged.status == SpanStatus.FAILED

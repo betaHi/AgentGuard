@@ -1,19 +1,18 @@
 """Extended edge case tests — stress test all modules with unusual inputs."""
 
-import pytest
-from datetime import datetime, timezone, timedelta
-from agentguard.core.trace import ExecutionTrace, Span, SpanType, SpanStatus
-from agentguard.builder import TraceBuilder
+from datetime import UTC, datetime, timedelta
+
+from agentguard.core.trace import ExecutionTrace, Span, SpanStatus, SpanType
 
 
 def _ts(offset_s: float = 0) -> str:
-    base = datetime(2026, 4, 12, 0, 0, 0, tzinfo=timezone.utc)
+    base = datetime(2026, 4, 12, 0, 0, 0, tzinfo=UTC)
     return (base + timedelta(seconds=offset_s)).isoformat()
 
 
 class TestEmptyTrace:
     """All modules should handle empty traces gracefully."""
-    
+
     def test_scoring(self):
         from agentguard.scoring import score_trace
         score = score_trace(ExecutionTrace(task="empty"))
@@ -87,12 +86,12 @@ class TestEmptyTrace:
 
 class TestLargeTrace:
     """Test with a large number of spans."""
-    
+
     def test_100_spans(self):
-        from agentguard.scoring import score_trace
         from agentguard.metrics import extract_metrics
+        from agentguard.scoring import score_trace
         from agentguard.tree import compute_tree_stats
-        
+
         trace = ExecutionTrace(task="large", started_at=_ts(0), ended_at=_ts(200))
         for i in range(100):
             trace.add_span(Span(
@@ -102,28 +101,28 @@ class TestLargeTrace:
                 started_at=_ts(i * 2), ended_at=_ts(i * 2 + 1),
                 token_count=100, estimated_cost_usd=0.001,
             ))
-        
+
         score = score_trace(trace)
         assert score.overall > 0
-        
+
         m = extract_metrics(trace)
         assert m.span_count == 100
         assert m.total_tokens == 10000
-        
+
         stats = compute_tree_stats(trace)
         assert stats.node_count == 100
 
     def test_deep_nesting(self):
         """50-level deep nesting should not stack overflow."""
         from agentguard.tree import compute_tree_stats, tree_to_text
-        
+
         trace = ExecutionTrace(task="deep")
         parent_id = None
         for i in range(50):
             span = Span(span_id=f"s{i}", name=f"level_{i}", parent_span_id=parent_id)
             trace.add_span(span)
             parent_id = span.span_id
-        
+
         stats = compute_tree_stats(trace)
         assert stats.depth == 50
         text = tree_to_text(trace)
@@ -132,12 +131,12 @@ class TestLargeTrace:
 
 class TestMalformedTrace:
     """Test with malformed/unexpected data."""
-    
+
     def test_none_timestamps(self):
         from agentguard.timeline import build_timeline
         trace = ExecutionTrace(task="no_times")
         trace.add_span(Span(name="a", started_at="", ended_at=""))
-        tl = build_timeline(trace)
+        build_timeline(trace)
         # Should not crash
 
     def test_duplicate_span_ids(self):
@@ -147,7 +146,7 @@ class TestMalformedTrace:
             Span(span_id="dup", name="first"),
             Span(span_id="dup", name="second"),
         ]
-        result = normalize_trace(trace)
+        normalize_trace(trace)
         assert len(trace.spans) == 1  # deduplicated
 
     def test_circular_parent(self):

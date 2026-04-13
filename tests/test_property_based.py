@@ -8,13 +8,12 @@ functions never crash on valid input.
 import pytest
 
 hypothesis = pytest.importorskip('hypothesis')
-from hypothesis import given, settings, assume
+from hypothesis import given, settings
 from hypothesis import strategies as st
 
-from agentguard.core.trace import ExecutionTrace, Span, SpanType, SpanStatus
+from agentguard.core.trace import ExecutionTrace, Span, SpanStatus, SpanType
 from agentguard.export import export_otel
 from agentguard.importer import import_otel
-
 
 # ── Strategies ──
 

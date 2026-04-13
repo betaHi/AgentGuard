@@ -4,8 +4,8 @@ A false bottleneck is an agent that appears slow (high wall time) but
 is actually just waiting on its children (low own work time).
 """
 
-from agentguard.builder import TraceBuilder
 from agentguard.analysis import analyze_bottleneck
+from agentguard.builder import TraceBuilder
 
 
 def _false_bottleneck_trace():

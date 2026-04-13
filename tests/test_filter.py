@@ -1,19 +1,32 @@
 """Tests for trace filtering and sampling."""
 
-import pytest
-from datetime import datetime, timezone, timedelta
-from agentguard.core.trace import ExecutionTrace, Span, SpanType, SpanStatus
+from datetime import UTC, datetime, timedelta
+
+from agentguard.core.trace import ExecutionTrace, Span, SpanStatus, SpanType
 from agentguard.filter import (
-    by_type, by_status, by_name, by_duration, by_tag, by_metadata,
-    has_error, has_retries, is_handoff, is_slow,
-    and_filter, or_filter, not_filter,
-    filter_spans, filter_traces, sample_traces,
-    trace_has_failures, trace_duration, trace_has_agent,
+    and_filter,
+    by_duration,
+    by_metadata,
+    by_name,
+    by_status,
+    by_tag,
+    by_type,
+    filter_spans,
+    filter_traces,
+    has_error,
+    has_retries,
+    is_handoff,
+    is_slow,
+    not_filter,
+    or_filter,
+    sample_traces,
+    trace_has_agent,
+    trace_has_failures,
 )
 
 
 def _ts(offset_s: float = 0) -> str:
-    base = datetime(2026, 4, 12, 0, 0, 0, tzinfo=timezone.utc)
+    base = datetime(2026, 4, 12, 0, 0, 0, tzinfo=UTC)
     return (base + timedelta(seconds=offset_s)).isoformat()
 
 
@@ -119,7 +132,7 @@ class TestTraceFilters:
         good.add_span(Span(name="a", status=SpanStatus.COMPLETED))
         bad = ExecutionTrace(task="bad")
         bad.add_span(Span(name="a", status=SpanStatus.FAILED))
-        
+
         result = filter_traces([good, bad], trace_has_failures())
         assert len(result) == 1
         assert result[0].task == "bad"
@@ -129,7 +142,7 @@ class TestTraceFilters:
         t1.add_span(Span(name="researcher", span_type=SpanType.AGENT))
         t2 = ExecutionTrace(task="t2")
         t2.add_span(Span(name="writer", span_type=SpanType.AGENT))
-        
+
         result = filter_traces([t1, t2], trace_has_agent("researcher"))
         assert len(result) == 1
 

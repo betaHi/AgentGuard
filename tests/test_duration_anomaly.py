@@ -1,7 +1,8 @@
 """Tests for span duration anomaly detection."""
 
 import json
-from agentguard.analysis import detect_duration_anomalies, _compute_baseline
+
+from agentguard.analysis import _compute_baseline, detect_duration_anomalies
 from agentguard.builder import TraceBuilder
 from agentguard.core.trace import ExecutionTrace
 

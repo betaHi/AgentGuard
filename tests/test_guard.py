@@ -3,8 +3,9 @@
 import json
 import tempfile
 from pathlib import Path
-from agentguard.guard import Guard, StdoutAlert, FileAlert
+
 from agentguard.core.trace import ExecutionTrace, Span, SpanType
+from agentguard.guard import FileAlert, Guard
 
 
 def test_guard_detects_failure():
@@ -12,7 +13,7 @@ def test_guard_detects_failure():
     with tempfile.TemporaryDirectory() as tmpdir:
         traces_dir = Path(tmpdir) / "traces"
         traces_dir.mkdir()
-        
+
         # Create a failed trace
         trace = ExecutionTrace(task="test")
         span = Span(name="agent-1", span_type=SpanType.AGENT)
@@ -20,17 +21,17 @@ def test_guard_detects_failure():
         trace.add_span(span)
         trace.fail()
         (traces_dir / f"{trace.trace_id}.json").write_text(trace.to_json())
-        
+
         alerts = []
         class CaptureAlert:
             def send(self, message, severity="warning", metadata=None):
                 alerts.append({"message": message, "severity": severity})
-        
+
         guard = Guard(traces_dir=str(traces_dir), alert_handlers=[CaptureAlert()])
         guard.check_new_traces()
-        
+
         assert len(alerts) > 0
-        assert len(alerts) > 0, f"Expected alerts, got none"
+        assert len(alerts) > 0, "Expected alerts, got none"
 
 
 def test_guard_consecutive_fails():
@@ -38,14 +39,14 @@ def test_guard_consecutive_fails():
     with tempfile.TemporaryDirectory() as tmpdir:
         traces_dir = Path(tmpdir) / "traces"
         traces_dir.mkdir()
-        
+
         alerts = []
         class CaptureAlert:
             def send(self, message, severity="warning", metadata=None):
                 alerts.append({"message": message, "severity": severity})
-        
+
         guard = Guard(traces_dir=str(traces_dir), alert_handlers=[CaptureAlert()], fail_threshold=2)
-        
+
         # Create 2 failed traces
         for i in range(2):
             trace = ExecutionTrace(task=f"test-{i}")
@@ -54,9 +55,9 @@ def test_guard_consecutive_fails():
             trace.add_span(span)
             trace.fail()
             (traces_dir / f"{trace.trace_id}.json").write_text(trace.to_json())
-        
+
         guard.check_new_traces()
-        
+
         critical_alerts = [a for a in alerts if a["severity"] == "critical"]
         assert len(critical_alerts) > 0
 
@@ -67,7 +68,7 @@ def test_file_alert():
         filepath = Path(tmpdir) / "alerts.jsonl"
         alert = FileAlert(str(filepath))
         alert.send("test alert", severity="warning")
-        
+
         assert filepath.exists()
         data = json.loads(filepath.read_text().strip())
         assert data["message"] == "test alert"

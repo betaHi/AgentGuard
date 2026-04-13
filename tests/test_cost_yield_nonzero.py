@@ -4,9 +4,6 @@ Verifies the auto-extraction pipeline end-to-end:
   decorator output_data → _auto_extract_cost_fields → span fields → analyze_cost_yield
 """
 
-from unittest.mock import patch, MagicMock
-from agentguard.sdk.decorators import record_agent, record_tool
-from agentguard.sdk.recorder import TraceRecorder, init_recorder, finish_recording
 from agentguard.analysis import analyze_cost_yield
 from agentguard.builder import TraceBuilder
 

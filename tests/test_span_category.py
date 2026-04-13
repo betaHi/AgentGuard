@@ -1,8 +1,8 @@
 """Tests for span bottleneck category classification."""
 
-from agentguard.analysis import analyze_bottleneck, _classify_span_category
-from agentguard.core.trace import Span, SpanType, SpanStatus
+from agentguard.analysis import _classify_span_category, analyze_bottleneck
 from agentguard.builder import TraceBuilder
+from agentguard.core.trace import Span, SpanType
 
 
 def test_tool_spans_classified_as_io():

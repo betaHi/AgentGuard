@@ -1,7 +1,6 @@
 """Tests for trace generator."""
 
-import pytest
-from agentguard.generate import generate_trace, generate_batch
+from agentguard.generate import generate_batch, generate_trace
 
 
 class TestGenerateTrace:

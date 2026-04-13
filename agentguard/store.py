@@ -10,13 +10,10 @@ Provides a simple file-based store for persisting and querying traces:
 from __future__ import annotations
 
 import json
-import os
 from dataclasses import dataclass
-from datetime import datetime
 from pathlib import Path
-from typing import Optional
 
-from agentguard.core.trace import ExecutionTrace, SpanStatus
+from agentguard.core.trace import ExecutionTrace
 
 
 @dataclass
@@ -26,10 +23,10 @@ class TraceInfo:
     task: str
     status: str
     started_at: str
-    ended_at: Optional[str]
+    ended_at: str | None
     span_count: int
     file_path: str
-    
+
     def to_dict(self) -> dict:
         return {
             "trace_id": self.trace_id,
@@ -42,19 +39,19 @@ class TraceInfo:
 
 class TraceStore:
     """File-based trace storage."""
-    
+
     def __init__(self, directory: str = ".agentguard/traces"):
         self._dir = Path(directory)
         self._dir.mkdir(parents=True, exist_ok=True)
-    
+
     def save(self, trace: ExecutionTrace) -> str:
         """Save a trace to disk. Returns the file path."""
         filename = f"{trace.trace_id}.json"
         path = self._dir / filename
         path.write_text(trace.to_json())
         return str(path)
-    
-    def load(self, trace_id: str) -> Optional[ExecutionTrace]:
+
+    def load(self, trace_id: str) -> ExecutionTrace | None:
         """Load a trace by ID."""
         path = self._dir / f"{trace_id}.json"
         if not path.exists():
@@ -64,12 +61,12 @@ class TraceStore:
                 path = matches[0]
             else:
                 return None
-        
+
         try:
             return ExecutionTrace.from_json(path.read_text())
         except Exception:
             return None
-    
+
     def list_traces(self, limit: int = 50) -> list[TraceInfo]:
         """List all stored traces with metadata."""
         infos = []
@@ -90,11 +87,11 @@ class TraceStore:
             if len(infos) >= limit:
                 break
         return infos
-    
+
     def query(
         self,
-        status: Optional[str] = None,
-        task_contains: Optional[str] = None,
+        status: str | None = None,
+        task_contains: str | None = None,
         limit: int = 50,
     ) -> list[ExecutionTrace]:
         """Query traces by status and/or task."""
@@ -110,7 +107,7 @@ class TraceStore:
             if len(results) >= limit:
                 break
         return results
-    
+
     def prune(self, keep: int = 100) -> int:
         """Remove oldest traces, keeping only the most recent `keep` files."""
         files = sorted(self._dir.glob("*.json"), key=lambda p: p.stat().st_mtime, reverse=True)
@@ -119,7 +116,7 @@ class TraceStore:
             path.unlink()
             removed += 1
         return removed
-    
+
     @property
     def count(self) -> int:
         """Number of stored traces."""

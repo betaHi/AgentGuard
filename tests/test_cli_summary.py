@@ -1,8 +1,10 @@
 """Tests for CLI summary command — one-line trace health."""
 
-import tempfile, os
+import os
+import tempfile
+
 from agentguard.builder import TraceBuilder
-from agentguard.cli.main import cmd_summary, _format_summary_line
+from agentguard.cli.main import _format_summary_line, cmd_summary
 
 
 class _Args:

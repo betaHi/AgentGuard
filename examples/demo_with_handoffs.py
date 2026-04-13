@@ -1,14 +1,15 @@
 """Demo: Multi-agent pipeline with explicit handoff tracking."""
 
-import time
+import os
 import random
 import sys
-import os
+import time
+
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
-from agentguard import record_agent, record_tool, record_handoff
-from agentguard.sdk.recorder import init_recorder, finish_recording
-from agentguard.analysis import analyze_failures, analyze_flow, analyze_bottleneck
+from agentguard import record_agent, record_handoff, record_tool
+from agentguard.analysis import analyze_bottleneck, analyze_failures, analyze_flow
+from agentguard.sdk.recorder import finish_recording, init_recorder
 
 
 @record_tool(name="web_search")
@@ -35,7 +36,7 @@ def analyst(research_data: dict) -> dict:
 def coordinator(task: str) -> dict:
     # Phase 1: Research
     research = researcher(task)
-    
+
     # Explicit handoff: researcher → analyst
     record_handoff(
         from_agent="researcher",
@@ -43,10 +44,10 @@ def coordinator(task: str) -> dict:
         context=research,
         summary=f"Passing {len(research['articles'])} articles about {task}",
     )
-    
+
     # Phase 2: Analysis
     analysis = analyst(research)
-    
+
     return {"task": task, "research": research, "analysis": analysis}
 
 
@@ -54,28 +55,28 @@ def main():
     print("=" * 60)
     print("  AgentGuard — Handoff Tracking Demo")
     print("=" * 60)
-    
-    recorder = init_recorder(task="Research Pipeline with Handoffs", trigger="manual")
-    result = coordinator("AI Agent Observability")
+
+    init_recorder(task="Research Pipeline with Handoffs", trigger="manual")
+    coordinator("AI Agent Observability")
     trace = finish_recording()
-    
+
     print(f"\n✅ Trace: {len(trace.spans)} spans, {trace.duration_ms:.0f}ms")
-    
+
     # Run diagnostics
     print("\n--- Failure Analysis ---")
     fa = analyze_failures(trace)
     print(f"Resilience: {fa.resilience_score:.0%}")
-    
+
     print("\n--- Bottleneck Analysis ---")
     bn = analyze_bottleneck(trace)
     print(f"Bottleneck: {bn.bottleneck_span} ({bn.bottleneck_pct:.0f}%)")
     print(f"Critical path: {' → '.join(bn.critical_path)}")
-    
+
     print("\n--- Flow Analysis ---")
     fl = analyze_flow(trace)
     for h in fl.handoffs:
         print(f"Handoff: {h.from_agent} → {h.to_agent} ({h.context_size_bytes}B)")
-    
+
     # Show handoff spans in trace
     handoff_spans = [s for s in trace.spans if s.span_type.value == "handoff"]
     if handoff_spans:

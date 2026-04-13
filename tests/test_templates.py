@@ -1,11 +1,16 @@
 """Tests for trace templates."""
 
 import pytest
-from agentguard.templates import (
-    research_pipeline, code_review_pipeline, support_pipeline,
-    etl_pipeline, list_templates, create_from_template,
-)
+
 from agentguard.core.trace import SpanType
+from agentguard.templates import (
+    code_review_pipeline,
+    create_from_template,
+    etl_pipeline,
+    list_templates,
+    research_pipeline,
+    support_pipeline,
+)
 
 
 class TestTemplates:

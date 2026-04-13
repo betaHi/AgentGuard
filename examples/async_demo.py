@@ -1,11 +1,14 @@
-import sys, os
+import os
+import sys
+
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 """Demo: Async multi-agent workflow with AgentGuard tracing."""
 
 import asyncio
+
 from agentguard import record_agent_async, record_tool_async
-from agentguard.sdk.recorder import init_recorder, finish_recording
+from agentguard.sdk.recorder import finish_recording, init_recorder
 
 
 @record_tool_async(name="async_search")
@@ -39,7 +42,7 @@ async def coordinator(task: str) -> dict:
 
 async def main():
     init_recorder(task="Async Research Demo", trigger="manual")
-    result = await coordinator("AI Agent Observability")
+    await coordinator("AI Agent Observability")
     trace = finish_recording()
     print(f"✅ Trace: .agentguard/traces/{trace.trace_id}.json")
     print(f"   Spans: {len(trace.spans)}, Duration: {trace.duration_ms:.0f}ms")

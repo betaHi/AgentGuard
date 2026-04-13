@@ -11,8 +11,8 @@ Usage:
 from __future__ import annotations
 
 import asyncio
+from typing import Any
 
-from typing import Any, Optional
 from agentguard.core.trace import Span, SpanType
 from agentguard.sdk.recorder import get_recorder
 
@@ -35,13 +35,13 @@ class ToolContext:
                 results = search("AI")
                 t.set_output(results)
     """
-    
-    def __init__(self, name: str, input_data: Any = None, metadata: Optional[dict] = None):
+
+    def __init__(self, name: str, input_data: Any = None, metadata: dict | None = None):
         self.name = name
         self._input = input_data
         self._metadata = metadata or {}
-        self._span: Optional[Span] = None
-    
+        self._span: Span | None = None
+
     def __enter__(self) -> ToolContext:
         recorder = get_recorder()
         self._span = Span(
@@ -53,7 +53,7 @@ class ToolContext:
         )
         recorder.push_span(self._span)
         return self
-    
+
     def __exit__(self, exc_type, exc_val, exc_tb):
         recorder = get_recorder()
         if self._span:
@@ -63,7 +63,7 @@ class ToolContext:
                 self._span.complete()
             recorder.pop_span(self._span)
         return False
-    
+
     def set_output(self, output: Any) -> None:
         """Store the tool's output data on the span.
 
@@ -76,9 +76,9 @@ class ToolContext:
 
 class AgentTrace:
     """Context manager for recording an agent execution.
-    
+
     Low-intrusion alternative to @record_agent decorator.
-    
+
     Example:
         recorder = init_recorder(task="my task")
         with AgentTrace(name="researcher", version="v1") as agent:
@@ -88,8 +88,8 @@ class AgentTrace:
             agent.set_output({"results": results})
         trace = finish_recording()
     """
-    
-    def __init__(self, name: str, version: str = "latest", metadata: Optional[dict] = None):
+
+    def __init__(self, name: str, version: str = "latest", metadata: dict | None = None):
         """Initialize an agent trace context.
 
         Args:
@@ -100,8 +100,8 @@ class AgentTrace:
         self.name = name
         self.version = version
         self._metadata = {"agent_version": version, **(metadata or {})}
-        self._span: Optional[Span] = None
-    
+        self._span: Span | None = None
+
     def __enter__(self) -> AgentTrace:
         recorder = get_recorder()
         self._span = Span(
@@ -112,7 +112,7 @@ class AgentTrace:
         )
         recorder.push_span(self._span)
         return self
-    
+
     def __exit__(self, exc_type, exc_val, exc_tb):
         recorder = get_recorder()
         if self._span:
@@ -122,7 +122,7 @@ class AgentTrace:
                 self._span.complete()
             recorder.pop_span(self._span)
         return False
-    
+
     def set_output(self, output: Any) -> None:
         """Store the agent's output data on the span.
 
@@ -131,8 +131,8 @@ class AgentTrace:
         """
         if self._span:
             self._span.output_data = output
-    
-    def tool(self, name: str, input_data: Any = None, metadata: Optional[dict] = None) -> ToolContext:
+
+    def tool(self, name: str, input_data: Any = None, metadata: dict | None = None) -> ToolContext:
         """Create a nested tool context within this agent.
 
         The returned ``ToolContext`` will have this agent's span as its parent.
@@ -167,13 +167,13 @@ class AsyncAgentTrace:
                 t.set_output(results)
             agent.set_output(results)
     """
-    
-    def __init__(self, name: str, version: str = "latest", metadata: Optional[dict] = None):
+
+    def __init__(self, name: str, version: str = "latest", metadata: dict | None = None):
         self.name = name
         self.version = version
         self._metadata = {"agent_version": version, **(metadata or {})}
-        self._span: Optional[Span] = None
-    
+        self._span: Span | None = None
+
     async def __aenter__(self) -> AsyncAgentTrace:
         recorder = get_recorder()
         self._span = Span(
@@ -184,7 +184,7 @@ class AsyncAgentTrace:
         )
         recorder.push_span(self._span)
         return self
-    
+
     async def __aexit__(self, exc_type, exc_val, exc_tb):
         recorder = get_recorder()
         if self._span:
@@ -194,7 +194,7 @@ class AsyncAgentTrace:
                 self._span.complete()
             recorder.pop_span(self._span)
         return False
-    
+
     def set_output(self, output: Any) -> None:
         """Store the agent's output data on the span.
 
@@ -203,8 +203,8 @@ class AsyncAgentTrace:
         """
         if self._span:
             self._span.output_data = output
-    
-    def tool(self, name: str, input_data: Any = None, metadata: Optional[dict] = None) -> AsyncToolContext:
+
+    def tool(self, name: str, input_data: Any = None, metadata: dict | None = None) -> AsyncToolContext:
         """Create a nested async tool context within this agent.
 
         Args:
@@ -229,13 +229,13 @@ class AsyncToolContext:
         input_data: Input to the tool. Must be JSON-serializable.
         metadata: Additional key-value metadata.
     """
-    
-    def __init__(self, name: str, input_data: Any = None, metadata: Optional[dict] = None):
+
+    def __init__(self, name: str, input_data: Any = None, metadata: dict | None = None):
         self.name = name
         self._input = input_data
         self._metadata = metadata or {}
-        self._span: Optional[Span] = None
-    
+        self._span: Span | None = None
+
     async def __aenter__(self) -> AsyncToolContext:
         recorder = get_recorder()
         self._span = Span(
@@ -247,7 +247,7 @@ class AsyncToolContext:
         )
         recorder.push_span(self._span)
         return self
-    
+
     async def __aexit__(self, exc_type, exc_val, exc_tb):
         recorder = get_recorder()
         if self._span:
@@ -257,7 +257,7 @@ class AsyncToolContext:
                 self._span.complete()
             recorder.pop_span(self._span)
         return False
-    
+
     def set_output(self, output: Any) -> None:
         """Store the tool's output data on the span.
 
@@ -290,7 +290,7 @@ class TracingExecutor:
             results = [f.result() for f in futures]
     """
 
-    def __init__(self, max_workers: Optional[int] = None) -> None:
+    def __init__(self, max_workers: int | None = None) -> None:
         from concurrent.futures import ThreadPoolExecutor
         self._executor = ThreadPoolExecutor(max_workers=max_workers)
 
@@ -317,7 +317,7 @@ class TracingExecutor:
 
         return self._executor.submit(_wrapped)
 
-    def map(self, fn: Any, *iterables: Any, timeout: Optional[float] = None) -> Any:
+    def map(self, fn: Any, *iterables: Any, timeout: float | None = None) -> Any:
         """Map fn over iterables with trace context propagation.
 
         Each invocation receives the parent trace context so spans
@@ -339,14 +339,14 @@ class TracingExecutor:
             return fn(*item_args)
 
         # Zip iterables into tuples for _make_wrapped
-        zipped = zip(*iterables)
+        zipped = zip(*iterables, strict=False)
         return self._executor.map(_make_wrapped, zipped, timeout=timeout)
 
     def shutdown(self, wait: bool = True) -> None:
         """Shut down the executor."""
         self._executor.shutdown(wait=wait)
 
-    def __enter__(self) -> "TracingExecutor":
+    def __enter__(self) -> TracingExecutor:
         return self
 
     def __exit__(self, exc_type: Any, exc_val: Any, exc_tb: Any) -> None:
@@ -384,7 +384,7 @@ class TracingProcessExecutor:
             results = [f.result() for f in futures]
     """
 
-    def __init__(self, max_workers: Optional[int] = None) -> None:
+    def __init__(self, max_workers: int | None = None) -> None:
         from concurrent.futures import ProcessPoolExecutor
         self._executor = ProcessPoolExecutor(max_workers=max_workers)
 
@@ -416,7 +416,7 @@ class TracingProcessExecutor:
         """Shut down the executor."""
         self._executor.shutdown(wait=wait)
 
-    def __enter__(self) -> "TracingProcessExecutor":
+    def __enter__(self) -> TracingProcessExecutor:
         return self
 
     def __exit__(self, exc_type: Any, exc_val: Any, exc_tb: Any) -> None:
@@ -434,7 +434,7 @@ class _MergingFuture:
         self._future = future
         self._recorder = recorder
 
-    def result(self, timeout: Optional[float] = None) -> Any:
+    def result(self, timeout: float | None = None) -> Any:
         """Get the result and merge worker spans."""
         worker_result = self._future.result(timeout=timeout)
         _merge_worker_spans(self._recorder, worker_result)
@@ -446,7 +446,7 @@ class _MergingFuture:
     def cancel(self) -> bool:
         return self._future.cancel()
 
-    def exception(self, timeout: Optional[float] = None) -> Any:
+    def exception(self, timeout: float | None = None) -> Any:
         return self._future.exception(timeout=timeout)
 
 
@@ -465,7 +465,7 @@ def _process_worker(
 
     This function must be module-level (picklable).
     """
-    from agentguard.sdk.recorder import init_recorder, finish_recording
+    from agentguard.sdk.recorder import finish_recording, init_recorder
 
     init_recorder(task=task_name or "worker", trigger="process_pool")
     recorder = get_recorder()
@@ -511,7 +511,7 @@ def _merge_worker_spans(recorder: Any, worker_result: dict) -> None:
     Reconstructs Span objects from serialized dicts and adds them
     to the active trace. Preserves parent_span_id for correct nesting.
     """
-    from agentguard.core.trace import Span, SpanType, SpanStatus
+    from agentguard.core.trace import Span, SpanStatus, SpanType
 
     if not recorder.trace:
         return
@@ -538,8 +538,8 @@ def _merge_worker_spans(recorder: Any, worker_result: dict) -> None:
 
 def traced_task(
     coro: Any,
-    name: Optional[str] = None,
-) -> "asyncio.Task[Any]":
+    name: str | None = None,
+) -> asyncio.Task[Any]:
     """Create an asyncio task with trace context propagation.
 
     Wraps ``asyncio.create_task()`` to capture the current span stack

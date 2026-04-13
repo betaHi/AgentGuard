@@ -13,10 +13,9 @@ Designed for dashboarding and monitoring integrations.
 from __future__ import annotations
 
 import math
-from dataclasses import dataclass, field
-from typing import Optional
+from dataclasses import dataclass
 
-from agentguard.core.trace import ExecutionTrace, Span, SpanType, SpanStatus
+from agentguard.core.trace import ExecutionTrace, SpanStatus, SpanType
 
 
 def _percentile(sorted_values: list[float], p: float) -> float:
@@ -42,7 +41,7 @@ class DurationMetrics:
     p50_ms: float = 0
     p90_ms: float = 0
     p99_ms: float = 0
-    
+
     def to_dict(self) -> dict:
         return {
             "count": self.count,
@@ -73,7 +72,7 @@ class TraceMetrics:
     total_tokens: int
     total_cost_usd: float
     total_context_bytes: int
-    
+
     def to_dict(self) -> dict:
         return {
             "trace_id": self.trace_id,
@@ -91,26 +90,26 @@ class TraceMetrics:
             "total_cost_usd": round(self.total_cost_usd, 4),
             "total_context_bytes": self.total_context_bytes,
         }
-    
+
     def to_prometheus(self) -> str:
         """Export as Prometheus text exposition format."""
         lines = [
-            f'# HELP agentguard_span_count Total number of spans',
-            f'# TYPE agentguard_span_count gauge',
+            '# HELP agentguard_span_count Total number of spans',
+            '# TYPE agentguard_span_count gauge',
             f'agentguard_span_count{{trace_id="{self.trace_id}"}} {self.span_count}',
-            f'# HELP agentguard_success_rate Success rate of spans',
-            f'# TYPE agentguard_success_rate gauge',
+            '# HELP agentguard_success_rate Success rate of spans',
+            '# TYPE agentguard_success_rate gauge',
             f'agentguard_success_rate{{trace_id="{self.trace_id}"}} {self.success_rate}',
-            f'# HELP agentguard_duration_ms Trace duration in milliseconds',
-            f'# TYPE agentguard_duration_ms gauge',
+            '# HELP agentguard_duration_ms Trace duration in milliseconds',
+            '# TYPE agentguard_duration_ms gauge',
             f'agentguard_duration_ms{{trace_id="{self.trace_id}",quantile="0.5"}} {self.overall_duration.p50_ms}',
             f'agentguard_duration_ms{{trace_id="{self.trace_id}",quantile="0.9"}} {self.overall_duration.p90_ms}',
             f'agentguard_duration_ms{{trace_id="{self.trace_id}",quantile="0.99"}} {self.overall_duration.p99_ms}',
-            f'# HELP agentguard_tokens_total Total tokens consumed',
-            f'# TYPE agentguard_tokens_total counter',
+            '# HELP agentguard_tokens_total Total tokens consumed',
+            '# TYPE agentguard_tokens_total counter',
             f'agentguard_tokens_total{{trace_id="{self.trace_id}"}} {self.total_tokens}',
-            f'# HELP agentguard_cost_usd Total estimated cost in USD',
-            f'# TYPE agentguard_cost_usd counter',
+            '# HELP agentguard_cost_usd Total estimated cost in USD',
+            '# TYPE agentguard_cost_usd counter',
             f'agentguard_cost_usd{{trace_id="{self.trace_id}"}} {self.total_cost_usd}',
         ]
         return "\n".join(lines)
@@ -120,7 +119,7 @@ def _compute_duration_metrics(durations: list[float]) -> DurationMetrics:
     """Compute duration distribution from a list of durations."""
     if not durations:
         return DurationMetrics()
-    
+
     sorted_d = sorted(durations)
     return DurationMetrics(
         count=len(sorted_d),
@@ -139,7 +138,7 @@ def extract_metrics(trace: ExecutionTrace) -> TraceMetrics:
     all_durations = []
     agent_durations = []
     tool_durations = []
-    
+
     agent_count = 0
     tool_count = 0
     handoff_count = 0
@@ -149,7 +148,7 @@ def extract_metrics(trace: ExecutionTrace) -> TraceMetrics:
     total_tokens = 0
     total_cost = 0.0
     total_context_bytes = 0
-    
+
     for span in trace.spans:
         dur = span.duration_ms
         if dur is not None:
@@ -158,28 +157,28 @@ def extract_metrics(trace: ExecutionTrace) -> TraceMetrics:
                 agent_durations.append(dur)
             elif span.span_type == SpanType.TOOL:
                 tool_durations.append(dur)
-        
+
         if span.span_type == SpanType.AGENT:
             agent_count += 1
         elif span.span_type == SpanType.TOOL:
             tool_count += 1
         elif span.span_type == SpanType.HANDOFF:
             handoff_count += 1
-        
+
         if span.status == SpanStatus.COMPLETED:
             success_count += 1
         elif span.status == SpanStatus.FAILED:
             failure_count += 1
-        
+
         if span.retry_count > 0:
             retry_span_count += 1
-        
+
         total_tokens += span.token_count or 0
         total_cost += span.estimated_cost_usd or 0
         total_context_bytes += span.context_size_bytes or 0
-    
+
     total = len(trace.spans) or 1
-    
+
     return TraceMetrics(
         trace_id=trace.trace_id,
         span_count=len(trace.spans),

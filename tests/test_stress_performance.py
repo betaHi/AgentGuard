@@ -4,14 +4,17 @@ Generates a large realistic trace and ensures all analysis modules
 handle it within acceptable time bounds.
 """
 
-import time
 import random
+import time
 
-from agentguard.core.trace import ExecutionTrace, Span, SpanType, SpanStatus
 from agentguard.analysis import (
-    analyze_failures, analyze_bottleneck, analyze_flow,
-    analyze_cost_yield, analyze_decisions, analyze_context_flow,
+    analyze_bottleneck,
+    analyze_context_flow,
+    analyze_cost_yield,
+    analyze_failures,
+    analyze_flow,
 )
+from agentguard.core.trace import ExecutionTrace, Span, SpanStatus, SpanType
 from agentguard.propagation import analyze_propagation
 
 
@@ -63,7 +66,7 @@ def _build_large_trace(n_spans: int = 1000, seed: int = 42) -> ExecutionTrace:
 def _make_agent_span(idx: int, rng: random.Random) -> Span:
     """Create an agent span with random timing."""
     failed = rng.random() < 0.1
-    dur_s = rng.uniform(0.1, 2.0)
+    rng.uniform(0.1, 2.0)
     return Span(
         name=f"agent_{idx}",
         span_type=SpanType.AGENT,
@@ -87,7 +90,7 @@ def _make_tool_span(
         started_at=f"2025-01-01T00:00:{agent_idx:02d}+00:00",
         ended_at=f"2025-01-01T00:00:{agent_idx:02d}+00:00",
         status=SpanStatus.FAILED if failed else SpanStatus.COMPLETED,
-        error=f"Tool error" if failed else None,
+        error="Tool error" if failed else None,
     )
 
 
@@ -132,13 +135,13 @@ class TestStressPerformance:
 
     def test_analyze_flow_under_5s(self):
         start = time.monotonic()
-        result = analyze_flow(self.trace)
+        analyze_flow(self.trace)
         elapsed = time.monotonic() - start
         assert elapsed < 5.0, f"analyze_flow took {elapsed:.2f}s"
 
     def test_analyze_cost_yield_under_5s(self):
         start = time.monotonic()
-        result = analyze_cost_yield(self.trace)
+        analyze_cost_yield(self.trace)
         elapsed = time.monotonic() - start
         assert elapsed < 5.0, f"analyze_cost_yield took {elapsed:.2f}s"
 
@@ -151,6 +154,6 @@ class TestStressPerformance:
 
     def test_analyze_context_flow_under_5s(self):
         start = time.monotonic()
-        result = analyze_context_flow(self.trace)
+        analyze_context_flow(self.trace)
         elapsed = time.monotonic() - start
         assert elapsed < 5.0, f"analyze_context_flow took {elapsed:.2f}s"

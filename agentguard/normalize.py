@@ -10,11 +10,10 @@ Handles:
 
 from __future__ import annotations
 
-from dataclasses import dataclass, field
-from datetime import datetime, timezone
-from typing import Optional
+from dataclasses import dataclass
+from datetime import datetime
 
-from agentguard.core.trace import ExecutionTrace, Span, SpanType, SpanStatus
+from agentguard.core.trace import ExecutionTrace, Span, SpanStatus
 
 
 @dataclass
@@ -22,11 +21,11 @@ class NormalizationResult:
     """Result of normalizing a trace."""
     trace: ExecutionTrace
     changes: list[str]
-    
+
     @property
     def changed(self) -> bool:
         return len(self.changes) > 0
-    
+
     def to_dict(self) -> dict:
         return {
             "changed": self.changed,
@@ -37,33 +36,31 @@ class NormalizationResult:
 
 def normalize_trace(trace: ExecutionTrace) -> NormalizationResult:
     """Normalize a trace by fixing common issues.
-    
+
     This is non-destructive — it creates a new trace with fixes applied.
     """
     changes: list[str] = []
-    
+
     # 1. Fix missing trace fields
-    if not trace.started_at:
-        if trace.spans:
-            earliest = min((s.started_at for s in trace.spans if s.started_at), default=None)
-            if earliest:
-                trace.started_at = earliest
-                changes.append("Set trace.started_at from earliest span")
-    
-    if not trace.ended_at and trace.status in (SpanStatus.COMPLETED, SpanStatus.FAILED):
-        if trace.spans:
-            latest = max((s.ended_at for s in trace.spans if s.ended_at), default=None)
-            if latest:
-                trace.ended_at = latest
-                changes.append("Set trace.ended_at from latest span")
-    
+    if not trace.started_at and trace.spans:
+        earliest = min((s.started_at for s in trace.spans if s.started_at), default=None)
+        if earliest:
+            trace.started_at = earliest
+            changes.append("Set trace.started_at from earliest span")
+
+    if not trace.ended_at and trace.status in (SpanStatus.COMPLETED, SpanStatus.FAILED) and trace.spans:
+        latest = max((s.ended_at for s in trace.spans if s.ended_at), default=None)
+        if latest:
+            trace.ended_at = latest
+            changes.append("Set trace.ended_at from latest span")
+
     # 2. Fix orphan spans (parent_id references non-existent span)
     span_ids = {s.span_id for s in trace.spans}
     for span in trace.spans:
         if span.parent_span_id and span.parent_span_id not in span_ids:
             span.parent_span_id = None
             changes.append(f"Orphan span '{span.name}' promoted to root")
-    
+
 
     # 2b. Fix inconsistent timestamps (end before start)
     for span in trace.spans:
@@ -97,12 +94,12 @@ def normalize_trace(trace: ExecutionTrace) -> NormalizationResult:
         else:
             changes.append(f"Removed duplicate span '{span.name}' (id: {span.span_id})")
     trace.spans = deduped
-    
+
     # 4. Fix inconsistent statuses
     # If trace is COMPLETED but has unhandled failures, mark as FAILED
     has_unhandled_failure = False
     span_map = {s.span_id: s for s in trace.spans}
-    
+
     for span in trace.spans:
         if span.status == SpanStatus.FAILED and not span.failure_handled:
             # Check if parent succeeded (meaning failure was handled)
@@ -113,11 +110,11 @@ def normalize_trace(trace: ExecutionTrace) -> NormalizationResult:
             else:
                 # Root span failed = trace failed
                 has_unhandled_failure = True
-    
+
     if has_unhandled_failure and trace.status == SpanStatus.COMPLETED:
         trace.status = SpanStatus.FAILED
         changes.append("Trace status changed to FAILED (unhandled failures detected)")
-    
+
     # 5. Fix running spans (trace is complete but span still running)
     if trace.status in (SpanStatus.COMPLETED, SpanStatus.FAILED):
         for span in trace.spans:
@@ -127,11 +124,11 @@ def normalize_trace(trace: ExecutionTrace) -> NormalizationResult:
                 if not span.ended_at:
                     span.ended_at = trace.ended_at
                 changes.append(f"Running span '{span.name}' marked as FAILED")
-    
+
     # 6. Fill missing span trace_id
     for span in trace.spans:
         if not span.trace_id:
             span.trace_id = trace.trace_id
             changes.append(f"Set trace_id on span '{span.name}'")
-    
+
     return NormalizationResult(trace=trace, changes=changes)

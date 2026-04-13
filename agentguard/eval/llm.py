@@ -7,7 +7,7 @@ This module is optional — core evaluation works fine with rules alone.
 
 Usage:
     from agentguard.eval.llm import LLMEvaluator
-    
+
     evaluator = LLMEvaluator(model="gpt-4o-mini"  # uses AGENTGUARD_LLM_API_KEY env var)
     result = evaluator.pairwise_compare(
         baseline_output="...",
@@ -20,10 +20,10 @@ from __future__ import annotations
 
 import json
 import os
-import urllib.request
 import urllib.error
+import urllib.request
 from dataclasses import dataclass
-from typing import Any, Optional
+from typing import Any
 
 
 @dataclass
@@ -33,30 +33,30 @@ class LLMEvalResult:
     score: float  # -1 to 1 (negative = baseline better, positive = candidate better)
     explanation: str
     model: str
-    raw_response: Optional[str] = None
+    raw_response: str | None = None
 
 
 class LLMEvaluator:
     """Evaluate agent outputs using an LLM judge.
-    
+
     Supports any OpenAI-compatible API (OpenAI, Anthropic via proxy, local models, etc.)
-    
+
     Args:
         api_key: API key. Falls back to AGENTGUARD_LLM_API_KEY env var.
         base_url: API base URL. Falls back to AGENTGUARD_LLM_BASE_URL or OpenAI default.
         model: Model name for evaluation.
     """
-    
+
     def __init__(
         self,
-        api_key: Optional[str] = None,
-        base_url: Optional[str] = None,
+        api_key: str | None = None,
+        base_url: str | None = None,
         model: str = "gpt-4o-mini",
     ):
         self.api_key = api_key or os.environ.get("AGENTGUARD_LLM_API_KEY", "")
         self.base_url = (base_url or os.environ.get("AGENTGUARD_LLM_BASE_URL", "https://api.openai.com/v1")).rstrip("/")
         self.model = model
-    
+
     def pairwise_compare(
         self,
         baseline_output: Any,
@@ -65,13 +65,13 @@ class LLMEvaluator:
         context: str = "",
     ) -> LLMEvalResult:
         """Compare two outputs and determine which is better.
-        
+
         Args:
             baseline_output: Output from the baseline version.
             candidate_output: Output from the candidate version.
             criteria: What to evaluate on.
             context: Additional context about the task.
-        
+
         Returns:
             LLMEvalResult with winner, score, and explanation.
         """
@@ -101,10 +101,10 @@ Respond in this exact JSON format:
             text = response_text.strip()
             if text.startswith("```"):
                 text = text.split("\n", 1)[1].rsplit("```", 1)[0].strip()
-            
+
             data = json.loads(text)
             winner_map = {"A": "baseline", "B": "candidate", "tie": "tie"}
-            
+
             return LLMEvalResult(
                 winner=winner_map.get(data.get("winner", "tie"), "tie"),
                 score=float(data.get("score", 0)),
@@ -119,7 +119,7 @@ Respond in this exact JSON format:
                 explanation=f"LLM evaluation failed: {e}",
                 model=self.model,
             )
-    
+
     def _call_api(self, prompt: str) -> str:
         """Call the LLM API using urllib (no external deps)."""
         if not self.api_key:
@@ -127,13 +127,13 @@ Respond in this exact JSON format:
                 "No API key provided. Set AGENTGUARD_LLM_API_KEY environment variable "
                 "or pass api_key to LLMEvaluator."
             )
-        
+
         payload = json.dumps({
             "model": self.model,
             "messages": [{"role": "user", "content": prompt}],
             "temperature": 0,
         }).encode("utf-8")
-        
+
         req = urllib.request.Request(
             f"{self.base_url}/chat/completions",
             data=payload,
@@ -142,7 +142,7 @@ Respond in this exact JSON format:
                 "Authorization": f"Bearer {self.api_key}",
             },
         )
-        
+
         with urllib.request.urlopen(req, timeout=30) as resp:
             data = json.loads(resp.read().decode("utf-8"))
             return data["choices"][0]["message"]["content"]

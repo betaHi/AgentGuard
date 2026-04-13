@@ -1,14 +1,14 @@
 """Tests for multi-agent flow graph — DAG, phases, critical path."""
 
-import pytest
-from datetime import datetime, timezone, timedelta
-from agentguard.core.trace import ExecutionTrace, Span, SpanType, SpanStatus
-from agentguard.flowgraph import build_flow_graph, FlowGraph
+from datetime import UTC, datetime, timedelta
+
+from agentguard.core.trace import ExecutionTrace, Span, SpanStatus, SpanType
+from agentguard.flowgraph import build_flow_graph
 
 
 def _ts(offset_s: float = 0) -> str:
     """Create ISO timestamp with offset from a fixed base."""
-    base = datetime(2026, 4, 12, 0, 0, 0, tzinfo=timezone.utc)
+    base = datetime(2026, 4, 12, 0, 0, 0, tzinfo=UTC)
     return (base + timedelta(seconds=offset_s)).isoformat()
 
 
@@ -86,11 +86,11 @@ class TestBuildFlowGraph:
         """Sequential agents should have sequential edges."""
         trace = _make_sequential_trace()
         graph = build_flow_graph(trace)
-        
+
         # Should have sequential edge from researcher → writer
         seq_edges = [e for e in graph.edges if e["type"] == "sequential"]
         assert len(seq_edges) >= 1
-        
+
         # Sequential fraction should be high
         assert graph.sequential_fraction >= 0.5
 
@@ -98,23 +98,23 @@ class TestBuildFlowGraph:
         """Overlapping agents should be in the same phase."""
         trace = _make_parallel_trace()
         graph = build_flow_graph(trace)
-        
+
         # Should detect parallel phase with searcher + fetcher
         parallel_phases = [p for p in graph.phases if p.is_parallel]
         assert len(parallel_phases) >= 1
-        
+
         parallel_names = set()
         for p in parallel_phases:
             parallel_names.update(p.span_names)
         assert "searcher" in parallel_names or "fetcher" in parallel_names
-        
+
         assert graph.max_parallelism >= 2
 
     def test_critical_path(self):
         """Critical path should be the longest chain."""
         trace = _make_sequential_trace()
         graph = build_flow_graph(trace)
-        
+
         assert len(graph.critical_path) >= 1
         assert graph.critical_path_ms > 0
 
@@ -122,7 +122,7 @@ class TestBuildFlowGraph:
         """Complex trace should have multiple phases."""
         trace = _make_complex_trace()
         graph = build_flow_graph(trace)
-        
+
         assert len(graph.phases) >= 2
         assert graph.max_parallelism >= 2
 
@@ -130,7 +130,7 @@ class TestBuildFlowGraph:
         """All agent/tool spans should become nodes."""
         trace = _make_complex_trace()
         graph = build_flow_graph(trace)
-        
+
         agent_nodes = [n for n in graph.nodes if n.span_type == "agent"]
         assert len(agent_nodes) >= 4  # pipeline, researcher, analyst, coder, reviewer
 
@@ -139,7 +139,7 @@ class TestBuildFlowGraph:
         trace = _make_sequential_trace()
         graph = build_flow_graph(trace)
         mermaid = graph.to_mermaid()
-        
+
         assert "graph TD" in mermaid
         assert "orchestrator" in mermaid
 
@@ -148,7 +148,7 @@ class TestBuildFlowGraph:
         trace = _make_complex_trace()
         graph = build_flow_graph(trace)
         report = graph.to_report()
-        
+
         assert "Flow Graph" in report
         assert "parallelism" in report.lower() or "parallel" in report.lower()
 
@@ -157,7 +157,7 @@ class TestBuildFlowGraph:
         trace = _make_parallel_trace()
         graph = build_flow_graph(trace)
         d = graph.to_dict()
-        
+
         assert "nodes" in d
         assert "edges" in d
         assert "phases" in d
@@ -168,7 +168,7 @@ class TestBuildFlowGraph:
         """Empty trace should not crash."""
         trace = ExecutionTrace(task="empty")
         graph = build_flow_graph(trace)
-        
+
         assert graph.nodes == []
         assert graph.edges == []
         assert graph.phases == []
@@ -179,6 +179,6 @@ class TestBuildFlowGraph:
         trace.add_span(Span(span_id="a", name="solo", span_type=SpanType.AGENT,
                            status=SpanStatus.COMPLETED, started_at=_ts(0), ended_at=_ts(5)))
         graph = build_flow_graph(trace)
-        
+
         assert len(graph.nodes) == 1
         assert graph.max_parallelism == 1

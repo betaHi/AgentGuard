@@ -1,10 +1,17 @@
 """Tests for statistical analysis."""
 
+
 import pytest
-import math
+
 from agentguard.stats import (
-    mean, median, stdev, percentile,
-    detect_outliers, moving_average, detect_trend, describe,
+    describe,
+    detect_outliers,
+    detect_trend,
+    mean,
+    median,
+    moving_average,
+    percentile,
+    stdev,
 )
 
 

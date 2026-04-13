@@ -4,11 +4,10 @@ Verifies no phantom handoffs, no phantom failures, and that all
 rendered data comes from the analysis layer (single source of truth).
 """
 
-import re
-from agentguard.web.viewer import _build_gantt, _build_sidebar, _build_full_html
+from agentguard.analysis import analyze_bottleneck, analyze_failures, analyze_flow
 from agentguard.builder import TraceBuilder
-from agentguard.analysis import analyze_failures, analyze_flow, analyze_bottleneck
-from agentguard.core.trace import ExecutionTrace, Span, SpanType, SpanStatus
+from agentguard.core.trace import ExecutionTrace
+from agentguard.web.viewer import _build_full_html, _build_sidebar
 
 
 def _count_handoff_rows(html: str) -> int:
@@ -41,7 +40,7 @@ def test_no_phantom_handoffs_sequential_agents():
 def test_confirmed_handoffs_rendered():
     """Handoffs from record_handoff() should appear in viewer."""
     from agentguard import record_handoff
-    from agentguard.sdk.recorder import init_recorder, finish_recording
+    from agentguard.sdk.recorder import finish_recording, init_recorder
 
     init_recorder(task="with handoffs")
 
@@ -131,8 +130,8 @@ def test_single_agent_no_bottleneck_label():
 
 def test_handoff_count_matches_analysis():
     """Number of rendered handoff rows must equal analysis handoff count."""
-    from agentguard import record_handoff, record_agent
-    from agentguard.sdk.recorder import init_recorder, finish_recording
+    from agentguard import record_agent, record_handoff
+    from agentguard.sdk.recorder import finish_recording, init_recorder
 
     init_recorder(task="exact match")
 

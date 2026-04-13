@@ -11,14 +11,13 @@ Classifies errors into categories:
 from __future__ import annotations
 
 import re
-from dataclasses import dataclass, field
-from enum import Enum
-from typing import Optional
+from dataclasses import dataclass
+from enum import StrEnum
 
-from agentguard.core.trace import ExecutionTrace, Span, SpanStatus
+from agentguard.core.trace import ExecutionTrace, SpanStatus
 
 
-class ErrorCategory(str, Enum):
+class ErrorCategory(StrEnum):
     TRANSIENT = "transient"
     PERMANENT = "permanent"
     RESOURCE = "resource"
@@ -53,25 +52,25 @@ def classify_error(error_msg: str) -> ErrorCategory:
     """Classify an error message into a category."""
     if not error_msg:
         return ErrorCategory.UNKNOWN
-    
+
     lower = error_msg.lower()
-    
+
     for pattern in _TRANSIENT_PATTERNS:
         if re.search(pattern, lower):
             return ErrorCategory.TRANSIENT
-    
+
     for pattern in _PERMANENT_PATTERNS:
         if re.search(pattern, lower):
             return ErrorCategory.PERMANENT
-    
+
     for pattern in _RESOURCE_PATTERNS:
         if re.search(pattern, lower):
             return ErrorCategory.RESOURCE
-    
+
     for pattern in _LOGIC_PATTERNS:
         if re.search(pattern, lower):
             return ErrorCategory.LOGIC
-    
+
     return ErrorCategory.UNKNOWN
 
 
@@ -82,7 +81,7 @@ class ErrorReport:
     by_category: dict[str, int]
     retryable_count: int
     errors: list[dict]
-    
+
     def to_dict(self) -> dict:
         return {
             "total_errors": self.total_errors,
@@ -90,7 +89,7 @@ class ErrorReport:
             "retryable_count": self.retryable_count,
             "errors": self.errors[:20],
         }
-    
+
     def to_report(self) -> str:
         lines = [
             f"# Error Analysis ({self.total_errors} errors)",
@@ -100,12 +99,12 @@ class ErrorReport:
         for cat, count in sorted(self.by_category.items(), key=lambda x: -x[1]):
             icon = {"transient": "🔄", "permanent": "🔒", "resource": "💾", "logic": "🐛", "unknown": "❓"}.get(cat, "❓")
             lines.append(f"{icon} **{cat}**: {count}")
-        
+
         if self.errors:
             lines.append("")
             for e in self.errors[:10]:
                 lines.append(f"  [{e['category']}] {e['agent']}: {e['error'][:60]}")
-        
+
         return "\n".join(lines)
 
 
@@ -113,7 +112,7 @@ def analyze_errors(trace: ExecutionTrace) -> ErrorReport:
     """Analyze all errors in a trace with classification."""
     errors = []
     by_category: dict[str, int] = {}
-    
+
     for span in trace.spans:
         if span.status == SpanStatus.FAILED and span.error:
             cat = classify_error(span.error)
@@ -125,9 +124,9 @@ def analyze_errors(trace: ExecutionTrace) -> ErrorReport:
                 "span_type": span.span_type.value,
             })
             by_category[cat.value] = by_category.get(cat.value, 0) + 1
-    
+
     retryable = sum(1 for e in errors if e["retryable"])
-    
+
     return ErrorReport(
         total_errors=len(errors),
         by_category=by_category,

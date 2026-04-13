@@ -2,15 +2,17 @@
 
 Shows how to instrument a multi-agent system with minimal code changes.
 """
-import sys, os
+import os
+import sys
+
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 
-import time
 import random
-from agentguard import record_agent, record_tool
-from agentguard.sdk.recorder import init_recorder, finish_recording
+import time
 
+from agentguard import record_agent, record_tool
+from agentguard.sdk.recorder import finish_recording, init_recorder
 
 # --- Tools (add @record_tool, that's it) ---
 
@@ -66,17 +68,17 @@ def run_research(task: str) -> dict:
 if __name__ == "__main__":
     # Start recording
     recorder = init_recorder(task="AI Agent Research Report", trigger="manual")
-    
+
     # Run the workflow
     result = run_research("AI Agent Observability")
-    
+
     # Save trace
     trace = finish_recording()
     print(f"\n✅ Trace saved: .agentguard/traces/{trace.trace_id}.json")
     print(f"   Agents: {len(trace.agent_spans)}, Tools: {len(trace.tool_spans)}, Duration: {trace.duration_ms:.0f}ms")
-    print(f"\n📊 View trace:")
+    print("\n📊 View trace:")
     print(f"   python -m agentguard.cli.main show .agentguard/traces/{trace.trace_id}.json")
-    
+
     # Generate web report
     from agentguard.web.viewer import generate_timeline_html
     report = generate_timeline_html()

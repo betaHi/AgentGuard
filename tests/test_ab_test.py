@@ -1,13 +1,13 @@
 """Tests for A/B testing."""
 
-import pytest
-from datetime import datetime, timezone, timedelta
-from agentguard.core.trace import ExecutionTrace, Span, SpanType, SpanStatus
-from agentguard.ab_test import ab_test, ABResult
+from datetime import UTC, datetime, timedelta
+
+from agentguard.ab_test import ab_test
+from agentguard.core.trace import ExecutionTrace, Span, SpanStatus, SpanType
 
 
 def _ts(offset_s: float = 0) -> str:
-    base = datetime(2026, 4, 12, 0, 0, 0, tzinfo=timezone.utc)
+    base = datetime(2026, 4, 12, 0, 0, 0, tzinfo=UTC)
     return (base + timedelta(seconds=offset_s)).isoformat()
 
 

@@ -1,17 +1,20 @@
 """Tests for alert rules engine."""
 
-import pytest
-from datetime import datetime, timezone, timedelta
-from agentguard.core.trace import ExecutionTrace, Span, SpanType, SpanStatus
+from datetime import UTC, datetime, timedelta
+
 from agentguard.alerts import (
-    AlertEngine, Alert,
-    rule_score_below, rule_error_rate_above,
-    rule_duration_above, rule_cost_above, rule_trace_failed,
+    AlertEngine,
+    rule_cost_above,
+    rule_duration_above,
+    rule_error_rate_above,
+    rule_score_below,
+    rule_trace_failed,
 )
+from agentguard.core.trace import ExecutionTrace, Span, SpanStatus, SpanType
 
 
 def _ts(offset_s: float = 0) -> str:
-    base = datetime(2026, 4, 12, 0, 0, 0, tzinfo=timezone.utc)
+    base = datetime(2026, 4, 12, 0, 0, 0, tzinfo=UTC)
     return (base + timedelta(seconds=offset_s)).isoformat()
 
 
@@ -68,21 +71,21 @@ class TestAlertEngine:
         engine = AlertEngine()
         engine.add_rule(rule_trace_failed())
         engine.add_rule(rule_score_below(90))
-        
+
         alerts = engine.evaluate(_bad_trace())
         assert len(alerts) >= 1
 
     def test_no_alerts(self):
         engine = AlertEngine()
         engine.add_rule(rule_trace_failed())
-        
+
         alerts = engine.evaluate(_good_trace())
         assert len(alerts) == 0
 
     def test_batch(self):
         engine = AlertEngine()
         engine.add_rule(rule_trace_failed())
-        
+
         alerts = engine.evaluate_batch([_good_trace(), _bad_trace(), _good_trace()])
         assert len(alerts) == 1
 

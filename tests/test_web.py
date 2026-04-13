@@ -1,8 +1,8 @@
 """Tests for web viewer — verifies analysis layer integration."""
 
-import json
 import tempfile
 from pathlib import Path
+
 from agentguard.core.trace import ExecutionTrace, Span, SpanType
 from agentguard.web.viewer import generate_timeline_html
 
@@ -37,7 +37,7 @@ def test_generate_html_with_traces():
         t.add_span(tool)
         t.complete()
         _write_trace(traces_dir, t)
-        
+
         output = generate_timeline_html(
             traces_dir=str(traces_dir),
             output=str(Path(tmpdir) / "report.html")
@@ -54,24 +54,24 @@ def test_web_shows_failure_diagnostics():
         traces_dir = Path(tmpdir) / "traces"
         t = ExecutionTrace(task="Failure Test")
         coord = Span(name="coordinator", span_type=SpanType.AGENT)
-        
+
         agent_a = Span(name="agent-a", span_type=SpanType.AGENT, parent_span_id=coord.span_id)
         tool = Span(name="search", span_type=SpanType.TOOL, parent_span_id=agent_a.span_id)
         tool.fail("timeout")
         agent_a.fail("search failed")
-        
+
         agent_b = Span(name="agent-b", span_type=SpanType.AGENT, parent_span_id=coord.span_id)
         agent_b.complete()
         coord.complete()
-        
+
         for s in [coord, agent_a, tool, agent_b]:
             t.add_span(s)
         t.complete()
         _write_trace(traces_dir, t)
-        
+
         output = generate_timeline_html(str(traces_dir), str(Path(tmpdir) / "r.html"))
         html = Path(output).read_text()
-        
+
         # Should show unhandled failure from analysis layer
         assert "unhandled" in html.lower(), "Should show unhandled failure count"
         # Should show root cause
@@ -93,10 +93,10 @@ def test_web_shows_handoff():
             t.add_span(s)
         t.complete()
         _write_trace(traces_dir, t)
-        
+
         output = generate_timeline_html(str(traces_dir), str(Path(tmpdir) / "r.html"))
         html = Path(output).read_text()
-        
+
         assert "handoff" in html.lower(), "Should show handoff indicator"
         assert "researcher" in html
         assert "analyst" in html
@@ -117,7 +117,7 @@ def test_web_shows_bottleneck():
             t.add_span(s)
         t.complete()
         _write_trace(traces_dir, t)
-        
+
         output = generate_timeline_html(str(traces_dir), str(Path(tmpdir) / "r.html"))
         html = Path(output).read_text()
         assert "bottleneck" in html.lower(), "Should show bottleneck indicator"
@@ -134,7 +134,7 @@ def test_web_xss_prevention():
         t.add_span(s)
         t.fail()
         _write_trace(traces_dir, t)
-        
+
         output = generate_timeline_html(str(traces_dir), str(Path(tmpdir) / "r.html"))
         html = Path(output).read_text()
         assert '<script>alert' not in html
@@ -144,12 +144,12 @@ def test_web_xss_prevention():
 
 class TestViewerParallel:
     """Test that viewer correctly renders parallel traces."""
-    
+
     def test_parallel_trace_renders(self):
         """Parallel trace should produce valid HTML with parallel indicators."""
         from agentguard.builder import TraceBuilder
         from agentguard.web.viewer import trace_to_html_string
-        
+
         trace = (TraceBuilder("parallel viewer test")
             .agent("orchestrator", duration_ms=10000)
                 .agent("worker_a", duration_ms=3000).end()
@@ -157,23 +157,23 @@ class TestViewerParallel:
                 .agent("worker_c", duration_ms=3000).end()
             .end()
             .build())
-        
+
         html = trace_to_html_string(trace)
         assert "worker_a" in html
         assert "worker_b" in html
         assert "worker_c" in html
         assert "AgentGuard" in html
-    
+
     def test_failed_trace_renders(self):
         """Failed trace should show error indicators."""
         from agentguard.builder import TraceBuilder
         from agentguard.web.viewer import trace_to_html_string
-        
+
         trace = (TraceBuilder("fail viewer test")
             .agent("bad_agent", duration_ms=1000, status="failed", error="API timeout")
             .end()
             .build())
-        
+
         html = trace_to_html_string(trace)
         assert "FAIL" in html
         assert "bad_agent" in html
@@ -182,13 +182,13 @@ class TestViewerParallel:
         """Handoffs should be visible in HTML."""
         from agentguard.builder import TraceBuilder
         from agentguard.web.viewer import trace_to_html_string
-        
+
         trace = (TraceBuilder("handoff viewer test")
             .agent("sender", duration_ms=2000).end()
             .handoff("sender", "receiver", context_size=1500)
             .agent("receiver", duration_ms=3000).end()
             .build())
-        
+
         html = trace_to_html_string(trace)
         assert "sender" in html
         assert "receiver" in html
@@ -197,11 +197,11 @@ class TestViewerParallel:
         """Score badge should be in the HTML."""
         from agentguard.builder import TraceBuilder
         from agentguard.web.viewer import trace_to_html_string
-        
+
         trace = (TraceBuilder("score test")
             .agent("a", duration_ms=1000).end()
             .build())
-        
+
         html = trace_to_html_string(trace)
         assert "score-" in html  # score-a, score-b, etc.
         assert "/100" in html
@@ -209,26 +209,26 @@ class TestViewerParallel:
 
 class TestViewerDiagnostics:
     """Verify diagnostics panels contain expected data."""
-    
+
     def test_cost_panel_shows_tokens(self):
         """Cost panel should show token count."""
         from agentguard.builder import TraceBuilder
         from agentguard.web.viewer import trace_to_html_string
-        
+
         trace = (TraceBuilder("cost test")
             .agent("llm_agent", token_count=5000, cost_usd=0.15)
                 .llm_call("gpt4", token_count=4000, cost_usd=0.12)
             .end()
             .build())
-        
+
         html = trace_to_html_string(trace)
         assert "5,000" in html or "9,000" in html  # token count formatted
-    
+
     def test_diagnostics_grid_exists(self):
         """Diagnostics section should be in output."""
         from agentguard.builder import TraceBuilder
         from agentguard.web.viewer import trace_to_html_string
-        
+
         trace = (TraceBuilder("diag test")
             .agent("a", duration_ms=2000)
                 .tool("t1", duration_ms=1000)
@@ -236,35 +236,35 @@ class TestViewerDiagnostics:
             .agent("b", duration_ms=3000)
             .end()
             .build())
-        
+
         html = trace_to_html_string(trace)
         assert "Orchestration Diagnostics" in html
         assert "Failure Propagation" in html
         assert "Bottleneck" in html
         assert "Handoff Flow" in html
-    
+
     def test_empty_trace_no_crash(self):
         """Generating HTML for empty trace should not crash."""
-        from agentguard.web.viewer import trace_to_html_string
         from agentguard.core.trace import ExecutionTrace
-        
+        from agentguard.web.viewer import trace_to_html_string
+
         html = trace_to_html_string(ExecutionTrace(task="empty"))
         assert "AgentGuard" in html
 
 
 class TestViewerAdvanced:
     """Advanced viewer tests."""
-    
+
     def test_large_trace_renders(self):
         """Trace with many spans should render without crashing."""
         from agentguard.builder import TraceBuilder
         from agentguard.web.viewer import trace_to_html_string
-        
+
         b = TraceBuilder("large trace")
         for i in range(50):
             b = b.agent(f"agent_{i}", duration_ms=100 + i * 10).end()
         trace = b.build()
-        
+
         html = trace_to_html_string(trace)
         assert len(html) > 1000
         assert "agent_0" in html
@@ -274,13 +274,13 @@ class TestViewerAdvanced:
         """Handoff context sizes should appear in HTML."""
         from agentguard.builder import TraceBuilder
         from agentguard.web.viewer import trace_to_html_string
-        
+
         trace = (TraceBuilder("handoff ctx test")
             .agent("a", duration_ms=1000).end()
             .handoff("a", "b", context_size=12345)
             .agent("b", duration_ms=1000).end()
             .build())
-        
+
         html = trace_to_html_string(trace)
         assert "12,345" in html or "12345" in html
 
@@ -288,13 +288,13 @@ class TestViewerAdvanced:
         """LLM call summary should appear in sidebar."""
         from agentguard.builder import TraceBuilder
         from agentguard.web.viewer import trace_to_html_string
-        
+
         trace = (TraceBuilder("llm sidebar test")
             .agent("a")
                 .llm_call("gpt4", token_count=5000, cost_usd=0.15)
             .end()
             .build())
-        
+
         html = trace_to_html_string(trace)
         assert "LLM Calls" in html
         assert "5,000" in html

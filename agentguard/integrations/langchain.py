@@ -23,12 +23,12 @@ Example::
 
 from __future__ import annotations
 
-import time
-from typing import Any, Optional, Union
+from datetime import UTC
+from typing import Any
 from uuid import UUID
 
+from agentguard.core.trace import Span, SpanStatus, SpanType
 from agentguard.sdk.context import get_recorder
-from agentguard.core.trace import Span, SpanType, SpanStatus
 
 
 def _ensure_langchain() -> type:
@@ -47,18 +47,18 @@ def _ensure_langchain() -> type:
             raise ImportError(
                 "langchain is required for AgentGuardHandler. "
                 "Install it with: pip install langchain-core"
-            )
+            ) from None
 
 
-def _make_span_id(run_id: Union[UUID, str]) -> str:
+def _make_span_id(run_id: UUID | str) -> str:
     """Convert a LangChain run_id to a stable span ID."""
     return f"lc-{run_id}"
 
 
 def _ts_now() -> str:
     """ISO timestamp for span boundaries."""
-    from datetime import datetime, timezone
-    return datetime.now(timezone.utc).isoformat()
+    from datetime import datetime
+    return datetime.now(UTC).isoformat()
 
 
 class AgentGuardHandler:
@@ -82,12 +82,12 @@ class AgentGuardHandler:
 
     def on_llm_start(
         self, serialized: dict, prompts: list[str],
-        *, run_id: UUID, parent_run_id: Optional[UUID] = None,
+        *, run_id: UUID, parent_run_id: UUID | None = None,
         **kwargs: Any,
     ) -> None:
         """Record LLM call as a tool span."""
         model_name = _extract_model_name(serialized)
-        span = self._start_span(
+        self._start_span(
             run_id, f"llm:{model_name}", SpanType.TOOL,
             parent_run_id=parent_run_id,
             input_data={"prompts": prompts} if self._record_inputs else None,
@@ -108,7 +108,7 @@ class AgentGuardHandler:
 
     def on_chain_start(
         self, serialized: dict, inputs: dict,
-        *, run_id: UUID, parent_run_id: Optional[UUID] = None,
+        *, run_id: UUID, parent_run_id: UUID | None = None,
         **kwargs: Any,
     ) -> None:
         chain_name = serialized.get("id", ["unknown"])[-1]
@@ -129,7 +129,7 @@ class AgentGuardHandler:
 
     def on_tool_start(
         self, serialized: dict, input_str: str,
-        *, run_id: UUID, parent_run_id: Optional[UUID] = None,
+        *, run_id: UUID, parent_run_id: UUID | None = None,
         **kwargs: Any,
     ) -> None:
         tool_name = serialized.get("name", "unknown_tool")
@@ -150,8 +150,8 @@ class AgentGuardHandler:
 
     def _start_span(
         self, run_id: UUID, name: str, span_type: SpanType,
-        parent_run_id: Optional[UUID] = None,
-        input_data: Any = None, metadata: Optional[dict] = None,
+        parent_run_id: UUID | None = None,
+        input_data: Any = None, metadata: dict | None = None,
     ) -> Span:
         """Create and register a new span."""
         recorder = get_recorder()

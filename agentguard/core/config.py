@@ -9,11 +9,11 @@ Supports loading config from JSON (zero dependencies) or YAML (requires PyYAML).
 
 from __future__ import annotations
 
-import json
 import hashlib
+import json
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Any, Optional
+from typing import Any
 
 
 @dataclass
@@ -24,7 +24,7 @@ class AgentTestConfig:
     assertions: list[dict] = field(default_factory=list)
 
 
-@dataclass  
+@dataclass
 class AgentConfig:
     """Configuration for a single agent."""
     name: str = ""
@@ -49,7 +49,7 @@ class GuardConfig:
     """Top-level AgentGuard configuration."""
     agents: list[AgentConfig] = field(default_factory=list)
     output_dir: str = ".agentguard"
-    
+
     @classmethod
     def from_dict(cls, data: dict) -> GuardConfig:
         """Load config from a dictionary."""
@@ -77,12 +77,12 @@ class GuardConfig:
         path = Path(filepath)
         if not path.exists():
             return cls()
-        
+
         content = path.read_text(encoding="utf-8")
-        
+
         if filepath.endswith(".json"):
             return cls.from_dict(json.loads(content))
-        
+
         # Simple YAML parser (handles basic nested structures)
         # For full YAML support, users can install PyYAML
         try:
@@ -95,4 +95,4 @@ class GuardConfig:
                 "PyYAML is required for .yaml config files. "
                 "Install with: pip install pyyaml\n"
                 "Or use agentguard.json instead."
-            )
+            ) from None

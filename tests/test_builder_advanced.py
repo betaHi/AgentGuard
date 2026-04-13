@@ -1,18 +1,19 @@
 """Advanced builder tests — verify complex trace structures."""
 
 import pytest
+
 from agentguard.builder import TraceBuilder
-from agentguard.core.trace import SpanType, SpanStatus
-from agentguard.scoring import score_trace
+from agentguard.core.trace import SpanType
 from agentguard.flowgraph import build_flow_graph
-from agentguard.propagation import analyze_propagation
 from agentguard.normalize import normalize_trace
+from agentguard.propagation import analyze_propagation
 from agentguard.schema import validate_trace_dict
+from agentguard.scoring import score_trace
 
 
 class TestBuilderComplexTraces:
     """Build complex traces and verify they analyze correctly."""
-    
+
     def test_deeply_nested(self):
         """5 levels of nesting."""
         trace = (TraceBuilder("deep")
@@ -25,7 +26,7 @@ class TestBuilderComplexTraces:
                 .end()
             .end()
             .build())
-        
+
         assert len(trace.spans) == 5
         errors = validate_trace_dict(trace.to_dict())
         assert errors == []
@@ -36,7 +37,7 @@ class TestBuilderComplexTraces:
         for i in range(10):
             b = b.agent(f"worker_{i}", duration_ms=1000).end()
         trace = b.end().build()
-        
+
         assert len(trace.spans) == 11
         graph = build_flow_graph(trace)
         # Builder creates sequential spans (time cursor advances), so parallelism = 1
@@ -55,10 +56,10 @@ class TestBuilderComplexTraces:
             .agent("recovery_agent", duration_ms=1500)
             .end()
             .build())
-        
+
         prop = analyze_propagation(trace)
         assert prop.total_failures >= 2
-        
+
         score = score_trace(trace)
         assert 20 < score.overall < 90
 
@@ -66,12 +67,12 @@ class TestBuilderComplexTraces:
         """Long chain of handoffs: A → B → C → D → E."""
         b = TraceBuilder("chain")
         agents = ["planner", "researcher", "analyst", "writer", "reviewer"]
-        
+
         for i, name in enumerate(agents):
             b = b.agent(name, duration_ms=1000, output_data={f"step_{i}": "data"}).end()
             if i < len(agents) - 1:
                 b = b.handoff(name, agents[i + 1], context_size=500 * (i + 1))
-        
+
         trace = b.build()
         handoffs = [s for s in trace.spans if s.span_type == SpanType.HANDOFF]
         assert len(handoffs) == 4
@@ -86,7 +87,7 @@ class TestBuilderComplexTraces:
                 .tool("flaky", status="completed", retry_count=2)
             .end()
             .build())
-        
+
         assert len(trace.spans) == 4
 
     def test_llm_heavy_pipeline(self):
@@ -101,7 +102,7 @@ class TestBuilderComplexTraces:
                 .llm_call("gpt4-edit", token_count=2000, cost_usd=0.06)
             .end()
             .build())
-        
+
         from agentguard.metrics import extract_metrics
         m = extract_metrics(trace)
         assert m.total_tokens == 26000
@@ -119,7 +120,7 @@ class TestBuilderComplexTraces:
     def test_json_roundtrip(self):
         """Complex trace should survive JSON serialization."""
         from agentguard.core.trace import ExecutionTrace
-        
+
         trace = (TraceBuilder("roundtrip")
             .agent("a", duration_ms=3000, tags=["critical"], token_count=1000)
                 .tool("t1", duration_ms=1000, retry_count=2)
@@ -129,9 +130,9 @@ class TestBuilderComplexTraces:
             .agent("b", duration_ms=2000)
             .end()
             .build())
-        
+
         json_str = trace.to_json()
         restored = ExecutionTrace.from_json(json_str)
-        
+
         assert len(restored.spans) == len(trace.spans)
         assert restored.task == trace.task

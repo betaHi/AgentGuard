@@ -11,9 +11,8 @@ a performance profile:
 from __future__ import annotations
 
 from dataclasses import dataclass, field
-from typing import Optional
 
-from agentguard.core.trace import ExecutionTrace, Span, SpanType, SpanStatus
+from agentguard.core.trace import ExecutionTrace, SpanStatus, SpanType
 
 
 @dataclass
@@ -30,15 +29,15 @@ class AgentProfile:
     handoff_to: dict[str, int] = field(default_factory=dict)  # agent_name -> count
     handoff_from: dict[str, int] = field(default_factory=dict)
     tags_seen: set[str] = field(default_factory=set)
-    
+
     @property
     def success_rate(self) -> float:
         return self.success_count / max(self.total_invocations, 1)
-    
+
     @property
     def avg_duration_ms(self) -> float:
         return sum(self.durations_ms) / max(len(self.durations_ms), 1)
-    
+
     @property
     def p95_duration_ms(self) -> float:
         if not self.durations_ms:
@@ -46,7 +45,7 @@ class AgentProfile:
         sorted_d = sorted(self.durations_ms)
         idx = int(len(sorted_d) * 0.95)
         return sorted_d[min(idx, len(sorted_d) - 1)]
-    
+
     @property
     def common_errors(self) -> list[tuple[str, int]]:
         counts: dict[str, int] = {}
@@ -54,7 +53,7 @@ class AgentProfile:
             key = e[:100]
             counts[key] = counts.get(key, 0) + 1
         return sorted(counts.items(), key=lambda x: -x[1])
-    
+
     def to_dict(self) -> dict:
         return {
             "name": self.name,
@@ -68,7 +67,7 @@ class AgentProfile:
             "handoff_to": dict(self.handoff_to),
             "handoff_from": dict(self.handoff_from),
         }
-    
+
     def to_report(self) -> str:
         lines = [
             f"# Agent Profile: {self.name}",
@@ -94,33 +93,33 @@ class AgentProfile:
 def build_agent_profiles(traces: list[ExecutionTrace]) -> dict[str, AgentProfile]:
     """Build profiles for all agents across multiple traces."""
     profiles: dict[str, AgentProfile] = {}
-    
+
     for trace in traces:
         for span in trace.spans:
             if span.span_type != SpanType.AGENT:
                 continue
-            
+
             name = span.name
             if name not in profiles:
                 profiles[name] = AgentProfile(name=name)
-            
+
             p = profiles[name]
             p.total_invocations += 1
-            
+
             if span.status == SpanStatus.COMPLETED:
                 p.success_count += 1
             elif span.status == SpanStatus.FAILED:
                 p.failure_count += 1
                 if span.error:
                     p.errors.append(span.error)
-            
+
             if span.duration_ms:
                 p.durations_ms.append(span.duration_ms)
-            
+
             p.total_tokens += span.token_count or 0
             p.total_cost_usd += span.estimated_cost_usd or 0
             p.tags_seen.update(span.tags)
-        
+
         # Track handoffs
         for span in trace.spans:
             if span.span_type == SpanType.HANDOFF:
@@ -130,5 +129,5 @@ def build_agent_profiles(traces: list[ExecutionTrace]) -> dict[str, AgentProfile
                     profiles[fr].handoff_to[to] = profiles[fr].handoff_to.get(to, 0) + 1
                 if to and to in profiles:
                     profiles[to].handoff_from[fr] = profiles[to].handoff_from.get(fr, 0) + 1
-    
+
     return profiles

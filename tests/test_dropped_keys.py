@@ -1,7 +1,7 @@
 """Tests for handoff dropped key detection (Q2)."""
 
 from agentguard.analysis import analyze_context_flow
-from agentguard.core.trace import ExecutionTrace, Span, SpanType, SpanStatus
+from agentguard.core.trace import ExecutionTrace, Span, SpanStatus, SpanType
 
 
 def _handoff_trace(sender_output, receiver_input):

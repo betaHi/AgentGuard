@@ -1,8 +1,9 @@
 """Tests for handoff information retention ratio."""
 
 import json
+
 from agentguard.analysis import analyze_context_flow
-from agentguard.core.trace import ExecutionTrace, Span, SpanType, SpanStatus
+from agentguard.core.trace import ExecutionTrace, Span, SpanStatus, SpanType
 
 
 def _trace_with_handoff(sender_output, receiver_input):

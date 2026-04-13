@@ -1,8 +1,7 @@
 """Tests for error classification."""
 
-import pytest
-from agentguard.errors import classify_error, ErrorCategory, analyze_errors
 from agentguard.core.trace import ExecutionTrace, Span, SpanStatus
+from agentguard.errors import ErrorCategory, analyze_errors, classify_error
 
 
 class TestClassifyError:
@@ -38,7 +37,7 @@ class TestAnalyzeErrors:
         trace.add_span(Span(name="a", status=SpanStatus.FAILED, error="Connection timeout"))
         trace.add_span(Span(name="b", status=SpanStatus.FAILED, error="Invalid API key"))
         trace.add_span(Span(name="c", status=SpanStatus.COMPLETED))
-        
+
         report = analyze_errors(trace)
         assert report.total_errors == 2
         assert report.retryable_count == 1  # only timeout is retryable

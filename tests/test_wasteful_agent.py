@@ -1,8 +1,8 @@
 """Tests for most wasteful agent detection and recommendations (Q4)."""
 
-from agentguard.analysis import analyze_cost_yield, _compute_waste_score, CostYieldEntry
+from agentguard.analysis import CostYieldEntry, _compute_waste_score, analyze_cost_yield
 from agentguard.builder import TraceBuilder
-from agentguard.core.trace import ExecutionTrace, Span, SpanType, SpanStatus
+from agentguard.core.trace import ExecutionTrace, SpanStatus
 
 
 def _entry(agent, tokens=0, cost=0.0, status="completed",

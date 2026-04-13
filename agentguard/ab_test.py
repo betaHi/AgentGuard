@@ -10,12 +10,10 @@ Supports:
 
 from __future__ import annotations
 
-from dataclasses import dataclass, field
-from typing import Optional
+from dataclasses import dataclass
 
-from agentguard.core.trace import ExecutionTrace, SpanStatus
-from agentguard.scoring import score_trace
 from agentguard.aggregate import aggregate_traces
+from agentguard.core.trace import ExecutionTrace
 
 
 @dataclass
@@ -35,7 +33,7 @@ class ABResult:
     score_delta: float
     regressions: list[dict]  # metrics where B is worse than A
     improvements: list[dict]  # metrics where B is better than A
-    
+
     def to_dict(self) -> dict:
         return {
             "group_a": self.group_a_name,
@@ -50,7 +48,7 @@ class ABResult:
             "regressions": self.regressions,
             "improvements": self.improvements,
         }
-    
+
     def to_report(self) -> str:
         winner_icon = "🏆"
         lines = [
@@ -65,19 +63,19 @@ class ABResult:
             "",
             f"{winner_icon} **Winner: {self.group_b_name if self.winner == 'b' else self.group_a_name if self.winner == 'a' else 'Tie'}** (Δ score: {self.score_delta:+.0f})",
         ]
-        
+
         if self.improvements:
             lines.append("")
             lines.append("## Improvements ✅")
             for imp in self.improvements:
                 lines.append(f"- {imp['metric']}: {imp['before']} → {imp['after']}")
-        
+
         if self.regressions:
             lines.append("")
             lines.append("## Regressions 🔴")
             for reg in self.regressions:
                 lines.append(f"- {reg['metric']}: {reg['before']} → {reg['after']}")
-        
+
         return "\n".join(lines)
 
 
@@ -89,22 +87,22 @@ def ab_test(
     significance_threshold: float = 5.0,
 ) -> ABResult:
     """Run an A/B test comparing two groups of traces.
-    
+
     Args:
         group_a: Baseline traces.
         group_b: Candidate traces.
         name_a: Name for group A.
         name_b: Name for group B.
         significance_threshold: Minimum score difference to declare a winner.
-    
+
     Returns:
         ABResult with comparison metrics and winner.
     """
     agg_a = aggregate_traces(group_a)
     agg_b = aggregate_traces(group_b)
-    
+
     score_delta = agg_b.avg_score - agg_a.avg_score
-    
+
     # Determine winner
     if abs(score_delta) < significance_threshold:
         winner = "tie"
@@ -112,38 +110,35 @@ def ab_test(
         winner = "b"
     else:
         winner = "a"
-    
+
     # Find regressions and improvements
     regressions = []
     improvements = []
-    
+
     metrics = [
         ("Score", agg_a.avg_score, agg_b.avg_score, True),  # higher is better
         ("Success Rate", agg_a.success_rate, agg_b.success_rate, True),
         ("Duration (ms)", agg_a.avg_duration_ms, agg_b.avg_duration_ms, False),  # lower is better
     ]
-    
+
     for name, val_a, val_b, higher_better in metrics:
         delta = val_b - val_a
-        if higher_better:
-            is_better = delta > 0
-        else:
-            is_better = delta < 0
-        
+        is_better = delta > 0 if higher_better else delta < 0
+
         entry = {
             "metric": name,
             "before": round(val_a, 2),
             "after": round(val_b, 2),
             "delta": round(delta, 2),
         }
-        
+
         # Only flag significant changes
         if abs(delta) > 0.01:
             if is_better:
                 improvements.append(entry)
             else:
                 regressions.append(entry)
-    
+
     return ABResult(
         group_a_name=name_a,
         group_b_name=name_b,

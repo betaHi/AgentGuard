@@ -7,10 +7,11 @@ This is the definitive integration test for examples. Checks:
 4. Output length is reasonable (not empty, not suspiciously short)
 """
 
+import glob
+import os
 import subprocess
 import sys
-import os
-import glob
+
 import pytest
 
 EXAMPLES_DIR = os.path.join(os.path.dirname(os.path.dirname(__file__)), "examples")

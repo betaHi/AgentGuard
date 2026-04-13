@@ -9,13 +9,13 @@ Provides a declarative rule system:
 
 from __future__ import annotations
 
+from collections.abc import Callable
 from dataclasses import dataclass, field
-from datetime import datetime, timezone
-from typing import Callable, Optional
+from datetime import UTC, datetime
 
 from agentguard.core.trace import ExecutionTrace, SpanStatus
-from agentguard.scoring import score_trace
 from agentguard.metrics import extract_metrics
+from agentguard.scoring import score_trace
 
 
 @dataclass
@@ -25,9 +25,9 @@ class Alert:
     severity: str  # "info", "warning", "error", "critical"
     message: str
     trace_id: str
-    timestamp: str = field(default_factory=lambda: datetime.now(timezone.utc).isoformat())
+    timestamp: str = field(default_factory=lambda: datetime.now(UTC).isoformat())
     details: dict = field(default_factory=dict)
-    
+
     def to_dict(self) -> dict:
         return {
             "rule": self.rule_name,
@@ -39,12 +39,12 @@ class Alert:
         }
 
 
-AlertRule = Callable[[ExecutionTrace], Optional[Alert]]
+AlertRule = Callable[[ExecutionTrace], Alert | None]
 
 
 def rule_score_below(threshold: float, severity: str = "warning") -> AlertRule:
     """Alert if trace score drops below threshold."""
-    def check(trace: ExecutionTrace) -> Optional[Alert]:
+    def check(trace: ExecutionTrace) -> Alert | None:
         score = score_trace(trace)
         if score.overall < threshold:
             return Alert(
@@ -60,7 +60,7 @@ def rule_score_below(threshold: float, severity: str = "warning") -> AlertRule:
 
 def rule_error_rate_above(threshold: float, severity: str = "error") -> AlertRule:
     """Alert if error rate exceeds threshold."""
-    def check(trace: ExecutionTrace) -> Optional[Alert]:
+    def check(trace: ExecutionTrace) -> Alert | None:
         m = extract_metrics(trace)
         if m.error_rate > threshold:
             return Alert(
@@ -76,7 +76,7 @@ def rule_error_rate_above(threshold: float, severity: str = "error") -> AlertRul
 
 def rule_duration_above(max_ms: float, severity: str = "warning") -> AlertRule:
     """Alert if trace duration exceeds threshold."""
-    def check(trace: ExecutionTrace) -> Optional[Alert]:
+    def check(trace: ExecutionTrace) -> Alert | None:
         dur = trace.duration_ms
         if dur and dur > max_ms:
             return Alert(
@@ -92,7 +92,7 @@ def rule_duration_above(max_ms: float, severity: str = "warning") -> AlertRule:
 
 def rule_cost_above(max_usd: float, severity: str = "warning") -> AlertRule:
     """Alert if total cost exceeds threshold."""
-    def check(trace: ExecutionTrace) -> Optional[Alert]:
+    def check(trace: ExecutionTrace) -> Alert | None:
         m = extract_metrics(trace)
         if m.total_cost_usd > max_usd:
             return Alert(
@@ -108,7 +108,7 @@ def rule_cost_above(max_usd: float, severity: str = "warning") -> AlertRule:
 
 def rule_trace_failed(severity: str = "error") -> AlertRule:
     """Alert on any trace failure."""
-    def check(trace: ExecutionTrace) -> Optional[Alert]:
+    def check(trace: ExecutionTrace) -> Alert | None:
         if trace.status == SpanStatus.FAILED:
             errors = [s.error for s in trace.spans if s.error]
             return Alert(
@@ -124,14 +124,14 @@ def rule_trace_failed(severity: str = "error") -> AlertRule:
 
 class AlertEngine:
     """Engine for evaluating alert rules against traces."""
-    
+
     def __init__(self) -> None:
         self._rules: list[AlertRule] = []
-    
+
     def add_rule(self, rule: AlertRule) -> None:
         """Register an alert rule."""
         self._rules.append(rule)
-    
+
     def evaluate(self, trace: ExecutionTrace) -> list[Alert]:
         """Evaluate all rules against a trace. Returns triggered alerts."""
         alerts = []
@@ -143,14 +143,14 @@ class AlertEngine:
             except Exception:
                 pass  # Rule evaluation errors are silently ignored
         return alerts
-    
+
     def evaluate_batch(self, traces: list[ExecutionTrace]) -> list[Alert]:
         """Evaluate rules against multiple traces."""
         all_alerts = []
         for trace in traces:
             all_alerts.extend(self.evaluate(trace))
         return all_alerts
-    
+
     @property
     def rule_count(self) -> int:
         return len(self._rules)

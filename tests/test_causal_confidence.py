@@ -1,9 +1,7 @@
 """Tests for causal chain confidence scores in failure propagation."""
 
-from agentguard.propagation import (
-    analyze_propagation, _compute_link_confidence, CausalLink
-)
-from agentguard.core.trace import ExecutionTrace, Span, SpanType, SpanStatus
+from agentguard.core.trace import ExecutionTrace, Span, SpanStatus, SpanType
+from agentguard.propagation import _compute_link_confidence, analyze_propagation
 
 
 def _make_span(name, span_type=SpanType.AGENT, parent_id=None,

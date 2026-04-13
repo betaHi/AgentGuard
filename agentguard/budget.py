@@ -7,24 +7,23 @@ when approaching limits.
 
 from __future__ import annotations
 
-from dataclasses import dataclass, field
-from typing import Optional
+from dataclasses import dataclass
 
-from agentguard.core.trace import ExecutionTrace, Span, SpanType
+from agentguard.core.trace import ExecutionTrace, SpanType
 
 
 @dataclass
 class BudgetUsage:
     """Context budget usage for a single agent."""
     agent_name: str
-    budget_tokens: Optional[int]  # configured limit (None = unlimited)
+    budget_tokens: int | None  # configured limit (None = unlimited)
     used_tokens: int
     input_tokens: int  # tokens in input
     output_tokens: int  # tokens generated
     utilization: float  # 0-1 (used/budget)
     over_budget: bool
     headroom_tokens: int  # remaining budget
-    
+
     def to_dict(self) -> dict:
         return {
             "agent": self.agent_name,
@@ -41,10 +40,10 @@ class BudgetReport:
     """Context budget report for a trace."""
     agents: list[BudgetUsage]
     total_tokens: int
-    total_budget: Optional[int]
+    total_budget: int | None
     over_budget_count: int
     high_utilization_count: int  # agents using > 80% of budget
-    
+
     def to_dict(self) -> dict:
         return {
             "total_tokens": self.total_tokens,
@@ -53,10 +52,10 @@ class BudgetReport:
             "high_utilization": self.high_utilization_count,
             "agents": [a.to_dict() for a in self.agents],
         }
-    
+
     def to_report(self) -> str:
         lines = [
-            f"# Context Budget Report",
+            "# Context Budget Report",
             f"Total: {self.total_tokens:,} tokens",
             f"Over budget: {self.over_budget_count} agents",
             f"High utilization: {self.high_utilization_count} agents",
@@ -71,11 +70,11 @@ class BudgetReport:
 
 def analyze_budget(
     trace: ExecutionTrace,
-    budgets: Optional[dict[str, int]] = None,
-    default_budget: Optional[int] = None,
+    budgets: dict[str, int] | None = None,
+    default_budget: int | None = None,
 ) -> BudgetReport:
     """Analyze token budget consumption for each agent.
-    
+
     Args:
         trace: The execution trace.
         budgets: Dict of agent_name → token_limit.
@@ -83,18 +82,18 @@ def analyze_budget(
     """
     budgets = budgets or {}
     agent_usage: dict[str, dict] = {}
-    
+
     for span in trace.spans:
         if span.span_type != SpanType.AGENT:
             continue
-        
+
         name = span.name
         if name not in agent_usage:
             agent_usage[name] = {"input": 0, "output": 0, "total": 0}
-        
+
         tokens = span.token_count or 0
         agent_usage[name]["total"] += tokens
-    
+
     # Also count LLM calls under each agent
     span_map = {s.span_id: s for s in trace.spans}
     for span in trace.spans:
@@ -105,12 +104,12 @@ def analyze_budget(
                 if name not in agent_usage:
                     agent_usage[name] = {"input": 0, "output": 0, "total": 0}
                 agent_usage[name]["total"] += span.token_count or 0
-    
+
     agents = []
     for name, usage in agent_usage.items():
         budget = budgets.get(name, default_budget)
         used = usage["total"]
-        
+
         if budget:
             util = used / budget
             over = used > budget
@@ -119,7 +118,7 @@ def analyze_budget(
             util = 0
             over = False
             headroom = 0
-        
+
         agents.append(BudgetUsage(
             agent_name=name,
             budget_tokens=budget,
@@ -130,10 +129,10 @@ def analyze_budget(
             over_budget=over,
             headroom_tokens=headroom,
         ))
-    
+
     total = sum(a.used_tokens for a in agents)
     total_budget = sum(a.budget_tokens or 0 for a in agents) or None
-    
+
     return BudgetReport(
         agents=agents,
         total_tokens=total,

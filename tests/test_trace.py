@@ -1,7 +1,8 @@
 """Tests for execution trace data models."""
 
 import json
-from agentguard.core.trace import ExecutionTrace, Span, SpanType, SpanStatus
+
+from agentguard.core.trace import ExecutionTrace, Span, SpanStatus, SpanType
 
 
 def test_span_creation():
@@ -35,10 +36,10 @@ def test_trace_creation():
     trace = ExecutionTrace(task="test-task", trigger="manual")
     agent_span = Span(name="agent-1", span_type=SpanType.AGENT)
     tool_span = Span(name="search", span_type=SpanType.TOOL, parent_span_id=agent_span.span_id)
-    
+
     trace.add_span(agent_span)
     trace.add_span(tool_span)
-    
+
     assert len(trace.spans) == 2
     assert trace.spans[0].trace_id == trace.trace_id
     assert trace.spans[1].trace_id == trace.trace_id
@@ -51,13 +52,13 @@ def test_trace_serialization():
     span.complete(output="done")
     trace.add_span(span)
     trace.complete()
-    
+
     # Serialize
     json_str = trace.to_json()
     data = json.loads(json_str)
     assert data["task"] == "test-task"
     assert len(data["spans"]) == 1
-    
+
     # Deserialize
     trace2 = ExecutionTrace.from_json(json_str)
     assert trace2.task == "test-task"
@@ -68,17 +69,17 @@ def test_trace_serialization():
 def test_trace_build_tree():
     """Trace can assemble spans into a tree."""
     trace = ExecutionTrace(task="multi-agent")
-    
+
     root = Span(name="orchestrator", span_type=SpanType.AGENT)
     child1 = Span(name="agent-a", span_type=SpanType.AGENT, parent_span_id=root.span_id)
     child2 = Span(name="agent-b", span_type=SpanType.AGENT, parent_span_id=root.span_id)
     tool = Span(name="search", span_type=SpanType.TOOL, parent_span_id=child1.span_id)
-    
+
     trace.add_span(root)
     trace.add_span(child1)
     trace.add_span(child2)
     trace.add_span(tool)
-    
+
     roots = trace.build_tree()
     assert len(roots) == 1
     assert roots[0].name == "orchestrator"
@@ -92,6 +93,6 @@ def test_trace_agent_and_tool_spans():
     trace.add_span(Span(name="a1", span_type=SpanType.AGENT))
     trace.add_span(Span(name="t1", span_type=SpanType.TOOL))
     trace.add_span(Span(name="a2", span_type=SpanType.AGENT))
-    
+
     assert len(trace.agent_spans) == 2
     assert len(trace.tool_spans) == 1

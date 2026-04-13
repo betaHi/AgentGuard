@@ -1,9 +1,10 @@
 """Tests for enhanced trace export."""
 
 import pytest
-from agentguard.core.trace import ExecutionTrace, Span, SpanType, SpanStatus
+
 from agentguard.builder import TraceBuilder
-from agentguard.export_v2 import trace_to_csv, traces_to_csv, trace_to_table
+from agentguard.core.trace import ExecutionTrace, Span
+from agentguard.export_v2 import trace_to_csv, trace_to_table, traces_to_csv
 
 
 @pytest.fixture

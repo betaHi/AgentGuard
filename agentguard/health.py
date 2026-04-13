@@ -11,7 +11,6 @@ Produces a health report answering:
 from __future__ import annotations
 
 from dataclasses import dataclass, field
-from typing import Optional
 
 from agentguard.query import TraceStore
 
@@ -45,14 +44,14 @@ class HealthReport:
     agents: list[AgentHealth] = field(default_factory=list)
     overall_health: str = "healthy"
     total_traces: int = 0
-    
+
     def to_dict(self) -> dict:
         return {
             "overall": self.overall_health,
             "total_traces": self.total_traces,
             "agents": [a.to_dict() for a in self.agents],
         }
-    
+
     def to_report(self) -> str:
         icon = {"healthy": "🟢", "warning": "🟡", "critical": "🔴"}.get(self.overall_health, "⚪")
         lines = [
@@ -79,7 +78,7 @@ def generate_health_report(
     critical_threshold: float = 0.5,
 ) -> HealthReport:
     """Generate a health report from all traces on disk.
-    
+
     Args:
         traces_dir: Directory containing trace files.
         warning_threshold: Success rate below this = warning.
@@ -88,25 +87,25 @@ def generate_health_report(
     store = TraceStore(traces_dir)
     traces = store.load_all()
     agent_stats = store.agent_stats()
-    
+
     agents = []
     worst_status = "healthy"
-    
+
     for name, stats in agent_stats.items():
         rate = stats["success_rate"]
-        
+
         if rate < critical_threshold:
             status = "critical"
         elif rate < warning_threshold:
             status = "warning"
         else:
             status = "healthy"
-        
+
         if status == "critical":
             worst_status = "critical"
         elif status == "warning" and worst_status != "critical":
             worst_status = "warning"
-        
+
         agents.append(AgentHealth(
             name=name,
             total_runs=stats["executions"],
@@ -116,7 +115,7 @@ def generate_health_report(
             error_types=stats["error_types"],
             status=status,
         ))
-    
+
     return HealthReport(
         agents=agents,
         overall_health=worst_status,

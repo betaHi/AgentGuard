@@ -11,7 +11,6 @@ from __future__ import annotations
 
 import math
 from dataclasses import dataclass
-from typing import Optional
 
 
 def mean(values: list[float]) -> float:
@@ -54,18 +53,18 @@ def percentile(values: list[float], p: float) -> float:
 
 def detect_outliers(values: list[float], factor: float = 1.5) -> list[tuple[int, float]]:
     """Detect outliers using the IQR method.
-    
+
     Returns list of (index, value) tuples for outliers.
     """
     if len(values) < 4:
         return []
-    
+
     q1 = percentile(values, 25)
     q3 = percentile(values, 75)
     iqr = q3 - q1
     lower = q1 - factor * iqr
     upper = q3 + factor * iqr
-    
+
     return [(i, v) for i, v in enumerate(values) if v < lower or v > upper]
 
 
@@ -73,7 +72,7 @@ def moving_average(values: list[float], window: int = 3) -> list[float]:
     """Calculate simple moving average."""
     if len(values) < window:
         return values[:]
-    
+
     result = []
     for i in range(len(values) - window + 1):
         avg = sum(values[i:i + window]) / window
@@ -85,27 +84,27 @@ def detect_trend(values: list[float]) -> str:
     """Detect trend direction: "increasing", "decreasing", "stable", "volatile"."""
     if len(values) < 3:
         return "insufficient_data"
-    
+
     # Simple linear regression slope
     n = len(values)
     x_mean = (n - 1) / 2
     y_mean = mean(values)
-    
+
     numerator = sum((i - x_mean) * (v - y_mean) for i, v in enumerate(values))
     denominator = sum((i - x_mean) ** 2 for i in range(n))
-    
+
     if denominator == 0:
         return "stable"
-    
+
     slope = numerator / denominator
     y_stdev = stdev(values)
-    
+
     if y_stdev == 0:
         return "stable"
-    
+
     # Normalize slope relative to data spread
     normalized_slope = slope / y_stdev
-    
+
     if abs(normalized_slope) < 0.1:
         return "stable"
     elif normalized_slope > 0.3:
@@ -133,7 +132,7 @@ class DescriptiveStats:
     p75: float
     p90: float
     p99: float
-    
+
     def to_dict(self) -> dict:
         return {
             "count": self.count,
@@ -153,7 +152,7 @@ def describe(values: list[float]) -> DescriptiveStats:
     """Calculate descriptive statistics."""
     if not values:
         return DescriptiveStats(0, 0, 0, 0, 0, 0, 0, 0, 0, 0)
-    
+
     return DescriptiveStats(
         count=len(values),
         mean=mean(values),

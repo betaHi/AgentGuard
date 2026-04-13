@@ -18,20 +18,22 @@ import logging
 _logger = logging.getLogger(__name__)
 
 import functools
-from typing import Any, Callable, Optional
+from collections.abc import Callable
+from typing import Any
 
-from agentguard.core.trace import Span, SpanType
-from agentguard.sdk.recorder import get_recorder
 from agentguard.sdk.decorators import (
-    _safe_serialize, _try_start_span, _try_start_tool_span,
-    _try_complete_span, _try_fail_span, _try_pop_span,
+    _try_complete_span,
+    _try_fail_span,
+    _try_pop_span,
+    _try_start_span,
+    _try_start_tool_span,
 )
 
 
 def record_agent_async(
     name: str,
     version: str = "latest",
-    metadata: Optional[dict[str, Any]] = None,
+    metadata: dict[str, Any] | None = None,
 ) -> Callable:
     """Async decorator to record an agent's execution as a trace span.
 
@@ -62,7 +64,7 @@ def record_agent_async(
 
 def record_tool_async(
     name: str,
-    metadata: Optional[dict[str, Any]] = None,
+    metadata: dict[str, Any] | None = None,
 ) -> Callable:
     """Async decorator to record a tool call as a trace span.
 

@@ -1,7 +1,7 @@
 """Tests for failure timeline ASCII visualization (Q3)."""
 
 from agentguard.ascii_viz import failure_timeline
-from agentguard.core.trace import ExecutionTrace, Span, SpanType, SpanStatus
+from agentguard.core.trace import ExecutionTrace, Span, SpanStatus, SpanType
 
 
 def _trace_with_failures():

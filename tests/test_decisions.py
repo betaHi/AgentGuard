@@ -1,10 +1,12 @@
 """Tests for orchestration decision tracking and analysis."""
 
+import contextlib
 import json
+
 from agentguard import record_agent, record_decision
-from agentguard.sdk.recorder import init_recorder, finish_recording
-from agentguard.analysis import analyze_decisions, DecisionRecord, DecisionAnalysis
-from agentguard.core.trace import ExecutionTrace, Span, SpanType, SpanStatus
+from agentguard.analysis import analyze_decisions
+from agentguard.core.trace import ExecutionTrace, SpanStatus, SpanType
+from agentguard.sdk.recorder import finish_recording, init_recorder
 
 
 def _run_pipeline_with_decisions():
@@ -81,10 +83,8 @@ def test_analyze_decisions_with_failure():
         def buggy():
             raise RuntimeError("crash")
 
-        try:
+        with contextlib.suppress(RuntimeError):
             buggy()
-        except RuntimeError:
-            pass
 
     router()
     trace = finish_recording()

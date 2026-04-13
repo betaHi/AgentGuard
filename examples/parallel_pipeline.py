@@ -21,24 +21,22 @@ This demonstrates:
 - Failure in one branch while others succeed
 """
 
-import time
+import os
 import random
 import sys
-import os
+import time
 
 random.seed(42)
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
-from agentguard import TraceThread, record_agent, record_tool, record_handoff, mark_context_used
-from agentguard.sdk.recorder import init_recorder, finish_recording, get_recorder
-from agentguard.analysis import analyze_failures, analyze_flow, analyze_bottleneck
+from agentguard import TraceThread, mark_context_used, record_agent, record_handoff, record_tool
+from agentguard.ascii_viz import gantt_chart, status_summary
+from agentguard.context_flow import analyze_context_flow_deep
 from agentguard.flowgraph import build_flow_graph
 from agentguard.propagation import analyze_propagation
-from agentguard.context_flow import analyze_context_flow_deep
 from agentguard.scoring import score_trace
-from agentguard.ascii_viz import gantt_chart, status_summary
+from agentguard.sdk.recorder import finish_recording, init_recorder
 from agentguard.web.viewer import generate_timeline_html
-
 
 # ──────────────────────────────────────────
 # Tools
@@ -113,7 +111,7 @@ def merge_results(web_data: dict, academic_data: dict, social_data: dict) -> dic
     all_results.extend(web_data.get("results", []))
     all_results.extend(academic_data.get("results", []))
     all_results.extend(social_data.get("results", []))
-    
+
     return {
         "total_sources": 3,
         "total_results": len(all_results),
@@ -220,51 +218,51 @@ def orchestrate_pipeline(topic: str) -> dict:
 
 def run_pipeline(topic: str = "Multi-agent AI systems"):
     """Run the parallel research pipeline."""
-    
+
     print(f"🔬 Starting parallel research pipeline: '{topic}'")
     print("=" * 60)
-    
-    recorder = init_recorder(task=f"Parallel Research: {topic}")
-    result = orchestrate_pipeline(topic)
-    
+
+    init_recorder(task=f"Parallel Research: {topic}")
+    orchestrate_pipeline(topic)
+
     # ── Finish and analyze ──
     trace = finish_recording()
-    
+
     print("\n" + "=" * 60)
     print("📊 Analysis")
     print("=" * 60)
-    
+
     # Score
     score = score_trace(trace)
     print(f"\n🎯 Score: {score.overall:.0f}/100 ({score.grade})")
-    
+
     # Status
     print(f"\n{status_summary(trace)}")
-    
+
     # Gantt chart
     print(f"\n{gantt_chart(trace)}")
-    
+
     # Flow graph
     graph = build_flow_graph(trace)
     print(f"\n{graph.to_report()}")
     print(f"\n📊 Mermaid:\n{graph.to_mermaid()}")
-    
+
     # Propagation
     prop = analyze_propagation(trace)
     if prop.total_failures > 0:
         print(f"\n{prop.to_report()}")
-    
+
     # Context flow
     ctx = analyze_context_flow_deep(trace)
     print(f"\n{ctx.to_report()}")
-    
+
     # Generate HTML report
     from agentguard.store import TraceStore
     store = TraceStore()
     store.save(trace)
     html_path = generate_timeline_html()
     print(f"\n🌐 HTML report: {html_path}")
-    
+
     return trace
 
 

@@ -1,10 +1,8 @@
 """Edge case tests for trace scoring."""
 
-import pytest
-from datetime import datetime, timezone, timedelta
-from agentguard.core.trace import ExecutionTrace, Span, SpanType, SpanStatus
-from agentguard.scoring import score_trace
 from agentguard.builder import TraceBuilder
+from agentguard.core.trace import ExecutionTrace, Span, SpanStatus, SpanType
+from agentguard.scoring import score_trace
 
 
 class TestScoringEdgeCases:
@@ -73,15 +71,15 @@ class TestScoringEdgeCases:
 
     def test_handoff_with_full_utilization(self):
         """Perfect context utilization should score well."""
-        from agentguard import record_handoff, mark_context_used
-        from agentguard.sdk.recorder import init_recorder, finish_recording
-        
+        from agentguard import mark_context_used, record_handoff
+        from agentguard.sdk.recorder import finish_recording, init_recorder
+
         init_recorder(task="handoff_score_test")
         ctx = {"data": [1, 2], "meta": "info"}
         h = record_handoff("a", "b", context=ctx)
         mark_context_used(h, used_keys=["data", "meta"])
         trace = finish_recording()
-        
+
         score = score_trace(trace)
         ctx_score = next(c for c in score.components if c.name == "Context Integrity")
         assert ctx_score.score == 100  # full utilization

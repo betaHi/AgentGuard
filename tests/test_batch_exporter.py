@@ -1,10 +1,11 @@
 """Tests for SDK batch trace exporter."""
 
 import json
-import tempfile
 import os
-from agentguard.sdk.exporter import BatchExporter
+import tempfile
+
 from agentguard.builder import TraceBuilder
+from agentguard.sdk.exporter import BatchExporter
 
 
 def _trace(name="t"):
@@ -72,7 +73,7 @@ class TestBatchExporter:
 
         ex = BatchExporter(batch_size=5, on_flush=on_flush)
         threads = []
-        for i in range(20):
+        for _i in range(20):
             t = threading.Thread(target=lambda: ex.add(_trace()))
             threads.append(t)
             t.start()

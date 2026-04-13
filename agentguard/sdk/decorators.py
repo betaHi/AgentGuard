@@ -18,18 +18,17 @@ import logging
 _logger = logging.getLogger(__name__)
 
 import functools
-import traceback
-from datetime import datetime, timezone
-from typing import Any, Callable, Optional
+from collections.abc import Callable
+from typing import Any
 
-from agentguard.core.trace import ExecutionTrace, Span, SpanType, SpanStatus
+from agentguard.core.trace import Span, SpanType
 from agentguard.sdk.recorder import get_recorder
 
 
 def record_agent(
     name: str,
     version: str = "latest",
-    metadata: Optional[dict[str, Any]] = None,
+    metadata: dict[str, Any] | None = None,
 ) -> Callable:
     """Decorator to record an agent's execution as a trace span.
 
@@ -59,14 +58,14 @@ def record_agent(
                 raise
             finally:
                 _try_pop_span(span)
-        
+
         return wrapper
     return decorator
 
 
 def record_tool(
     name: str,
-    metadata: Optional[dict[str, Any]] = None,
+    metadata: dict[str, Any] | None = None,
 ) -> Callable:
     """Decorator to record a tool call as a trace span.
 
@@ -95,7 +94,7 @@ def record_tool(
                 raise
             finally:
                 _try_pop_span(span)
-        
+
         return wrapper
     return decorator
 
@@ -103,8 +102,8 @@ def record_tool(
 
 
 def _try_start_span(
-    name: str, version: str, metadata: Optional[dict], args: tuple, kwargs: dict
-) -> Optional[Span]:
+    name: str, version: str, metadata: dict | None, args: tuple, kwargs: dict
+) -> Span | None:
     """Create and push an agent span, returning None on failure (fail-open).
 
     Why fail-open: recording is observability — it must never break the
@@ -131,8 +130,8 @@ def _try_start_span(
 
 
 def _try_start_tool_span(
-    name: str, metadata: Optional[dict], args: tuple, kwargs: dict
-) -> Optional[Span]:
+    name: str, metadata: dict | None, args: tuple, kwargs: dict
+) -> Span | None:
     """Create and push a tool span, returning None on failure (fail-open)."""
     try:
         recorder = get_recorder()
@@ -150,7 +149,7 @@ def _try_start_tool_span(
         return None
 
 
-def _try_complete_span(span: Optional[Span], result: Any) -> None:
+def _try_complete_span(span: Span | None, result: Any) -> None:
     """Mark span completed and auto-extract cost/token metadata.
 
     If the function returns a dict containing known cost/token keys,
@@ -198,7 +197,7 @@ def _auto_extract_cost_fields(span: Span, result: Any) -> None:
                 break
 
 
-def _try_fail_span(span: Optional[Span], error: Exception) -> None:
+def _try_fail_span(span: Span | None, error: Exception) -> None:
     """Mark span failed, silently ignoring recording errors."""
     if span is None:
         return
@@ -208,7 +207,7 @@ def _try_fail_span(span: Optional[Span], error: Exception) -> None:
         _logger.debug("AgentGuard: failed to record span failure", exc_info=True)
 
 
-def _try_pop_span(span: Optional[Span]) -> None:
+def _try_pop_span(span: Span | None) -> None:
     """Pop span from recorder, silently ignoring errors."""
     if span is None:
         return

@@ -1,13 +1,15 @@
 """Tests for metrics extraction."""
 
+from datetime import UTC, datetime, timedelta
+
 import pytest
-from datetime import datetime, timezone, timedelta
-from agentguard.core.trace import ExecutionTrace, Span, SpanType, SpanStatus
-from agentguard.metrics import extract_metrics, _percentile
+
+from agentguard.core.trace import ExecutionTrace, Span, SpanStatus, SpanType
+from agentguard.metrics import _percentile, extract_metrics
 
 
 def _ts(offset_s: float = 0) -> str:
-    base = datetime(2026, 4, 12, 0, 0, 0, tzinfo=timezone.utc)
+    base = datetime(2026, 4, 12, 0, 0, 0, tzinfo=UTC)
     return (base + timedelta(seconds=offset_s)).isoformat()
 
 
@@ -32,7 +34,7 @@ class TestExtractMetrics:
                            started_at=_ts(5), ended_at=_ts(8)))
         trace.add_span(Span(name="h", span_type=SpanType.HANDOFF, status=SpanStatus.COMPLETED,
                            context_size_bytes=500))
-        
+
         m = extract_metrics(trace)
         assert m.agent_count == 1
         assert m.tool_count == 1
@@ -54,7 +56,7 @@ class TestExtractMetrics:
         trace = ExecutionTrace(task="err")
         trace.add_span(Span(name="ok", status=SpanStatus.COMPLETED))
         trace.add_span(Span(name="fail", status=SpanStatus.FAILED, error="boom"))
-        
+
         m = extract_metrics(trace)
         assert m.success_rate == 0.5
         assert m.error_rate == 0.5
@@ -63,7 +65,7 @@ class TestExtractMetrics:
         trace = ExecutionTrace(task="retry")
         trace.add_span(Span(name="no_retry", status=SpanStatus.COMPLETED))
         trace.add_span(Span(name="retried", status=SpanStatus.COMPLETED, retry_count=3))
-        
+
         m = extract_metrics(trace)
         assert m.retry_rate == 0.5
 
