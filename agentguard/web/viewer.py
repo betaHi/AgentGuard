@@ -361,138 +361,170 @@ function zoomGantt(dir){
 </body></html>'''
 
 
-def _build_sidebar(trace: ExecutionTrace, failures, bn) -> str:
-    cards = [f'<h2>Agents ({len(trace.agent_spans)})</h2>']
-    dur_total = trace.duration_ms or 1
-
-    # Get failure info per agent
-    failed_agents = {rc.span_name for rc in failures.root_causes if not rc.was_handled}
-    warned_agents = {rc.span_name for rc in failures.root_causes if rc.was_handled}
-    bn_name = bn.bottleneck_span if bn else ""
-
-    # Sort: failed first, then by duration desc
-    agents = sorted(trace.agent_spans, key=lambda s: (
-        0 if s.status == SpanStatus.FAILED else 1,
-        -(s.duration_ms or 0)
-    ))
-
-    for s in agents:
-        dur = s.duration_ms or 0
-        pct = (dur / dur_total) * 100
-        ver = _esc(s.metadata.get("agent_version", ""))
-
-        if s.status == SpanStatus.FAILED or s.name in failed_agents:
-            dot_cls = "dot-err"
-            bar_color = "var(--rd)"
-            extra = f'<span style="color:var(--rd)">✗ {_esc(s.error or "failed")[:30]}</span>'
-        elif s.name == bn_name and len(trace.agent_spans) > 1:
-            dot_cls = "dot-warn"
-            bar_color = "var(--yl)"
-            extra = f'<span style="color:var(--yl)">🐢 bottleneck ({pct:.0f}%)</span>'
-        elif s.name in warned_agents:
-            dot_cls = "dot-warn"
-            bar_color = "var(--yl)"
-            extra = '<span style="color:var(--yl)">⚡ fallback used</span>'
-        else:
-            dot_cls = "dot-ok"
-            bar_color = "var(--gn)"
-            extra = '<span>✓ pass</span>'
-
-        dur_s = f"{dur:.0f}ms" if dur < 1000 else f"{dur/1000:.1f}s"
-
-        cards.append(f'''<div class="ag-card">
+def _sidebar_agent_card(s, dur_total: float, failed_agents: set, warned_agents: set, bn_name: str, multi: bool) -> str:
+    """Build a single agent card for the sidebar."""
+    dur = s.duration_ms or 0
+    pct = (dur / dur_total) * 100
+    ver = _esc(s.metadata.get("agent_version", ""))
+    if s.status == SpanStatus.FAILED or s.name in failed_agents:
+        dot_cls, bar_color = "dot-err", "var(--rd)"
+        extra = f'<span style="color:var(--rd)">✗ {_esc(s.error or "failed")[:30]}</span>'
+    elif s.name == bn_name and multi:
+        dot_cls, bar_color = "dot-warn", "var(--yl)"
+        extra = f'<span style="color:var(--yl)">🐢 bottleneck ({pct:.0f}%)</span>'
+    elif s.name in warned_agents:
+        dot_cls, bar_color = "dot-warn", "var(--yl)"
+        extra = '<span style="color:var(--yl)">⚡ fallback used</span>'
+    else:
+        dot_cls, bar_color = "dot-ok", "var(--gn)"
+        extra = '<span>✓ pass</span>'
+    dur_s = f"{dur:.0f}ms" if dur < 1000 else f"{dur/1000:.1f}s"
+    return f'''<div class="ag-card">
 <div class="ag-name"><span class="dot {dot_cls}"></span> {_esc(s.name)} <span style="font-size:9px;color:var(--dim)">{ver}</span></div>
 <div class="ag-stats"><span>{dur_s}</span>{extra}</div>
 <div class="ag-bar"><div class="ag-bar-fill" style="width:{max(pct,2):.0f}%;background:{bar_color}"></div></div>
-</div>''')
+</div>'''
 
 
-    # Tool span bottleneck cards
+def _sidebar_tool_cards(trace: ExecutionTrace, dur_total: float, bn_name: str) -> str:
+    """Build tool span cards for the sidebar (top 8 by duration)."""
     tools = sorted(trace.tool_spans, key=lambda s: -(s.duration_ms or 0))
-    if tools:
-        # Show top tools by duration (potential bottlenecks)
-        top_tools = tools[:8]
-        cards.append('<div style="margin-top:8px;border-top:1px solid var(--bd);padding-top:8px">')
-        cards.append(f'<h2 style="font-size:10px;text-transform:uppercase;letter-spacing:1px;color:var(--dim);margin-bottom:6px">Tools ({len(trace.tool_spans)})</h2>')
-        for s in top_tools:
-            dur = s.duration_ms or 0
-            pct = (dur / dur_total) * 100
-            dur_s = f"{dur:.0f}ms" if dur < 1000 else f"{dur/1000:.1f}s"
-
-            if s.status == SpanStatus.FAILED:
-                dot_cls = "dot-err"
-                bar_color = "var(--rd)"
-                extra = f'<span style="color:var(--rd)">\u2717 {_esc(s.error or "failed")[:30]}</span>'
-            elif s.name == bn_name:
-                dot_cls = "dot-warn"
-                bar_color = "var(--yl)"
-                extra = f'<span style="color:var(--yl)">\U0001f422 bottleneck ({pct:.0f}%)</span>'
-            elif pct > 20:
-                dot_cls = "dot-warn"
-                bar_color = "var(--yl)"
-                extra = f'<span style="color:var(--yl)">{pct:.0f}% of trace</span>'
-            else:
-                dot_cls = "dot-ok"
-                bar_color = "var(--gn)"
-                extra = '<span>\u2713</span>'
-
-            cards.append(f'''<div class="ag-card">
+    if not tools:
+        return ""
+    parts = ['<div style="margin-top:8px;border-top:1px solid var(--bd);padding-top:8px">',
+             f'<h2 style="font-size:10px;text-transform:uppercase;letter-spacing:1px;color:var(--dim);margin-bottom:6px">Tools ({len(trace.tool_spans)})</h2>']
+    for s in tools[:8]:
+        dur = s.duration_ms or 0
+        pct = (dur / dur_total) * 100
+        dur_s = f"{dur:.0f}ms" if dur < 1000 else f"{dur/1000:.1f}s"
+        if s.status == SpanStatus.FAILED:
+            dot_cls, bar_color = "dot-err", "var(--rd)"
+            extra = f'<span style="color:var(--rd)">\u2717 {_esc(s.error or "failed")[:30]}</span>'
+        elif s.name == bn_name:
+            dot_cls, bar_color = "dot-warn", "var(--yl)"
+            extra = f'<span style="color:var(--yl)">\U0001f422 bottleneck ({pct:.0f}%)</span>'
+        elif pct > 20:
+            dot_cls, bar_color = "dot-warn", "var(--yl)"
+            extra = f'<span style="color:var(--yl)">{pct:.0f}% of trace</span>'
+        else:
+            dot_cls, bar_color = "dot-ok", "var(--gn)"
+            extra = '<span>\u2713</span>'
+        parts.append(f'''<div class="ag-card">
 <div class="ag-name"><span class="dot {dot_cls}"></span> \U0001f527 {_esc(s.name)}</div>
 <div class="ag-stats"><span>{dur_s}</span>{extra}</div>
 <div class="ag-bar"><div class="ag-bar-fill" style="width:{max(pct,2):.0f}%;background:{bar_color}"></div></div>
 </div>''')
-        cards.append('</div>')
+    parts.append('</div>')
+    return "\n".join(parts)
 
-        # LLM call summary
+
+def _sidebar_llm_summary(trace: ExecutionTrace) -> str:
+    """Build LLM calls summary section for the sidebar."""
     llm_spans = [s for s in trace.spans if s.span_type == SpanType.LLM_CALL]
-    if llm_spans:
-        cards.append('<div style="margin-top:8px;border-top:1px solid var(--bd);padding-top:8px">')
-        cards.append(f'<h2 style="font-size:10px;text-transform:uppercase;letter-spacing:1px;color:var(--dim);margin-bottom:6px">LLM Calls ({len(llm_spans)})</h2>')
-        total_tokens = sum(s.token_count or 0 for s in llm_spans)
-        total_cost = sum(s.estimated_cost_usd or 0 for s in llm_spans)
-        cards.append(f'<div class="ag-card"><div class="ag-stats"><span>{total_tokens:,} tokens</span><span>${total_cost:.4f}</span></div></div>')
-        cards.append('</div>')
+    if not llm_spans:
+        return ""
+    total_tokens = sum(s.token_count or 0 for s in llm_spans)
+    total_cost = sum(s.estimated_cost_usd or 0 for s in llm_spans)
+    return (f'<div style="margin-top:8px;border-top:1px solid var(--bd);padding-top:8px">'
+            f'<h2 style="font-size:10px;text-transform:uppercase;letter-spacing:1px;color:var(--dim);margin-bottom:6px">LLM Calls ({len(llm_spans)})</h2>'
+            f'<div class="ag-card"><div class="ag-stats"><span>{total_tokens:,} tokens</span><span>${total_cost:.4f}</span></div></div>'
+            f'</div>')
 
+
+def _build_sidebar(trace: ExecutionTrace, failures, bn) -> str:
+    """Build the sidebar with agent cards, tool cards, and LLM summary."""
+    dur_total = trace.duration_ms or 1
+    failed_agents = {rc.span_name for rc in failures.root_causes if not rc.was_handled}
+    warned_agents = {rc.span_name for rc in failures.root_causes if rc.was_handled}
+    bn_name = bn.bottleneck_span if bn else ""
+    multi = len(trace.agent_spans) > 1
+
+    agents = sorted(trace.agent_spans, key=lambda s: (
+        0 if s.status == SpanStatus.FAILED else 1, -(s.duration_ms or 0)))
+
+    cards = [f'<h2>Agents ({len(trace.agent_spans)})</h2>']
+    for s in agents:
+        cards.append(_sidebar_agent_card(s, dur_total, failed_agents, warned_agents, bn_name, multi))
+    cards.append(_sidebar_tool_cards(trace, dur_total, bn_name))
+    cards.append(_sidebar_llm_summary(trace))
     return "\n".join(cards)
 
 
-def _build_gantt(trace: ExecutionTrace, flow, dur_total: float) -> str:
-    # Detect parallel groups for visual highlighting
+def _detect_parallel_spans(trace: ExecutionTrace) -> set[str]:
+    """Detect spans that execute in parallel (overlapping time, same parent)."""
     from datetime import datetime as _dt
-    parallel_span_ids = set()
-    timed_agents = []
+    parallel_ids: set[str] = set()
+    timed = []
     for s in trace.spans:
         if s.span_type in (SpanType.AGENT, SpanType.TOOL):
             try:
                 start = _dt.fromisoformat(s.started_at) if s.started_at else None
                 end = _dt.fromisoformat(s.ended_at) if s.ended_at else None
                 if start and end:
-                    timed_agents.append((s, start, end))
-            except Exception: pass
+                    timed.append((s, start, end))
+            except Exception:
+                pass
+    for i, (a, a_s, a_e) in enumerate(timed):
+        for _j, (b, b_s, b_e) in enumerate(timed[i+1:], i+1):
+            if a_s < b_e and b_s < a_e and a.parent_span_id == b.parent_span_id:
+                parallel_ids.add(a.span_id)
+                parallel_ids.add(b.span_id)
+    return parallel_ids
 
-    # Find overlapping spans (parallel execution)
-    for i, (a, a_s, a_e) in enumerate(timed_agents):
-        for _j, (b, b_s, b_e) in enumerate(timed_agents[i+1:], i+1):
-            if a_s < b_e and b_s < a_e:  # overlap
-                if a.parent_span_id == b.parent_span_id:  # same parent
-                    parallel_span_ids.add(a.span_id)
-                    parallel_span_ids.add(b.span_id)
 
-    # Time axis with labeled tick marks
-    steps = 8
+def _build_time_axis(dur_total: float, steps: int = 8) -> str:
+    """Build the Gantt chart time axis with labeled tick marks."""
     step_ms = dur_total / steps
-    tick_marks = []
+    marks = []
     for i in range(steps + 1):
         ms = i * step_ms
         pct = (i / steps) * 100
         label = f"{int(ms)}ms" if ms < 1000 else f"{ms / 1000:.1f}s"
-        tick_marks.append(
+        marks.append(
             f'<span class="tick-mark" style="left:{pct:.1f}%">{label}</span>'
             f'<span class="tick-line" style="left:{pct:.1f}%"></span>'
         )
-    header = f'<div class="tl-axis">{"".join(tick_marks)}</div>'
+    return f'<div class="tl-axis">{"".join(marks)}</div>'
 
-    # Build span tree for rendering
+
+_GANTT_ZOOM_BAR = (
+    '<div class="zoom-bar">'
+    '<button class="zoom-btn" onclick="zoomGantt(-1)" title="Zoom out">−</button>'
+    '<span class="zoom-level" id="zoom-pct">100%</span>'
+    '<button class="zoom-btn" onclick="zoomGantt(1)" title="Zoom in">+</button>'
+    '<button class="zoom-btn" onclick="zoomGantt(0)" title="Reset zoom">⟲</button>'
+    '</div>'
+)
+
+_GANTT_SEARCH_BAR = (
+    '<div style="padding:8px 12px;background:var(--bg);border-bottom:1px solid var(--bd);'
+    'display:flex;gap:8px;align-items:center;flex-wrap:wrap;font-size:11px">'
+    '<input id="span-search" type="text" placeholder="Search agent name..." '
+    'style="background:#0d1117;border:1px solid var(--bd);color:var(--fg);padding:4px 8px;'
+    'border-radius:4px;width:180px;font-size:11px">'
+    '<select id="status-filter" style="background:#0d1117;border:1px solid var(--bd);'
+    'color:var(--fg);padding:4px;border-radius:4px;font-size:11px">'
+    '<option value="">All statuses</option>'
+    '<option value="ok">Completed</option>'
+    '<option value="err">Failed</option>'
+    '<option value="slow">Slow</option>'
+    '</select>'
+    '<label style="color:var(--dim)">Min ms: <input id="min-dur" type="number" min="0" '
+    'style="background:#0d1117;border:1px solid var(--bd);color:var(--fg);padding:4px;'
+    'border-radius:4px;width:60px;font-size:11px"></label>'
+    '<label style="color:var(--dim)">Max ms: <input id="max-dur" type="number" min="0" '
+    'style="background:#0d1117;border:1px solid var(--bd);color:var(--fg);padding:4px;'
+    'border-radius:4px;width:60px;font-size:11px"></label>'
+    '<span id="filter-count" style="color:var(--dim);margin-left:auto"></span>'
+    '</div>'
+)
+
+
+def _build_gantt(trace: ExecutionTrace, flow, dur_total: float) -> str:
+    """Build the full Gantt timeline: axis, rows, zoom/search controls."""
+    parallel_ids = _detect_parallel_spans(trace)
+    header = _build_time_axis(dur_total)
+
     span_map = {s.span_id: s for s in trace.spans}
     children_map: dict[str, list[Span]] = {}
     for s in trace.spans:
@@ -500,130 +532,83 @@ def _build_gantt(trace: ExecutionTrace, flow, dur_total: float) -> str:
             children_map.setdefault(s.parent_span_id, []).append(s)
 
     roots = [s for s in trace.spans if s.parent_span_id is None or s.parent_span_id not in span_map]
-
-    # Handoff pairs from analysis
     handoff_pairs = {(h.from_agent, h.to_agent): h for h in flow.handoffs}
-
-    # Compute time offsets — use started_at relative to trace start
-    trace_start = trace.started_at
 
     rows = []
     for root in roots:
-        rows.extend(_render_gantt_rows(root, 0, trace_start, dur_total, children_map, span_map, handoff_pairs, parallel_span_ids))
+        rows.extend(_render_gantt_rows(root, 0, trace.started_at, dur_total,
+                                       children_map, span_map, handoff_pairs, parallel_ids))
 
-    zoom_bar = (
-        '<div class="zoom-bar">'
-        '<button class="zoom-btn" onclick="zoomGantt(-1)" title="Zoom out">−</button>'
-        '<span class="zoom-level" id="zoom-pct">100%</span>'
-        '<button class="zoom-btn" onclick="zoomGantt(1)" title="Zoom in">+</button>'
-        '<button class="zoom-btn" onclick="zoomGantt(0)" title="Reset zoom">⟲</button>'
-        '</div>'
-    )
     inner = header + "\n" + "\n".join(rows)
-    search_html = (
-        '<div style="padding:8px 12px;background:var(--bg);border-bottom:1px solid var(--bd);'
-        'display:flex;gap:8px;align-items:center;flex-wrap:wrap;font-size:11px">'
-        '<input id="span-search" type="text" placeholder="Search agent name..." '
-        'style="background:#0d1117;border:1px solid var(--bd);color:var(--fg);padding:4px 8px;'
-        'border-radius:4px;width:180px;font-size:11px">'
-        '<select id="status-filter" style="background:#0d1117;border:1px solid var(--bd);'
-        'color:var(--fg);padding:4px;border-radius:4px;font-size:11px">'
-        '<option value="">All statuses</option>'
-        '<option value="ok">Completed</option>'
-        '<option value="err">Failed</option>'
-        '<option value="slow">Slow</option>'
-        '</select>'
-        '<label style="color:var(--dim)">Min ms: <input id="min-dur" type="number" min="0" '
-        'style="background:#0d1117;border:1px solid var(--bd);color:var(--fg);padding:4px;'
-        'border-radius:4px;width:60px;font-size:11px"></label>'
-        '<label style="color:var(--dim)">Max ms: <input id="max-dur" type="number" min="0" '
-        'style="background:#0d1117;border:1px solid var(--bd);color:var(--fg);padding:4px;'
-        'border-radius:4px;width:60px;font-size:11px"></label>'
-        '<span id="filter-count" style="color:var(--dim);margin-left:auto"></span>'
-        '</div>'
-    )
-    return f'{zoom_bar}{search_html}<div class="tl-wrap"><div class="tl-inner" id="gantt-inner">{inner}</div></div>'
+    return f'{_GANTT_ZOOM_BAR}{_GANTT_SEARCH_BAR}<div class="tl-wrap"><div class="tl-inner" id="gantt-inner">{inner}</div></div>'
 
 
-def _render_gantt_rows(span: Span, depth: int, trace_start: str, dur_total: float,
-                       children_map, span_map, handoff_pairs, parallel_ids=None) -> list[str]:
+def _render_handoff_row(depth: int, from_name: str, to_name: str, ctx_bytes: int) -> str:
+    """Render a handoff indicator row between agents."""
+    ctx_str = f"{ctx_bytes:,}B" if ctx_bytes else ""
+    badge = f'<span class="ctx-badge">{ctx_str}</span>' if ctx_str else ""
+    return f'''<div class="ho-row"><div class="ho-line" style="padding-left:{depth*16}px">
+<span>🔀</span><span class="ho-arrow"></span><span>{_esc(from_name)} → {_esc(to_name)}</span>
+{badge}
+</div></div>'''
+
+
+def _render_span_bar(span: Span, depth: int, trace_start: str, dur_total: float, parallel_ids) -> str:
+    """Render a single span as a Gantt bar row."""
     from datetime import datetime
-    rows = []
-
-    # Calculate position
     try:
         t_start = datetime.fromisoformat(trace_start)
         s_start = datetime.fromisoformat(span.started_at) if span.started_at else t_start
         offset_ms = (s_start - t_start).total_seconds() * 1000
     except Exception:
         offset_ms = 0
-
     dur = span.duration_ms or 0
     left_pct = (offset_ms / max(dur_total, 1)) * 100
     width_pct = (dur / max(dur_total, 1)) * 100
-
-    # Determine bar style
     icons = {"agent": "🤖", "tool": "🔧", "llm_call": "🧠", "handoff": "🔀"}
     icon = icons.get(span.span_type.value, "●")
-
-    if span.span_type == SpanType.HANDOFF:
-        # Render handoff as a special row
-        ctx_size = span.context_size_bytes or 0
-        ctx_str = f"{ctx_size:,}B" if ctx_size else ""
-        rows.append(f'''<div class="ho-row"><div class="ho-line" style="padding-left:{depth*16}px">
-<span>🔀</span><span class="ho-arrow"></span><span>{_esc(span.name)}</span>
-{f'<span class="ctx-badge">{ctx_str}</span>' if ctx_str else ''}
-</div></div>''')
-        return rows
-
-    bar_cls = "ok"
-    if span.status == SpanStatus.FAILED:
-        bar_cls = "err"
-
+    bar_cls = "err" if span.status == SpanStatus.FAILED else "ok"
     dur_s = f"{dur:.0f}ms" if dur < 1000 else f"{dur/1000:.1f}s"
     ver = _esc(span.metadata.get("agent_version", ""))
     ver_html = f'<span class="vr">{ver}</span>' if ver else ""
-
     opacity = "opacity:0.65;" if span.span_type == SpanType.TOOL else ""
-
-    # Error annotation
     err_html = ""
     if span.error:
         err_left = min(left_pct + width_pct + 1, 95)
         err_html = f'<div class="g-err" style="left:{err_left}%">⚠ {_esc(span.error)[:40]}</div>'
-
-    # Retry indicator
     retry_html = ""
     if span.retry_count > 0:
         retry_left = min(left_pct + width_pct + 1, 95)
         retry_html = f'<div class="g-ann" style="left:{retry_left}%;color:var(--yl)">🔄×{span.retry_count}</div>'
-
     par_cls = " parallel" if (parallel_ids and span.span_id in parallel_ids) else ""
-    rows.append(f'''<div class="g-row{par_cls}" style="{opacity}">
+    return f'''<div class="g-row{par_cls}" style="{opacity}">
 <div class="g-lbl" style="padding-left:{depth*16}px"><span class="icon">{icon}</span><span class="nm">{_esc(span.name)}</span>{ver_html}</div>
 <div class="g-bar-area"><div class="g-bar {bar_cls}" style="left:{left_pct:.1f}%;width:{max(width_pct,0.5):.1f}%">{dur_s}</div>{err_html}{retry_html}</div>
-</div>''')
+</div>'''
 
-    # Render children
-    children = children_map.get(span.span_id, [])
-    children_sorted = sorted(children, key=lambda s: s.started_at or "")
 
-    for i, child in enumerate(children_sorted):
-        rows.extend(_render_gantt_rows(child, depth + 1, trace_start, dur_total, children_map, span_map, handoff_pairs, parallel_ids))
+def _render_gantt_rows(span: Span, depth: int, trace_start: str, dur_total: float,
+                       children_map, span_map, handoff_pairs, parallel_ids=None) -> list[str]:
+    """Recursively render a span and its children as Gantt rows."""
+    rows = []
+    if span.span_type == SpanType.HANDOFF:
+        ctx_size = span.context_size_bytes or 0
+        rows.append(_render_handoff_row(depth, span.name, "", ctx_size))
+        return rows
 
-        # Insert handoff between sequential agents (only if analysis confirmed)
+    rows.append(_render_span_bar(span, depth, trace_start, dur_total, parallel_ids))
+
+    children = sorted(children_map.get(span.span_id, []), key=lambda s: s.started_at or "")
+    for i, child in enumerate(children):
+        rows.extend(_render_gantt_rows(child, depth + 1, trace_start, dur_total,
+                                       children_map, span_map, handoff_pairs, parallel_ids))
         if (child.span_type == SpanType.AGENT and
-            i + 1 < len(children_sorted) and
-            children_sorted[i + 1].span_type == SpanType.AGENT):
-            pair_key = (child.name, children_sorted[i + 1].name)
+            i + 1 < len(children) and children[i + 1].span_type == SpanType.AGENT):
+            pair_key = (child.name, children[i + 1].name)
             if pair_key in handoff_pairs:
                 h = handoff_pairs[pair_key]
-                ctx_str = f"{h.context_size_bytes:,}B" if h.context_size_bytes else ""
-                rows.append(f'''<div class="ho-row"><div class="ho-line" style="padding-left:{(depth+1)*16}px">
-<span>🔀</span><span class="ho-arrow"></span><span>{_esc(child.name)} → {_esc(children_sorted[i+1].name)}</span>
-{f'<span class="ctx-badge">{ctx_str}</span>' if ctx_str else ''}
-</div></div>''')
-
+                rows.append(_render_handoff_row(
+                    (depth + 1), child.name, children[i + 1].name, h.context_size_bytes or 0))
     return rows
 
 
