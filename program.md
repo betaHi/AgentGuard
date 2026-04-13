@@ -30,4 +30,4 @@
 ### P4: Documentation & best practices
 - [x] Update docs/best-practices.md with Sprint 3 lessons
 - [x] Create docs/faq.md — common questions and troubleshooting
-- [ ] Update README with Sprint 3 features (1000+ tests, new analysis capabilities)
+- [x] Update README with Sprint 3 features (1000+ tests, new analysis capabilities)
