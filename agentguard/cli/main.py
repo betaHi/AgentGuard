@@ -115,7 +115,7 @@ def _render_tree(span: dict, indent: int = 0, is_last: bool = True, prefix: str 
     return lines
 
 
-def cmd_show(args):
+def cmd_show(args) -> None:
     """Display a trace file."""
     trace = _load_trace_file(args.file)
     data = json.loads(Path(args.file).read_text(encoding="utf-8"))
@@ -151,7 +151,7 @@ def cmd_show(args):
     print(f"\n{C.BOLD}{'═' * 60}{C.RESET}\n")
 
 
-def cmd_list(args):
+def cmd_list(args) -> None:
     """List trace files."""
     dir_path = Path(args.dir)
     if not dir_path.exists():
@@ -175,7 +175,7 @@ def cmd_list(args):
     print()
 
 
-def cmd_eval(args):
+def cmd_eval(args) -> None:
     """Evaluate a trace against rules."""
     trace = _load_trace_file(args.file)
 
@@ -224,7 +224,7 @@ def cmd_eval(args):
         sys.exit(1)
 
 
-def cmd_search(args):
+def cmd_search(args) -> None:
     """Search spans across all traces."""
     from agentguard.query import TraceStore
 
@@ -256,7 +256,7 @@ def cmd_search(args):
     print()
 
 
-def cmd_merge(args):
+def cmd_merge(args) -> None:
     """Merge distributed child traces into parent."""
     from agentguard.sdk.distributed import merge_child_traces
 
@@ -269,7 +269,7 @@ def cmd_merge(args):
         print("  Child files cleaned up")
 
 
-def cmd_merge_dir(args):
+def cmd_merge_dir(args) -> None:
     """Merge all trace files in a directory into a single trace."""
     dir_path = Path(args.dir)
     if not dir_path.exists():
@@ -318,7 +318,7 @@ def cmd_merge_dir(args):
     print(f"  {C.DIM}Output:{C.RESET} {output}")
 
 
-def cmd_validate(args):
+def cmd_validate(args) -> None:
     """Validate trace integrity."""
     from agentguard.validate import validate_trace
 
@@ -344,7 +344,7 @@ def cmd_validate(args):
         sys.exit(1)
 
 
-def cmd_diff(args):
+def cmd_diff(args) -> None:
     """Compare two traces side by side."""
     from agentguard.diff import diff_traces
 
@@ -454,7 +454,7 @@ def _build_trace_metadata(trace) -> dict:
     }
 
 
-def cmd_analyze(args):
+def cmd_analyze(args) -> None:
     """Analyze failure propagation and flow in a trace."""
     trace = _load_trace_file(args.file)
 
@@ -508,7 +508,7 @@ def cmd_analyze(args):
 
 
 
-def cmd_propagation(args):
+def cmd_propagation(args) -> None:
     """Analyze failure propagation with causal chains."""
     from agentguard.propagation import analyze_propagation
 
@@ -517,7 +517,7 @@ def cmd_propagation(args):
     print(result.to_report())
 
 
-def cmd_flowgraph(args):
+def cmd_flowgraph(args) -> None:
     """Build and display multi-agent flow graph."""
     from agentguard.flowgraph import build_flow_graph
 
@@ -530,7 +530,7 @@ def cmd_flowgraph(args):
         print(graph.to_report())
 
 
-def cmd_context_flow(args):
+def cmd_context_flow(args) -> None:
     """Analyze context flow through the agent pipeline."""
     from agentguard.context_flow import analyze_context_flow_deep
 
@@ -539,7 +539,7 @@ def cmd_context_flow(args):
     print(result.to_report())
 
 
-def cmd_score(args):
+def cmd_score(args) -> None:
     """Score a trace on quality dimensions."""
     from agentguard.scoring import score_trace
 
@@ -549,7 +549,7 @@ def cmd_score(args):
     print(score.to_report())
 
 
-def cmd_summary(args):
+def cmd_summary(args) -> None:
     """Print a one-line health summary of a trace (like git status)."""
     trace = _load_trace_file(args.file)
     line = _format_summary_line(trace)
@@ -586,7 +586,7 @@ def _format_summary_line(trace) -> str:
     )
 
 
-def cmd_aggregate(args):
+def cmd_aggregate(args) -> None:
     """Aggregate analysis across multiple traces."""
     import json
     import os
@@ -613,7 +613,7 @@ def cmd_aggregate(args):
     print(result.to_report())
 
 
-def cmd_annotate(args):
+def cmd_annotate(args) -> None:
     """Auto-annotate a trace."""
     from agentguard.annotations import auto_annotate
 
@@ -631,7 +631,7 @@ def cmd_annotate(args):
             print(f"  {icon} [{ann['category']}] {ann['message']}")
 
 
-def cmd_correlate(args):
+def cmd_correlate(args) -> None:
     """Analyze span correlations."""
     from agentguard.correlation import analyze_correlations
 
@@ -641,7 +641,7 @@ def cmd_correlate(args):
 
 
 
-def cmd_timeline(args):
+def cmd_timeline(args) -> None:
     """Display trace as chronological event timeline."""
     from agentguard.timeline import build_timeline
 
@@ -650,7 +650,7 @@ def cmd_timeline(args):
     print(tl.to_text(max_events=args.max or 50))
 
 
-def cmd_metrics(args):
+def cmd_metrics(args) -> None:
     """Extract metrics from a trace."""
     import json as _json
 
@@ -665,7 +665,7 @@ def cmd_metrics(args):
         print(_json.dumps(m.to_dict(), indent=2))
 
 
-def cmd_schema(args):
+def cmd_schema(args) -> None:
     """Print the trace JSON schema."""
     import json as _json
 
@@ -674,7 +674,7 @@ def cmd_schema(args):
 
 
 
-def cmd_span_diff(args):
+def cmd_span_diff(args) -> None:
     """Span-level diff between two traces."""
     from agentguard.span_diff import diff_spans
 
@@ -684,7 +684,7 @@ def cmd_span_diff(args):
     print(result.to_report())
 
 
-def cmd_sla(args):
+def cmd_sla(args) -> None:
     """Check trace against SLA constraints."""
     from agentguard.sla import SLAChecker
 
@@ -704,7 +704,7 @@ def cmd_sla(args):
     print(result.to_report())
 
 
-def cmd_dependencies(args):
+def cmd_dependencies(args) -> None:
     """Show agent dependency graph."""
     from agentguard.dependency import build_dependency_graph
 
@@ -717,14 +717,14 @@ def cmd_dependencies(args):
         print(graph.to_report())
 
 
-def cmd_benchmark(args):
+def cmd_benchmark(args) -> None:
     """Run performance benchmark on analysis modules."""
     from agentguard.benchmark import run_benchmark
     suite = run_benchmark(trace_count=args.traces, agents_per_trace=args.agents)
     print(suite.to_report())
 
 
-def cmd_generate(args):
+def cmd_generate(args) -> None:
     """Generate synthetic traces."""
     from agentguard.generate import generate_trace
     from agentguard.store import TraceStore
@@ -737,7 +737,7 @@ def cmd_generate(args):
     print(f"Saved {args.count} traces to {args.dir}")
 
 
-def cmd_summarize(args):
+def cmd_summarize(args) -> None:
     """Summarize a trace in natural language."""
     from agentguard.summarize import summarize_brief, summarize_trace
 
@@ -748,7 +748,7 @@ def cmd_summarize(args):
         print(summarize_trace(trace))
 
 
-def cmd_tree(args):
+def cmd_tree(args) -> None:
     """Display trace as indented tree."""
     from agentguard.tree import tree_to_text
 
@@ -756,7 +756,7 @@ def cmd_tree(args):
     print(tree_to_text(trace))
 
 
-def cmd_compare(args):
+def cmd_compare(args) -> None:
     """Compare two traces comprehensively."""
     from agentguard.comparison import compare_traces
 
@@ -767,7 +767,7 @@ def cmd_compare(args):
 
 
 
-def cmd_init(args):
+def cmd_init(args) -> None:
     """Scaffold a new AgentGuard project with default config and directories."""
     traces_dir = Path(".agentguard/traces")
     config_file = Path("agentguard.json")
@@ -804,7 +804,7 @@ def cmd_init(args):
         print(f"\n  {C.DIM}Already initialized — nothing to do.{C.RESET}\n")
 
 
-def cmd_doctor(args):
+def cmd_doctor(args) -> None:
     """Check AgentGuard installation health and environment."""
     import platform
 
@@ -874,21 +874,21 @@ def cmd_doctor(args):
         sys.exit(1)
 
 
-def cmd_version(args):
+def cmd_version(args) -> None:
     """Show AgentGuard version."""
     from agentguard import __version__
     print(f"AgentGuard {__version__}")
 
 
 
-def cmd_report(args):
+def cmd_report(args) -> None:
     """Generate HTML report."""
     from agentguard.web.viewer import generate_timeline_html
     output = generate_timeline_html(traces_dir=args.dir, output=args.output)
     print(f"  🌐 Report generated: {output}")
 
 
-def cmd_guard(args):
+def cmd_guard(args) -> None:
     """Start continuous monitoring."""
     from agentguard.guard import FileAlert, Guard, StdoutAlert
 
@@ -1045,7 +1045,7 @@ def _register_ops_commands(sub: Any) -> None:
     p.add_argument("--log", help="Alert log file path")
 
 
-def main():
+def main() -> None:
     """CLI entry point. Parses args and dispatches to command handlers."""
     parser = argparse.ArgumentParser(
         prog="agentguard",
