@@ -48,6 +48,8 @@ class ContextTransition:
     event: str  # "stable", "compression", "truncation", "expansion", "transformation"
     keys_added: list[str] = field(default_factory=list)
     keys_removed: list[str] = field(default_factory=list)
+    info_units_in: int = 0  # unique leaf values in sender output
+    info_units_out: int = 0  # unique leaf values in receiver input
     keys_preserved: list[str] = field(default_factory=list)
 
     def to_dict(self) -> dict:
@@ -61,6 +63,8 @@ class ContextTransition:
             "event": self.event,
             "keys_added": self.keys_added,
             "keys_removed": self.keys_removed,
+            "info_units_in": self.info_units_in,
+            "info_units_out": self.info_units_out,
         }
 
 
@@ -153,6 +157,35 @@ def _measure_data(data: object | None) -> tuple[int, list[str]]:
     return size, keys
 
 
+def _count_leaf_values(data: object) -> int:
+    """Count unique leaf values in a data structure (heuristic for semantic richness).
+
+    Leaf values are non-container scalars: strings, numbers, bools.
+    Each unique value represents a distinct "information unit" — a fact,
+    entity, or datum that could be lost in a handoff.
+
+    Args:
+        data: Any JSON-serializable data structure.
+
+    Returns:
+        Count of unique leaf values.
+    """
+    leaves: set[str] = set()
+
+    def _walk(obj: object) -> None:
+        if isinstance(obj, dict):
+            for v in obj.values():
+                _walk(v)
+        elif isinstance(obj, (list, tuple)):
+            for item in obj:
+                _walk(item)
+        elif obj is not None:
+            leaves.add(str(obj))
+
+    _walk(data)
+    return len(leaves)
+
+
 def _classify_transition(input_size: int, output_size: int,
                           keys_removed: list, keys_added: list) -> str:
     """Classify what happened to context between two points."""
@@ -205,6 +238,8 @@ def _collect_agent_snapshots(
         agent_io[s.span_id] = {
             "name": s.name, "in_size": in_size, "out_size": out_size,
             "in_keys": in_keys, "out_keys": out_keys,
+            "in_info_units": _count_leaf_values(s.input_data),
+            "out_info_units": _count_leaf_values(s.output_data),
             "started_at": s.started_at, "ended_at": s.ended_at,
             "duration_ms": s.duration_ms or 0,
         }
@@ -292,6 +327,8 @@ def _build_transition(
         delta_bytes=delta, delta_pct=delta_pct, event=event,
         keys_added=keys_added, keys_removed=keys_removed,
         keys_preserved=list(out_keys & in_keys),
+        info_units_in=a_info.get("out_info_units", 0),
+        info_units_out=b_info.get("in_info_units", 0),
     )
     bw = None
     gap_ms = b_info["duration_ms"] or 1
