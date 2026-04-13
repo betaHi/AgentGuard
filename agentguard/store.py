@@ -44,11 +44,22 @@ class TraceStore:
         self._dir = Path(directory)
         self._dir.mkdir(parents=True, exist_ok=True)
 
-    def save(self, trace: ExecutionTrace) -> str:
-        """Save a trace to disk. Returns the file path."""
+    def save(self, trace: ExecutionTrace, max_traces: int = 100) -> str:
+        """Save a trace to disk and auto-prune old traces.
+
+        Args:
+            trace: The execution trace to save.
+            max_traces: Maximum traces to keep on disk. Oldest are pruned
+                after save. Set to 0 to disable pruning.
+
+        Returns:
+            File path of the saved trace.
+        """
         filename = f"{trace.trace_id}.json"
         path = self._dir / filename
         path.write_text(trace.to_json())
+        if max_traces > 0:
+            self.prune(keep=max_traces)
         return str(path)
 
     def load(self, trace_id: str) -> ExecutionTrace | None:
