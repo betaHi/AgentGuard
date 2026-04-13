@@ -339,6 +339,8 @@ class BottleneckReport:
     bottleneck_duration_ms: float
     bottleneck_pct: float  # % of total trace time consumed by bottleneck
     agent_rankings: list[dict]  # agents sorted by duration
+    false_bottleneck: Optional[str] = None  # agent that looks slow but is waiting
+    false_bottleneck_detail: str = ""  # explanation of why it is a false bottleneck
 
     def to_dict(self) -> dict:
         return {
@@ -348,6 +350,8 @@ class BottleneckReport:
             "bottleneck_duration_ms": round(self.bottleneck_duration_ms, 1),
             "bottleneck_pct": round(self.bottleneck_pct, 1),
             "agent_rankings": self.agent_rankings,
+            "false_bottleneck": self.false_bottleneck,
+            "false_bottleneck_detail": self.false_bottleneck_detail,
         }
 
     def to_report(self) -> str:
@@ -430,6 +434,40 @@ def _classify_span_category(
     return "unknown"
 
 
+def _detect_false_bottleneck(
+    rankings: list[dict],
+) -> tuple[Optional[str], str]:
+    """Detect an agent that appears slow but is actually waiting on dependencies.
+
+    A false bottleneck has the highest total wall time but <=20% of that
+    is own work — the rest is children (dependency wait time).
+
+    Returns:
+        (agent_name, explanation) or (None, "") if no false bottleneck.
+    """
+    if not rankings:
+        return None, ""
+    # Find agent with highest total wall time
+    by_total = sorted(rankings, key=lambda x: x["duration_ms"], reverse=True)
+    candidate = by_total[0]
+    total = candidate["duration_ms"]
+    own = candidate["own_duration_ms"]
+    if total <= 0:
+        return None, ""
+    own_ratio = own / total
+    # False bottleneck: <20% own work AND is a container
+    if own_ratio <= 0.2 and candidate.get("is_container"):
+        wait_ms = total - own
+        detail = (
+            f"{candidate['name']} has {total:.0f}ms wall time but only "
+            f"{own:.0f}ms ({own_ratio:.0%}) is own work. "
+            f"{wait_ms:.0f}ms is dependency wait. "
+            f"Optimize its children instead."
+        )
+        return candidate["name"], detail
+    return None, ""
+
+
 def analyze_bottleneck(trace: ExecutionTrace) -> BottleneckReport:
     """Identify the performance bottleneck in a trace.
     
@@ -503,6 +541,9 @@ def analyze_bottleneck(trace: ExecutionTrace) -> BottleneckReport:
     # Sort by own duration (real work), not total duration
     agent_rankings.sort(key=lambda x: x["own_duration_ms"], reverse=True)
     
+    # Detect false bottleneck: agent with highest wall time but <=20% own work
+    fb_name, fb_detail = _detect_false_bottleneck(agent_rankings)
+
     return BottleneckReport(
         critical_path=critical_path,
         critical_path_duration_ms=critical_dur,
@@ -510,6 +551,8 @@ def analyze_bottleneck(trace: ExecutionTrace) -> BottleneckReport:
         bottleneck_duration_ms=bottleneck.duration_ms or 0 if bottleneck else 0,
         bottleneck_pct=((bottleneck.duration_ms or 0) / max(total_dur, 1)) * 100 if bottleneck else 0,
         agent_rankings=agent_rankings,
+        false_bottleneck=fb_name,
+        false_bottleneck_detail=fb_detail,
     )
 
 
