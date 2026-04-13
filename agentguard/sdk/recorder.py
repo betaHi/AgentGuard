@@ -29,6 +29,26 @@ class TraceRecorder:
         self.trace = ExecutionTrace(task=task, trigger=trigger)
         self.output_dir = Path(output_dir)
         self._local = threading.local()
+        self._sampled = self._decide_sampling()
+
+    @staticmethod
+    def _decide_sampling() -> bool:
+        """Decide once whether this trace should be recorded.
+
+        Uses agentguard.settings.sampling_rate. Decision is made per-trace
+        (not per-span) to avoid corrupted partial traces.
+        """
+        try:
+            import random
+            from agentguard.settings import get_settings
+            rate = get_settings().sampling_rate
+            if rate >= 1.0:
+                return True
+            if rate <= 0.0:
+                return False
+            return random.random() < rate
+        except Exception:
+            return True  # fail-open
 
     @property
     def _span_stack(self) -> list[str]:
@@ -74,12 +94,19 @@ class TraceRecorder:
         return wrapped
 
     def push_span(self, span: Span) -> None:
-        """Add a span to the trace and push it onto the context stack."""
+        """Add a span to the trace and push it onto the context stack.
+
+        If this trace was sampled out, the span is silently skipped.
+        """
+        if not self._sampled:
+            return
         self.trace.add_span(span)
         self._span_stack.append(span.span_id)
 
     def pop_span(self, span: Span) -> None:
         """Pop a span from the context stack."""
+        if not self._sampled:
+            return
         stack = self._span_stack
         if stack and stack[-1] == span.span_id:
             stack.pop()
