@@ -134,7 +134,7 @@ def filter_spans(trace: ExecutionTrace, *filters: SpanFilter) -> list[Span]:
 
 def filter_traces(traces: list[ExecutionTrace], *filters: TraceFilter) -> list[ExecutionTrace]:
     """Apply filters to get matching traces."""
-    def combined(t):
+    def combined(t) -> bool:
         return all(f(t) for f in filters)
     return [t for t in traces if combined(t)]
 

@@ -123,7 +123,7 @@ class TraceRecorder:
         """
         captured_stack = self.capture_context()
 
-        def wrapped(*args, **kwargs):
+        def wrapped(*args, **kwargs) -> Any:
             previous_stack = self.capture_context()
             self.restore_context(captured_stack)
             try:
