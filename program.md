@@ -17,7 +17,7 @@
 - [x] Q1: bottleneck report should rank agents by "own work time" excluding child spans, with percentage breakdown
 - [x] Q2: handoff analyzer should detect dropped keys — compare context keys sent vs keys received
 - [x] Q3: failure propagation report should include timeline visualization (ASCII) showing failure spread over time
-- [ ] Q4: cost-yield should identify the "most wasteful" agent (highest cost, lowest output quality) with actionable recommendation
+- [S] Q4: cost-yield should identify the "most wasteful" agent (highest cost, lowest output quality) with actionable recommendation (SKIPPED: 3x REJECT)
 - [ ] Q5: decision analysis should detect "repeated bad decisions" — same agent chosen despite prior failures
 
 ### P1: Viewer ↔ Analysis full alignment
