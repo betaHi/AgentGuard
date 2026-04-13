@@ -16,7 +16,7 @@
 - [x] Test: TraceBuilder with duration_ms produces spans with correct timestamps
 
 ### P3: Correlation analysis always empty on single trace
-- [ ] Fix: correlation analysis returns 0 correlations on single trace — it should still detect patterns within a single trace (e.g., failed spans sharing same parent, timing clusters). If single-trace correlation is inherently limited, document this clearly and show a multi-trace example
+- [x] Fix: correlation analysis returns 0 correlations on single trace — it should still detect patterns within a single trace (e.g., failed spans sharing same parent, timing clusters). If single-trace correlation is inherently limited, document this clearly and show a multi-trace example
 - [ ] Test: correlation analysis on a complex single trace returns at least basic patterns
 
 ### P4: Screenshot generation script
