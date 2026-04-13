@@ -2026,9 +2026,15 @@ def _find_agent_performance(
 
 
 def _evaluate_single_decision(
-    decision: DecisionRecord, trace: ExecutionTrace
+    decision: DecisionRecord,
+    trace: ExecutionTrace,
+    historical_stats: dict[str, dict] | None = None,
 ) -> CounterfactualResult:
-    """Compare one decision's chosen agent against its alternatives."""
+    """Compare one decision's chosen agent against its alternatives.
+
+    Uses in-trace performance first. Falls back to historical_stats
+    for alternatives that never ran in this trace.
+    """
     chosen_dur = decision.downstream_duration_ms
     chosen_failed = decision.led_to_failure
     chosen_status = decision.downstream_status
@@ -2040,8 +2046,14 @@ def _evaluate_single_decision(
 
     for alt_name in decision.alternatives:
         alt_status, alt_dur = _find_agent_performance(alt_name, trace)
+        if alt_status is None and historical_stats and alt_name in historical_stats:
+            # Fall back to historical stats for alternatives that never ran
+            hist = historical_stats[alt_name]
+            sr = hist.get("success_rate", 0)
+            alt_status = "completed" if sr >= 0.5 else "failed"
+            alt_dur = hist.get("avg_duration_ms")
         if alt_status is None:
-            continue  # alternative never ran, can't compare
+            continue
         alt_is_failed = alt_status == "failed"
         if _is_better(alt_is_failed, alt_dur, best_alt_failed, best_alt_dur):
             best_alt = alt_name
