@@ -1,28 +1,46 @@
-# AgentGuard — Sprint 2
+# AgentGuard — Sprint 3: Production Depth
 
-## Already Done (from Generator's previous commits)
-- [x] Q1: span category classification (CPU/IO/waiting)
-- [x] Q2: information retention ratio
-- [x] architecture.md (110 lines)
-- [x] OTel export/import bridge (export.py)
+## Goals
+1. Make every analysis module answer its Question with real diagnostic value
+2. Ensure viewer, CLI, and examples all tell the same accurate story
+3. Harden SDK for real-world adoption
+4. Comprehensive test coverage for edge cases
 
-## Stories To Implement (NOT yet in codebase)
+## Design Docs (authoritative)
+- GUARDRAILS.md — 5 Questions + 3 Lines
+- docs/current-state-review-zh.md — known issues
+- REVIEW.md — review criteria
 
-### P0: Core diagnostics depth
-- [x] Q3: failure propagation causal chain — build root→intermediate→final chain with confidence scores per link
-- [x] Q5: counterfactual decision analysis — compare actual outcome vs best alternative path
+## Current Stories
 
-### P1: Viewer enhancements
-- [x] Viewer comparison mode: render two traces side-by-side, highlight differences in timing/status/flow
-- [x] Viewer tool drill-down: clicking an agent bottleneck expands to show individual tool timings
+### P0: Analysis depth — make diagnostics genuinely useful
+- [ ] Q1: bottleneck report should rank agents by "own work time" excluding child spans, with percentage breakdown
+- [ ] Q2: handoff analyzer should detect dropped keys — compare context keys sent vs keys received
+- [ ] Q3: failure propagation report should include timeline visualization (ASCII) showing failure spread over time
+- [ ] Q4: cost-yield should identify the "most wasteful" agent (highest cost, lowest output quality) with actionable recommendation
+- [ ] Q5: decision analysis should detect "repeated bad decisions" — same agent chosen despite prior failures
 
-### P2: SDK
-- [x] ProcessPoolExecutor trace propagation (like TracingExecutor but for multiprocessing)
-- [x] Framework middleware: LangChain callback handler that auto-records agent/tool spans
+### P1: Viewer ↔ Analysis full alignment
+- [ ] HTML viewer: diagnostics panel should render ALL analysis outputs (bottleneck, flow, failures, cost-yield, decisions) — verify no analysis result is missing from viewer
+- [ ] HTML viewer: add trace metadata header (task name, total duration, agent count, span count, overall status)
+- [ ] CLI: `agentguard analyze` should output structured JSON matching exactly what viewer renders
 
-### P3: Testing
-- [S] Property-based test: hypothesis strategy for random traces, verify serialization roundtrip (SKIPPED: 3x REJECT)
-- [S] Stress test: generate 1000-span trace, verify analyze_bottleneck/flow/failures complete in <5s (SKIPPED: 3x REJECT)
+### P2: Examples tell real stories
+- [ ] Audit all 18 examples: run each, capture output, verify README/docs descriptions match actual output
+- [ ] Add example: debugging a real failure — trace shows agent B failed because agent A dropped context key "user_id"
+- [ ] Add example: performance optimization — trace shows parallel pipeline is 3x faster than sequential, with cost comparison
 
-### P4: Docs
-- [S] CONTRIBUTING.md enhancement: add architecture overview, PR review criteria (SKIPPED: 3x REJECT)
+### P3: SDK real-world readiness
+- [ ] Add `@record_agent` decorator error handling: if recording fails, the decorated function should still work (fail-open)
+- [ ] Add trace size limits: warn if trace exceeds 10MB, truncate span metadata if needed
+- [ ] Add `agentguard.configure()` for global settings (output dir, max trace size, sampling rate)
+
+### P4: Test edge cases
+- [ ] Test: trace with 0 spans (empty trace through full pipeline)
+- [ ] Test: trace with duplicate agent names (same agent called multiple times)
+- [ ] Test: trace with circular handoffs (A→B→A)
+- [ ] Test: Unicode agent names, emoji in metadata, very long strings
+- [ ] Test: concurrent recording from multiple threads simultaneously
+
+## Progress Log
+- 2026-04-13: Sprint 3 started — focus on production depth, not feature breadth
