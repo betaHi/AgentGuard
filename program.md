@@ -33,7 +33,7 @@
 ### P3: SDK real-world readiness
 - [x] Add `@record_agent` decorator error handling: if recording fails, the decorated function should still work (fail-open)
 - [x] Add trace size limits: warn if trace exceeds 10MB, truncate span metadata if needed
-- [ ] Add `agentguard.configure()` for global settings (output dir, max trace size, sampling rate)
+- [x] Add `agentguard.configure()` for global settings (output dir, max trace size, sampling rate)
 
 ### P4: Test edge cases
 - [ ] Test: trace with 0 spans (empty trace through full pipeline)
