@@ -1,4 +1,0 @@
-# file: /home/azureuser/AgentGuard/agentguard/ascii_viz.py
-# hypothesis_version: 6.151.12
-
-[0.2, 100, ' Diff', ' [+NEW]', ' [-DEL]', '(absent)', '(no timed spans)', '?', '?ms', 'Baseline', 'Candidate', 'Span Distribution:', 'Status:', 'agent', 'completed', 'duration_ms', 'failed', 'name', 'running', 'status', 'timeout', 'unknown', '…', '⏰', '─', '│', '┼', '█', '░', '▒', '▓', '○', '⚪', '✅', '✓', '✗', '❌', '❓', '🔄', '🔴', '🟢']

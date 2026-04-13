@@ -1,4 +1,0 @@
-# file: /home/azureuser/AgentGuard/agentguard/importer.py
-# hypothesis_version: 6.151.12
-
-[1000000000.0, '0', '1', '2', 'COMPLETED', 'ERROR', 'FAILED', 'OK', 'UNSET', 'Unknown error', '_parsed_attributes', 'agentguard.span_type', 'attributes', 'boolValue', 'chat', 'code', 'completion', 'doubleValue', 'endTimeUnixNano', 'error', 'handoff', 'intValue', 'key', 'kind', 'llm', 'message', 'name', 'parentSpanId', 'resourceSpans', 'scopeSpans', 'spanId', 'spans', 'startTimeUnixNano', 'status', 'status_code', 'stringValue', 'tool', 'traceId', 'trace_id', 'unnamed', 'value']

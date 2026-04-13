@@ -1,4 +1,0 @@
-# file: /home/azureuser/AgentGuard/agentguard/guard.py
-# hypothesis_version: 6.151.12
-
-['\n🛡️ Guard stopped.', '*.json', '.agentguard/traces', 'Content-Type', 'a', 'agent', 'application/json', 'critical', 'failed', 'failed_agents', 'failed_tools', 'message', 'severity', 'text', 'timestamp', 'trace_id', 'utf-8', 'warning', '🔴', '🟡', '🟢']

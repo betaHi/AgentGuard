@@ -1,4 +1,0 @@
-# file: /home/azureuser/AgentGuard/agentguard/errors.py
-# hypothesis_version: 6.151.12
-
-['401', '403', '404', '429', '502', '503', '504', 'agent', 'assertion.*error', 'attribute.*error', 'authentication', 'authorization', 'broken.*pipe', 'by_category', 'category', 'connection.*refused', 'connection.*reset', 'disk.*full', 'error', 'errors', 'forbidden', 'import.*error', 'index.*error', 'invalid.*key', 'key.*error', 'logic', 'memory.*error', 'name.*error', 'no.*space', 'not.?found', 'oom', 'out.?of.?memory', 'permanent', 'permission', 'quota.*exceeded', 'rate.?limit', 'resource', 'resource.*exhausted', 'retry', 'retryable', 'retryable_count', 'span_type', 'temporary', 'timeout', 'too many requests', 'total_errors', 'transient', 'type.*error', 'unavailable', 'unknown', 'value.*error', '❓', '🐛', '💾', '🔄', '🔒']

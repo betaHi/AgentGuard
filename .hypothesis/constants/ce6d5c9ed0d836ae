@@ -1,4 +1,0 @@
-# file: /home/azureuser/AgentGuard/agentguard/eval/rules.py
-# hypothesis_version: 6.151.12
-
-['%Y-%m-%d', '%Y/%m/%d', '%d-%m-%Y', '+00:00', '.', '; ', 'Target is not a list', 'Target not found', 'Value is None', 'Z', 'all', 'all present', 'all recent', 'all unique', 'any', 'contains', 'each_has', 'max_count', 'min_count', 'name', 'no_duplicates', 'range', 'recency', 'regex', 'type']

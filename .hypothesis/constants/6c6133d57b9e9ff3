@@ -1,4 +1,0 @@
-# file: /home/azureuser/AgentGuard/agentguard/core/eval_schema.py
-# hypothesis_version: 6.151.12
-
-['agent_name', 'agent_version', 'error', 'evaluated_at', 'fail', 'failed', 'metadata', 'overall', 'pass', 'passed', 'rules', 'skip', 'total', 'trace_id', 'verdict', '⏭️', '✅', '❌']

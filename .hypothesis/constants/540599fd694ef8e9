@@ -1,4 +1,0 @@
-# file: /home/azureuser/AgentGuard/agentguard/optimize.py
-# hypothesis_version: 6.151.12
-
-[0.5, 'affected_spans', 'category', 'cost', 'description', 'estimated_impact', 'handoff.context_keys', 'high', 'low', 'medium', 'performance', 'priority', 'reliability', 'simplification', 'suggestion_count', 'suggestions', 'title', '⚪', '🔴', '🟡', '🟢']

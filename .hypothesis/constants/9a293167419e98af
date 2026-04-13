@@ -1,4 +1,0 @@
-# file: /home/azureuser/AgentGuard/agentguard/sdk/recorder.py
-# hypothesis_version: 6.151.12
-
-['.agentguard/traces', '_T', '_child_suffix', 'completed', 'failed', 'manual', 'span_stack', 'utf-8']

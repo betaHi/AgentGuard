@@ -1,4 +1,0 @@
-# file: /home/azureuser/AgentGuard/agentguard/sdk/handoff.py
-# hypothesis_version: 6.151.12
-
-['alternatives', 'alternatives_count', 'chosen', 'context_keys', 'context_size_bytes', 'coordinator', 'decision', 'decision.chosen', 'decision.confidence', 'decision.coordinator', 'decision.criteria', 'decision.rationale', 'decision.type', 'dropped_keys', 'extra_keys', 'extra_used', 'from', 'handoff.context_keys', 'handoff.dropped_keys', 'handoff.from', 'handoff.to', 'handoff.used_keys', 'handoff.utilization', 'keys', 'loss_detected', 'missing_keys', 'orchestration', 'rationale', 'received_size_bytes', 'required_missing', 'sent_size_bytes', 'size_bytes', 'size_delta_bytes', 'summary', 'to', 'used_keys', 'utf-8', 'utilization_ratio']

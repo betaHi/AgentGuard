@@ -5,6 +5,9 @@ serialization/deserialization preserves structure, and analysis
 functions never crash on valid input.
 """
 
+import pytest
+
+hypothesis = pytest.importorskip('hypothesis')
 from hypothesis import given, settings, assume
 from hypothesis import strategies as st
 

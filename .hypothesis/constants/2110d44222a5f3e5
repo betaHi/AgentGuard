@@ -1,4 +1,0 @@
-# file: /home/azureuser/AgentGuard/agentguard/sdk/manual.py
-# hypothesis_version: 6.151.12
-
-['.agentguard/traces', 'agent_version', 'latest', 'manual']

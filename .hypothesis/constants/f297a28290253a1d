@@ -1,4 +1,0 @@
-# file: /home/azureuser/AgentGuard/agentguard/sdk/context.py
-# hypothesis_version: 6.151.12
-
-['TracingExecutor', 'agent', 'agent_version', 'asyncio.Task[Any]', 'completed', 'ended_at', 'error', 'input_data', 'latest', 'metadata', 'name', 'output_data', 'parent_span_id', 'process_pool', 'return_value', 'span_id', 'span_type', 'spans', 'started_at', 'status', 'worker']

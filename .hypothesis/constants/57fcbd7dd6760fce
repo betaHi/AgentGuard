@@ -1,4 +1,0 @@
-# file: /home/azureuser/AgentGuard/agentguard/replay.py
-# hypothesis_version: 6.151.12
-
-['*.json', 'ReplayCase', 'ReplayEngine', 'ReplayResult', 'baseline', 'baseline_output', 'candidate', 'case', 'comparison', 'improved', 'input_data', 'metadata', 'name', 'neutral', 'regressed', 'rules', 'utf-8', 'verdict']

@@ -1,4 +1,0 @@
-# file: /home/azureuser/AgentGuard/agentguard/scoring.py
-# hypothesis_version: 6.151.12
-
-[0.0, 0.15, 0.2, 0.3, 1.0, 2.0, 40.0, 50.0, 80.0, 100.0, 100, '## Components', 'A', 'B', 'C', 'Context Integrity', 'D', 'Efficiency', 'F', 'No duration data', 'No spans recorded', 'Performance', 'Resilience', 'Success Rate', 'components', 'context_integrity', 'details', 'efficiency', 'grade', 'handoff.context_keys', 'handoff.utilization', 'name', 'overall', 'performance', 'resilience', 'score', 'success_rate', 'summary', 'weight', 'weighted_score', '█', '░']

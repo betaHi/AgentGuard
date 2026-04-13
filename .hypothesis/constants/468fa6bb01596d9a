@@ -1,4 +1,0 @@
-# file: /home/azureuser/AgentGuard/agentguard/core/trace.py
-# hypothesis_version: 6.151.12
-
-[1000, 'agent', 'caused_by', 'children', 'completed', 'context_dropped_keys', 'context_passed', 'context_received', 'context_size_bytes', 'context_used_keys', 'duration_ms', 'ended_at', 'error', 'estimated_cost_usd', 'failed', 'failure_handled', 'handoff', 'handoff_from', 'handoff_to', 'input_data', 'llm_call', 'manual', 'metadata', 'name', 'output_data', 'parent_span_id', 'retry_count', 'retry_of', 'running', 'span_id', 'span_type', 'spans', 'started_at', 'status', 'tags', 'task', 'timeout', 'token_count', 'tool', 'trace_id', 'trigger']

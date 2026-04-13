@@ -1,4 +1,0 @@
-# file: /home/azureuser/AgentGuard/agentguard/context_flow.py
-# hypothesis_version: 6.151.12
-
-[0.3, 0.7, 1.5, 2.0, 100, 1000, 'agent', 'bandwidth', 'bandwidth_bps', 'bottleneck_agent', 'bytes', 'compression', 'compression_ratio', 'delta_bytes', 'delta_pct', 'direction', 'duration_ms', 'ended_at', 'event', 'expansion', 'expansion_events', 'from', 'in_keys', 'in_size', 'input', 'input_size', 'key_count', 'keys', 'keys_added', 'keys_removed', 'name', 'out_keys', 'out_size', 'output', 'output_size', 'size_bytes', 'snapshots', 'stable', 'started_at', 'to', 'total_bytes_in', 'total_bytes_out', 'transformation', 'transitions', 'truncation', 'truncation_events', 'unknown', 'utf-8', '⚪', '🔴', '🔵', '🟡', '🟢', '🟣']

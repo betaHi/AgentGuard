@@ -1,4 +1,0 @@
-# file: /home/azureuser/AgentGuard/agentguard/eval/compare.py
-# hypothesis_version: 6.151.12
-
-[-0.05, 0.05, -100, 500, '# Regression Report', '## Diffs', 'agent_count', 'baseline', 'candidate', 'delta', 'diffs', 'duration_ms', 'error_count', 'failed', 'field', 'id', 'improved', 'neutral', 'no_change', 'pass_rate', 'recommendation', 'regressed', 'review_before_deploy', 'safe_to_deploy', 'tool_count', 'verdict', 'version', '➡️', '📈', '📉']

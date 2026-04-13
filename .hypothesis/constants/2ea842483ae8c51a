@@ -1,4 +1,0 @@
-# file: /home/azureuser/AgentGuard/agentguard/aggregate.py
-# hypothesis_version: 6.151.12
-
-[0.7, 0.9, 100, '## Common Errors', 'agent', 'agent_stats', 'avg_duration_ms', 'avg_score', 'common_errors', 'count', 'duration_trend', 'error', 'inf', 'invocations', 'max_duration_ms', 'min_duration_ms', 'name', 'score_trend', 'success_rate', 'total_retries', 'trace_count', '🔴', '🟡', '🟢']

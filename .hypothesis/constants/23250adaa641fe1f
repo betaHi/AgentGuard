@@ -1,4 +1,0 @@
-# file: /home/azureuser/AgentGuard/agentguard/benchmark.py
-# hypothesis_version: 6.151.12
-
-[1000, '# Benchmark Results', 'auto_annotate', 'avg_ms', 'context_flow', 'correlations', 'dependency_graph', 'flow_graph', 'iterations', 'max_ms', 'metrics', 'min_ms', 'name', 'normalize', 'propagation', 'results', 'schema_validate', 'scoring', 'summarize', 'timeline', 'total_ms', 'trace_count', 'tree_stats']

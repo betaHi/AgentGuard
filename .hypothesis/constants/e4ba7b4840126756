@@ -1,4 +1,0 @@
-# file: /home/azureuser/AgentGuard/agentguard/stats.py
-# hypothesis_version: 6.151.12
-
-[-0.3, 0.1, 0.3, 1.5, 100, 'count', 'decreasing', 'increasing', 'insufficient_data', 'max', 'mean', 'median', 'min', 'p25', 'p75', 'p90', 'p99', 'stable', 'stdev', 'volatile']

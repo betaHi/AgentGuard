@@ -1,4 +1,0 @@
-# file: /home/azureuser/AgentGuard/agentguard/alerts.py
-# hypothesis_version: 6.151.12
-
-['cost_usd', 'details', 'duration_ms', 'error', 'error_rate', 'errors', 'grade', 'message', 'rule', 'score', 'severity', 'threshold', 'threshold_ms', 'threshold_usd', 'timestamp', 'trace_failed', 'trace_id', 'warning']
