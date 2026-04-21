@@ -39,15 +39,21 @@ Each card in the report carries a one-line verdict so you can read it top-to-bot
 
 ## Install
 
-Most people shouldn't need to install anything manually.
+One prerequisite — [`uv`](https://docs.astral.sh/uv/), the cross-platform Python installer:
 
-| Your situation | What to do |
+```bash
+curl -LsSf https://astral.sh/uv/install.sh | sh
+```
+
+Then pick the entry point you'll actually use:
+
+| | Command |
 |---|---|
-| Using the **Claude Code plugin** (entry point A below) | Run two slash-commands inside Claude Code — no local clone, no pip needed |
-| Using the **CLI** from a terminal | One-liner: `curl -sSL https://raw.githubusercontent.com/betaHi/AgentGuard/main/install.sh \| bash` |
-| Using the **Python API** in your own code | `pipx install "agentguard @ git+https://github.com/betaHi/AgentGuard.git"` (or pip equivalent) |
+| **Claude Code plugin** | Two slash-commands inside Claude Code (entry point A below). The plugin runs `uv tool install` on first session. |
+| **CLI** | `curl -sSL https://raw.githubusercontent.com/betaHi/AgentGuard/main/install.sh \| bash` |
+| **Python API** | `uv tool install "git+https://github.com/betaHi/AgentGuard.git" --with claude-agent-sdk` |
 
-The one-liner tries `pipx` first, falls back to `pip install --user`, and also pulls in `claude-agent-sdk`. Skip the SDK with `AGENTGUARD_NO_SDK=1`.
+All three paths install `agentguard` + `claude-agent-sdk`. Skip the SDK with `AGENTGUARD_NO_SDK=1`.
 
 ## Use it — three entry points
 
@@ -55,16 +61,14 @@ Pick the one that matches how you already work.
 
 ### A. Claude Code plugin (in-editor, recommended)
 
-Zero local setup — just two lines inside Claude Code:
+Two lines inside Claude Code:
 
 ```text
 /plugin marketplace add betaHi/AgentGuard
 /plugin install agentguard@agentguard
 ```
 
-That adds this repository as a plugin marketplace, installs the `agentguard` plugin, and runs a one-time bootstrap (`pipx install`, `pip --user` fallback) that puts `agentguard` + `claude-agent-sdk` on your system on first use.
-
-Already have the repo cloned? `claude --plugin-dir ./plugins/agentguard-claude-code` still works for local iteration.
+First session runs a one-time `uv tool install` to put `agentguard` + `claude-agent-sdk` on your system. Have the repo cloned? `claude --plugin-dir ./plugins/agentguard-claude-code` still works for local iteration.
 
 Once installed, the plugin exposes:
 

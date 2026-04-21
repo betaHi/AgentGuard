@@ -1,24 +1,25 @@
 #!/usr/bin/env bash
 # AgentGuard auto-bootstrap.
 #
-# Ensures `agentguard` is importable/runnable on the current machine without
-# asking the user to run pip themselves. Called from:
+# Ensures `agentguard` is runnable on the current machine. Called from:
 #   - the SessionStart hook (one-shot, silent on success)
 #   - the `bin/agentguard` launcher as a last-resort fallback
 #
-# Strategy (first success wins):
-#   1. If agentguard is already resolvable, do nothing.
-#   2. `pipx install` from the upstream git repo (puts it on PATH globally).
-#      Also `pipx inject` claude-agent-sdk so live-capture works.
-#   3. `python3 -m pip install --user` as a fallback.
+# Strategy:
+#   1. If agentguard is already on PATH, do nothing.
+#   2. Run `uv tool install` with the upstream git spec.
+#
+# uv is the only supported auto-installer because it is the one method that
+# works identically across Linux/macOS/Windows, is a single static binary, and
+# does not depend on whatever state the system python / pip / distutils are in.
+# If uv is missing, print a clear instruction and exit non-zero. The README
+# lists uv as a prerequisite.
 #
 # Honors:
-#   - AGENTGUARD_AUTO_INSTALL=0   disables this bootstrap entirely
-#   - AGENTGUARD_GIT_REF          branch/tag/commit to install (default: main)
-#   - AGENTGUARD_PKG_SPEC         full pip spec override
-#     (e.g. AGENTGUARD_PKG_SPEC="agentguard==0.2.0")
-#
-# Emits a one-time sentinel so repeated sessions don't re-trigger the install.
+#   AGENTGUARD_AUTO_INSTALL=0    disables this bootstrap entirely
+#   AGENTGUARD_GIT_REF           branch/tag/commit (default: main)
+#   AGENTGUARD_PKG_SPEC          full pip/uv spec override
+#   AGENTGUARD_FORCE_INSTALL=1   retry even after a previous attempt
 set -u
 
 if [ "${AGENTGUARD_AUTO_INSTALL:-1}" = "0" ]; then
@@ -27,9 +28,6 @@ fi
 
 # Already installed? Nothing to do.
 if command -v agentguard >/dev/null 2>&1; then
-  exit 0
-fi
-if command -v python3 >/dev/null 2>&1 && python3 -c "import agentguard" >/dev/null 2>&1; then
   exit 0
 fi
 
@@ -51,24 +49,30 @@ spec="${AGENTGUARD_PKG_SPEC:-git+https://github.com/betaHi/AgentGuard.git@${ref}
   printf '[%s] AgentGuard bootstrap starting (spec=%s)\n' "$(date -Is)" "$spec"
 } >>"$log_file" 2>&1 || true
 
-# Route 1: pipx (best UX — isolated venv, goes on PATH).
-if command -v pipx >/dev/null 2>&1; then
-  if pipx install "$spec" >>"$log_file" 2>&1; then
-    pipx inject agentguard claude-agent-sdk >>"$log_file" 2>&1 || true
-    printf '[%s] pipx install succeeded\n' "$(date -Is)" >>"$log_file" 2>&1 || true
-    exit 0
-  fi
-  printf '[%s] pipx install failed, falling back to pip --user\n' "$(date -Is)" >>"$log_file" 2>&1 || true
+# Resolve uv: on PATH, or in the default astral install location.
+uv_bin=""
+if command -v uv >/dev/null 2>&1; then
+  uv_bin="$(command -v uv)"
+elif [ -x "$HOME/.local/bin/uv" ]; then
+  uv_bin="$HOME/.local/bin/uv"
 fi
 
-# Route 2: pip install --user.
-if command -v python3 >/dev/null 2>&1; then
-  if python3 -m pip install --user --quiet "$spec" >>"$log_file" 2>&1; then
-    python3 -m pip install --user --quiet claude-agent-sdk >>"$log_file" 2>&1 || true
-    printf '[%s] pip --user install succeeded\n' "$(date -Is)" >>"$log_file" 2>&1 || true
-    exit 0
-  fi
+if [ -z "$uv_bin" ]; then
+  cat >&2 <<'MSG'
+AgentGuard needs `uv` to install itself. Run:
+
+  curl -LsSf https://astral.sh/uv/install.sh | sh
+
+…then start a new Claude Code session. (See README for details.)
+MSG
+  printf '[%s] uv not found on PATH or ~/.local/bin\n' "$(date -Is)" >>"$log_file" 2>&1 || true
+  exit 1
 fi
 
-printf '[%s] bootstrap failed — see %s\n' "$(date -Is)" "$log_file" >&2
+if "$uv_bin" tool install "$spec" --with claude-agent-sdk >>"$log_file" 2>&1; then
+  printf '[%s] uv tool install succeeded\n' "$(date -Is)" >>"$log_file" 2>&1 || true
+  exit 0
+fi
+
+printf '[%s] uv tool install failed — see %s\n' "$(date -Is)" "$log_file" >&2
 exit 1
