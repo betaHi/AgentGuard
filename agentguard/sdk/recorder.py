@@ -13,6 +13,7 @@ from pathlib import Path
 from typing import Any, TypeVar
 
 from agentguard.core.trace import ExecutionTrace, Span
+from agentguard.settings import get_settings
 
 
 class TraceRecorder:
@@ -25,9 +26,10 @@ class TraceRecorder:
         output_dir: Directory to write trace files.
     """
 
-    def __init__(self, task: str = "", trigger: str = "manual", output_dir: str = ".agentguard/traces"):
+    def __init__(self, task: str = "", trigger: str = "manual", output_dir: str | None = None):
         self.trace = ExecutionTrace(task=task, trigger=trigger)
-        self.output_dir = Path(output_dir)
+        resolved_output_dir = output_dir or get_settings().output_dir
+        self.output_dir = Path(resolved_output_dir)
         self._local = threading.local()
         self._sampled = self._decide_sampling()
 
@@ -217,7 +219,7 @@ _lock = threading.Lock()
 _T = TypeVar("_T")
 
 
-def init_recorder(task: str = "", trigger: str = "manual", output_dir: str = ".agentguard/traces") -> TraceRecorder:
+def init_recorder(task: str = "", trigger: str = "manual", output_dir: str | None = None) -> TraceRecorder:
     """Initialize a new global trace recorder.
 
     Args:

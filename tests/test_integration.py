@@ -599,16 +599,19 @@ def test_readme_quick_start():
 
 def test_coding_pipeline_full_cycle():
     """The coding pipeline example runs and produces valid trace + analysis + evolve."""
+    import os
     import subprocess
     import sys
+
+    repo_root = Path(__file__).resolve().parents[1]
 
     with tempfile.TemporaryDirectory():
         # Run the actual example
         result = subprocess.run(
             [sys.executable, "examples/coding_pipeline.py"],
             capture_output=True, text=True,
-            env={**__import__('os').environ, "PYTHONPATH": "/tmp/AgentGuard"},
-            cwd="/tmp/AgentGuard",
+            env={**os.environ, "PYTHONPATH": str(repo_root)},
+            cwd=repo_root,
             timeout=30,
         )
 

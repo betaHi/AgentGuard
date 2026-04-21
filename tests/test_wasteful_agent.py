@@ -15,6 +15,22 @@ def _entry(agent, tokens=0, cost=0.0, status="completed",
     )
 
 
+class TestQualityAwareRecommendations:
+    def test_low_quality_signal_can_trigger_recommendation(self):
+        trace = (TraceBuilder("quality rec")
+            .agent(
+                "low-quality",
+                duration_ms=1000,
+                token_count=2000,
+                cost_usd=0.2,
+                output_data={"quality": 0.2, "summary": "x" * 800},
+            )
+            .end()
+            .build())
+        report = analyze_cost_yield(trace)
+        assert any("weak quality signals" in rec for rec in report.recommendations)
+
+
 class TestWasteScore:
     def test_failed_agent_max_waste(self):
         e = _entry("bad", status="failed", tokens=1000)

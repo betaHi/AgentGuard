@@ -6,7 +6,8 @@ multi-agent systems with AgentGuard.
 ## Prerequisites
 
 - Python 3.11+
-- AgentGuard installed: `pip install -e .`
+- For application teams: `pip install agentguard`
+- For AgentGuard contributors: `pip install -e .`
 
 ## Part 1: Your First Trace
 
@@ -16,7 +17,18 @@ multi-agent systems with AgentGuard.
 agentguard init
 ```
 
-This creates `.agentguard/traces/` and `agentguard.json`.
+This creates `.agentguard/traces/`, `.agentguard/knowledge/`, and `agentguard.json`.
+
+Recommended startup in real applications:
+
+```python
+import agentguard
+
+agentguard.configure(
+    output_dir=".agentguard/traces",
+    auto_thread_context=True,
+)
+```
 
 ### 1.2 Instrument Your Agents
 
@@ -270,3 +282,4 @@ Verifies Python version, core modules, traces directory, and config.
 - See [examples.md](examples.md) for the example catalog
 - See [architecture.md](architecture.md) for system design
 - See [getting-started.md](getting-started.md) for the onboarding guide
+- See [current-state-review-zh.md](current-state-review-zh.md) for the current product status and next tasks

@@ -83,6 +83,17 @@ class TestMarkContextUsed:
         assert h.metadata["handoff.dropped_keys"] == ["y"]
         assert h.metadata["handoff.utilization"] == 0.5
 
+    def test_explicit_critical_keys_preserved(self):
+        """Explicit critical handoff keys stay in metadata for later analysis."""
+        h = record_handoff(
+            "router",
+            "executor",
+            context={"query": "refund", "notes": "verbose", "priority": "high"},
+            metadata={"handoff.critical_keys": ["query", "priority"]},
+        )
+
+        assert h.metadata["handoff.critical_keys"] == ["query", "priority"]
+
 
 class TestDetectContextLossDeep:
     """Extended tests for context loss detection."""

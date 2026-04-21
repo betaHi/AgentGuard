@@ -32,6 +32,7 @@ Usage:
 from __future__ import annotations
 
 import contextlib
+import hashlib
 import json
 from dataclasses import dataclass, field
 from datetime import UTC, datetime
@@ -60,6 +61,7 @@ class Lesson:
     occurrences: int = 1
     first_seen: str = ""
     last_seen: str = ""
+    evidence: list[dict[str, str]] = field(default_factory=list)
 
     def to_dict(self) -> dict:
         return {
@@ -68,6 +70,7 @@ class Lesson:
             "confidence": round(self.confidence, 2),
             "occurrences": self.occurrences,
             "first_seen": self.first_seen, "last_seen": self.last_seen,
+            "evidence": self.evidence,
         }
 
 
@@ -152,25 +155,88 @@ class EvolutionEngine:
     def __init__(self, knowledge_dir: str = ".agentguard/knowledge"):
         self.knowledge_dir = Path(knowledge_dir)
         self._kb: KnowledgeBase | None = None
+        self._load_warning: str | None = None
+
+    @property
+    def load_warning(self) -> str | None:
+        """Return any warning produced while loading the knowledge base."""
+        return self._load_warning
+
+    def _quarantine_corrupt_kb(self, kb_path: Path) -> None:
+        """Move an unreadable knowledge base aside so a clean one can be rebuilt."""
+        suffix = datetime.now(UTC).strftime("%Y%m%d%H%M%S")
+        backup = kb_path.with_name(f"knowledge.corrupt.{suffix}.json")
+        with contextlib.suppress(OSError):
+            kb_path.replace(backup)
+
+    def _load_kb_from_disk(self) -> KnowledgeBase:
+        """Load knowledge safely, recovering from corrupt on-disk state."""
+        kb_path = self.knowledge_dir / "knowledge.json"
+        if not kb_path.exists():
+            self._load_warning = None
+            return KnowledgeBase()
+        try:
+            data = json.loads(kb_path.read_text(encoding="utf-8"))
+            self._load_warning = None
+            return KnowledgeBase.from_dict(data)
+        except (OSError, json.JSONDecodeError, TypeError, ValueError) as exc:
+            self._load_warning = f"Recovered corrupt knowledge base: {exc}"
+            self._quarantine_corrupt_kb(kb_path)
+            return KnowledgeBase()
 
     @property
     def kb(self) -> KnowledgeBase:
         """Load or create the knowledge base."""
         if self._kb is None:
-            kb_path = self.knowledge_dir / "knowledge.json"
-            if kb_path.exists():
-                self._kb = KnowledgeBase.from_dict(
-                    json.loads(kb_path.read_text(encoding="utf-8"))
-                )
-            else:
-                self._kb = KnowledgeBase()
+            self._kb = self._load_kb_from_disk()
         return self._kb
 
     def _save_kb(self) -> None:
         """Persist the knowledge base to disk."""
         self.knowledge_dir.mkdir(parents=True, exist_ok=True)
         kb_path = self.knowledge_dir / "knowledge.json"
-        kb_path.write_text(json.dumps(self.kb.to_dict(), indent=2, ensure_ascii=False), encoding="utf-8")
+        tmp_path = kb_path.with_suffix(".json.tmp")
+        tmp_path.write_text(json.dumps(self.kb.to_dict(), indent=2, ensure_ascii=False), encoding="utf-8")
+        tmp_path.replace(kb_path)
+
+    def _lesson_key(self, lesson: Lesson) -> str:
+        """Build a stable deduplication key for a lesson across processes."""
+        raw = f"{lesson.category}|{lesson.agent}|{lesson.observation}".encode("utf-8")
+        digest = hashlib.sha1(raw).hexdigest()[:12]
+        return f"{lesson.category}:{lesson.agent}:{digest}"
+
+    def _lesson_evidence(self, trace: ExecutionTrace, lesson: Lesson, now: str) -> dict[str, str]:
+        """Build a compact evidence entry for a learned lesson."""
+        return {
+            "trace_id": trace.trace_id,
+            "task": trace.task or "",
+            "span": lesson.agent,
+            "observed_at": now,
+        }
+
+    def _validate_confidence(self, min_confidence: float) -> None:
+        """Validate confidence threshold arguments."""
+        if not 0 <= min_confidence <= 1:
+            raise ValueError("min_confidence must be between 0 and 1")
+
+    def _validate_positive(self, value: int, name: str) -> None:
+        """Validate positive integer arguments."""
+        if value < 1:
+            raise ValueError(f"{name} must be >= 1")
+
+    def _load_auto_apply_config(self, config_path: Path) -> dict:
+        """Load config safely before auto-apply writes changes."""
+        if not config_path.exists():
+            return {}
+        try:
+            config = json.loads(config_path.read_text(encoding="utf-8"))
+        except json.JSONDecodeError as exc:
+            raise ValueError(f"Invalid config JSON in {config_path}: {exc.msg}") from exc
+        if not isinstance(config, dict):
+            raise ValueError(f"Invalid config format in {config_path}: root must be an object")
+        if "agents" in config and not isinstance(config["agents"], list):
+            raise ValueError(f"Invalid config format in {config_path}: 'agents' must be a list")
+        return config
 
     def _lessons_from_failures(
         self, failures: "FailureAnalysis", now: str,
@@ -257,20 +323,22 @@ class EvolutionEngine:
         now = datetime.now(UTC).isoformat()
 
         for lesson in reflection.lessons:
-            # Create a stable key for deduplication
-            key = f"{lesson.category}:{lesson.agent}:{hash(lesson.observation) % 10000}"
+            key = self._lesson_key(lesson)
+            evidence = self._lesson_evidence(trace, lesson, now)
 
             if key in self.kb.lessons:
                 # Reinforce existing lesson
                 existing = self.kb.lessons[key]
                 existing.occurrences += 1
                 existing.last_seen = now
+                existing.evidence = (existing.evidence + [evidence])[-5:]
                 # Confidence increases with repetition (caps at 0.95)
                 existing.confidence = min(0.95, existing.confidence + 0.05)
             else:
                 # New lesson
                 lesson.first_seen = now
                 lesson.last_seen = now
+                lesson.evidence = [evidence]
                 self.kb.lessons[key] = lesson
 
         self.kb.trace_count += 1
@@ -285,6 +353,7 @@ class EvolutionEngine:
         Returns lessons sorted by confidence (most confident first).
         Only returns lessons above the confidence threshold.
         """
+        self._validate_confidence(min_confidence)
         suggestions = [
             l for l in self.kb.lessons.values()
             if l.confidence >= min_confidence
@@ -385,9 +454,16 @@ class EvolutionEngine:
         Returns:
             List of trend observations.
         """
+        self._validate_positive(window, "window")
         trends = []
 
-        for _key, lesson in self.kb.lessons.items():
+        lessons = sorted(
+            self.kb.lessons.values(),
+            key=lambda lesson: lesson.last_seen,
+            reverse=True,
+        )[:window]
+
+        for lesson in lessons:
             if lesson.occurrences >= 3:
                 if lesson.category == "failure" and "unhandled" in lesson.observation.lower():
                     trends.append({
@@ -428,6 +504,7 @@ class EvolutionEngine:
         Returns:
             Markdown-formatted PRD string.
         """
+        self._validate_positive(min_occurrences, "min_occurrences")
         recurring = [l for l in self.kb.lessons.values() if l.occurrences >= min_occurrences]
         if not recurring:
             return (
@@ -482,6 +559,7 @@ class EvolutionEngine:
         Returns:
             Dict with patches, scores, and status.
         """
+        self._validate_confidence(min_confidence)
         suggestions = self.suggest(min_confidence=min_confidence)
         if not suggestions:
             return {"status": "no_suggestions", "patches": []}
@@ -508,9 +586,7 @@ class EvolutionEngine:
 
         if not dry_run:
             cp = Path("agentguard.json")
-            cfg = {}
-            if cp.exists():
-                with contextlib.suppress(BaseException): cfg = json.loads(cp.read_text(encoding="utf-8"))
+            cfg = self._load_auto_apply_config(cp)
             ac = {a.get("name", ""): a for a in cfg.get("agents", [])}
             for p in patches:
                 nm = p["agent"]

@@ -116,6 +116,18 @@ class TestContextTransformations:
             assert "key" in t
             assert "detail" in t
 
+    def test_summarization_keeps_moderate_semantic_retention(self):
+        ctx = analyze_context_flow(_summarization_trace())
+        score = ctx.points[0].semantic_retention_score
+        assert score is not None
+        assert score >= 0.55
+
+    def test_filtering_reduces_semantic_retention(self):
+        ctx = analyze_context_flow(_filtering_trace())
+        score = ctx.points[0].semantic_retention_score
+        assert score is not None
+        assert score < 0.8
+
     def test_empty_trace_no_crash(self):
         from agentguard.core.trace import ExecutionTrace
         t = ExecutionTrace(task="empty")

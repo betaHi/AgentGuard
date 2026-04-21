@@ -105,6 +105,7 @@ def detect_context_loss(
     sent_context: dict,
     received_input: dict,
     required_keys: list[str] | None = None,
+    critical_keys: list[str] | None = None,
 ) -> dict:
     """Detect if context was lost during a handoff.
 
@@ -118,12 +119,15 @@ def detect_context_loss(
         required_keys: Keys that *must* be present in the received input.
             If any are missing, ``loss_detected`` is True regardless of
             other key comparisons.
+        critical_keys: Keys that represent critical intent, constraints, or
+            routing context. Missing critical keys are surfaced separately.
 
     Returns:
         Dict containing:
             - ``missing_keys``: Keys in sent but not in received.
             - ``extra_keys``: Keys in received but not in sent.
             - ``required_missing``: Required keys that are absent.
+                - ``critical_missing``: Critical keys that are absent.
             - ``sent_size_bytes``: Serialized size of sent context.
             - ``received_size_bytes``: Serialized size of received input.
             - ``size_delta_bytes``: ``received - sent`` (negative = shrinkage).
@@ -141,15 +145,19 @@ def detect_context_loss(
     required_missing = []
     if required_keys:
         required_missing = [k for k in required_keys if k not in recv_keys]
+    critical_missing = []
+    if critical_keys:
+        critical_missing = [k for k in critical_keys if k not in recv_keys]
 
     return {
         "missing_keys": list(missing),
         "extra_keys": list(extra),
         "required_missing": required_missing,
+        "critical_missing": critical_missing,
         "sent_size_bytes": sent_size,
         "received_size_bytes": recv_size,
         "size_delta_bytes": recv_size - sent_size,
-        "loss_detected": len(missing) > 0 or len(required_missing) > 0,
+        "loss_detected": len(missing) > 0 or len(required_missing) > 0 or len(critical_missing) > 0,
     }
 
 

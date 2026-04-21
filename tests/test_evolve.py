@@ -1,6 +1,9 @@
 """Tests for self-reflection and evolution engine."""
 
 import tempfile
+from pathlib import Path
+
+import pytest
 
 from agentguard.core.trace import ExecutionTrace, Span, SpanType
 from agentguard.evolve import EvolutionEngine
@@ -160,3 +163,57 @@ def test_compare_to_best():
         assert comparison["trend"] in ["stable", "improving", "degrading", "first_run", "regression"]
         assert "current_score" in comparison
         assert "best_score" in comparison
+
+
+def test_evidence_chain_is_recorded():
+    """Learned lessons keep compact evidence from supporting traces."""
+    with tempfile.TemporaryDirectory() as tmpdir:
+        engine = EvolutionEngine(knowledge_dir=f"{tmpdir}/kb")
+        trace = _make_trace_with_failure()
+
+        engine.learn(trace)
+        engine.learn(trace)
+
+        lesson = next(iter(engine.kb.lessons.values()))
+        assert lesson.evidence
+        assert lesson.evidence[-1]["trace_id"] == trace.trace_id
+        assert lesson.evidence[-1]["span"] == lesson.agent
+
+
+def test_corrupt_knowledge_base_recovers_safely():
+    """Corrupt on-disk knowledge is quarantined and replaced with a clean KB."""
+    with tempfile.TemporaryDirectory() as tmpdir:
+        kb_dir = Path(tmpdir) / "kb"
+        kb_dir.mkdir(parents=True)
+        (kb_dir / "knowledge.json").write_text("{broken", encoding="utf-8")
+
+        engine = EvolutionEngine(knowledge_dir=str(kb_dir))
+        assert engine.kb.trace_count == 0
+        assert engine.load_warning is not None
+        assert list(kb_dir.glob("knowledge.corrupt.*.json"))
+
+
+def test_invalid_thresholds_raise():
+    """Invalid evolution thresholds fail fast instead of silently degrading."""
+    with tempfile.TemporaryDirectory() as tmpdir:
+        engine = EvolutionEngine(knowledge_dir=f"{tmpdir}/kb")
+        with pytest.raises(ValueError):
+            engine.suggest(min_confidence=1.5)
+        with pytest.raises(ValueError):
+            engine.detect_trends(window=0)
+        with pytest.raises(ValueError):
+            engine.generate_prd(min_occurrences=0)
+
+
+def test_auto_apply_invalid_config_fails(tmp_path, monkeypatch):
+    """auto_apply should fail loudly on invalid config instead of overwriting it."""
+    monkeypatch.chdir(tmp_path)
+    Path("agentguard.json").write_text("{broken", encoding="utf-8")
+
+    engine = EvolutionEngine(knowledge_dir=str(tmp_path / "kb"))
+    trace = _make_trace_with_failure()
+    for _ in range(3):
+        engine.learn(trace)
+
+    with pytest.raises(ValueError):
+        engine.auto_apply(trace, min_confidence=0.6, dry_run=False)

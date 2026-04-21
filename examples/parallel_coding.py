@@ -16,12 +16,13 @@ The review, security scan, and tests run in PARALLEL after code generation.
 import os
 import random
 import sys
+import threading
 import time
 
 random.seed(42)
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
-from agentguard import TraceThread, mark_context_used, record_agent, record_handoff, record_tool
+from agentguard import configure, mark_context_used, record_agent, record_handoff, record_tool
 from agentguard.ascii_viz import gantt_chart, status_summary
 from agentguard.scoring import score_trace
 from agentguard.sdk.recorder import finish_recording, init_recorder
@@ -113,9 +114,9 @@ def orchestrate_parallel_coding(task: str) -> dict:
 
     print("⚡ Running review, security scan, and tests in parallel...")
     threads = [
-        TraceThread(target=run_parallel, args=("review", review, code_result)),
-        TraceThread(target=run_parallel, args=("security", security_scan, code_result)),
-        TraceThread(target=run_parallel, args=("tests", run_tests, code_result)),
+        threading.Thread(target=run_parallel, args=("review", review, code_result)),
+        threading.Thread(target=run_parallel, args=("security", security_scan, code_result)),
+        threading.Thread(target=run_parallel, args=("tests", run_tests, code_result)),
     ]
     for t in threads:
         t.start()
@@ -141,6 +142,11 @@ def orchestrate_parallel_coding(task: str) -> dict:
 
 
 def main():
+    configure(
+        output_dir=".agentguard/traces",
+        auto_thread_context=True,
+    )
+
     print("🖥️ Parallel Coding Pipeline")
     print("=" * 50)
 

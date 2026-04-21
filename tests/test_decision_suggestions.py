@@ -1,48 +1,89 @@
 """Tests for Q5 optimal agent selection suggestions."""
 
 from agentguard.analysis import analyze_decisions
-from agentguard.builder import TraceBuilder
-from agentguard.core.trace import ExecutionTrace
+from agentguard.core.trace import ExecutionTrace, Span, SpanStatus, SpanType
+
+
+def _decision_trace(
+    task: str,
+    chosen_name: str,
+    chosen_status: SpanStatus,
+    alternatives: list[str],
+) -> ExecutionTrace:
+    """Build a minimal trace with one real orchestration decision span."""
+    trace = ExecutionTrace(task=task)
+    coordinator = Span(name="coordinator", span_type=SpanType.AGENT, status=SpanStatus.COMPLETED)
+    decision = Span(
+        name=f"coordinator → {chosen_name} (decision)",
+        span_type=SpanType.HANDOFF,
+        parent_span_id=coordinator.span_id,
+        status=SpanStatus.COMPLETED,
+        metadata={
+            "decision.type": "orchestration",
+            "decision.coordinator": "coordinator",
+            "decision.chosen": chosen_name,
+            "decision.alternatives": alternatives,
+        },
+    )
+    chosen = Span(
+        name=chosen_name,
+        span_type=SpanType.AGENT,
+        parent_span_id=coordinator.span_id,
+        status=chosen_status,
+        error="always fails" if chosen_status == SpanStatus.FAILED else None,
+    )
+    spans = [coordinator, decision, chosen]
+    for alternative in alternatives:
+        spans.append(
+            Span(
+                name=alternative,
+                span_type=SpanType.AGENT,
+                parent_span_id=coordinator.span_id,
+                status=SpanStatus.COMPLETED,
+            )
+        )
+    for span in spans:
+        trace.add_span(span)
+    trace.complete()
+    return trace
 
 
 def _trace_with_bad_decision():
     """Coordinator picks failing agent when a good alternative exists."""
-    return (TraceBuilder("bad decision")
-        .agent("coordinator", duration_ms=5000)
-            .agent("bad_agent", duration_ms=1000,
-                   status="failed", error="always fails")
-            .end()
-            .agent("good_agent", duration_ms=500)
-            .end()
-        .end()
-        .build())
+    return _decision_trace(
+        task="bad decision",
+        chosen_name="bad_agent",
+        chosen_status=SpanStatus.FAILED,
+        alternatives=["good_agent"],
+    )
 
 
 def _trace_all_succeed():
     """All decisions lead to success — no suggestions needed."""
-    return (TraceBuilder("all good")
-        .agent("coordinator", duration_ms=3000)
-            .agent("worker_a", duration_ms=1000).end()
-            .agent("worker_b", duration_ms=500).end()
-        .end()
-        .build())
+    return _decision_trace(
+        task="all good",
+        chosen_name="worker_a",
+        chosen_status=SpanStatus.COMPLETED,
+        alternatives=["worker_b"],
+    )
 
 
 def _trace_no_alternatives():
     """Failed decision but no alternatives recorded."""
-    return (TraceBuilder("no alts")
-        .agent("coordinator", duration_ms=2000)
-            .agent("only_agent", duration_ms=500,
-                   status="failed", error="oops")
-            .end()
-        .end()
-        .build())
+    return _decision_trace(
+        task="no alts",
+        chosen_name="only_agent",
+        chosen_status=SpanStatus.FAILED,
+        alternatives=[],
+    )
 
 
 class TestDecisionSuggestions:
     def test_suggests_better_agent(self):
         r = analyze_decisions(_trace_with_bad_decision())
-        assert len(r.suggestions) >= 0  # May or may not suggest depending on decision detection
+        assert len(r.suggestions) == 1
+        assert r.suggestions[0]["current_agent"] == "bad_agent"
+        assert r.suggestions[0]["suggested_agent"] == "good_agent"
 
     def test_no_suggestions_when_all_succeed(self):
         r = analyze_decisions(_trace_all_succeed())

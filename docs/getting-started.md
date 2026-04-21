@@ -2,16 +2,140 @@
 
 ## Install
 
+### Application teams: install the SDK
+
+Use this when you want to diagnose a Claude runtime or instrument an existing Python agent pipeline.
+
+```bash
+pip install agentguard
+```
+
+If you are pinning directly to source control before a package release exists:
+
+```bash
+pip install "agentguard @ git+https://github.com/betaHi/AgentGuard.git@<tag-or-commit>"
+```
+
+If your organization mirrors dependencies internally, publish a wheel and install that wheel from your internal package registry.
+
+If you are using the Claude runtime path, install the official Claude SDK as well:
+
+```bash
+pip install claude-agent-sdk
+```
+
+### AgentGuard contributors: editable install
+
+Use this only when you are developing AgentGuard itself.
+
 ```bash
 pip install -e .
 ```
 
-Initialize your project:
+### Initialize your project
 
 ```bash
 agentguard init
 agentguard doctor  # verify installation
 ```
+
+Recommended application startup for existing Python pipelines:
+
+```python
+import agentguard
+
+agentguard.configure(
+    output_dir=".agentguard/traces",
+    auto_thread_context=True,
+)
+```
+
+This makes the default recorder path explicit and ensures standard threads
+inherit the active trace context automatically.
+
+Minimal integration example for an existing codebase:
+
+```python
+import agentguard
+from agentguard import record_agent, record_tool
+
+agentguard.configure(
+    output_dir=".agentguard/traces",
+    auto_thread_context=True,
+)
+
+@record_tool(name="search")
+def search(query: str):
+    return call_existing_search_api(query)
+
+@record_agent(name="researcher", version="v1")
+def researcher(topic: str):
+    return {"results": search(topic)}
+```
+
+See [../examples/integration_minimal.py](../examples/integration_minimal.py) for a runnable version.
+
+## 0. Claude Runtime Quick Start
+
+### Live Claude run
+
+```python
+from claude_agent_sdk import ClaudeSDKClient
+
+from agentguard.runtime.claude import wrap_claude_client
+from agentguard.web.viewer import generate_report_from_trace
+
+
+async with wrap_claude_client(ClaudeSDKClient()) as client:
+    await client.query("Refactor the auth module", session_id="auth-refactor")
+    async for _message in client.receive_response():
+        pass
+    trace = client.agentguard_trace()
+
+generate_report_from_trace(trace, output=".agentguard/report.html")
+```
+
+### Historical Claude session import
+
+```python
+from agentguard.runtime.claude import import_claude_session
+from agentguard.web.viewer import generate_report_from_trace
+
+
+trace = import_claude_session("<session-id>")
+generate_report_from_trace(trace, output=".agentguard/session-report.html")
+```
+
+CLI equivalent:
+
+```bash
+agentguard list-claude-sessions --limit 10
+agentguard diagnose-claude-session <session-id> \
+    --output .agentguard/traces/claude-session.json \
+    --report-output .agentguard/claude-session.html \
+    
+agentguard diagnose .agentguard/traces/claude-session.json \
+    --report-output .agentguard/claude-session.html
+```
+
+If the Claude SDK cannot find that session in its default lookup path, retry with `--directory <claude-session-dir>`.
+
+These two Claude-native paths are now the strongest product-facing integration story.
+
+### Claude Code standalone skill and plugin
+
+For fast local iteration inside this repository, use the standalone skill in `.claude/skills/agentguard-diagnose-session/`.
+
+For a shareable Claude Code integration, load the plugin scaffold in `plugins/agentguard-claude-code/`:
+
+```bash
+claude --plugin-dir ./plugins/agentguard-claude-code
+```
+
+The intended workflow is:
+
+1. Diagnose in the terminal first with `diagnose-claude-session` or `diagnose`.
+2. Export HTML only when the user asks for a deeper report.
 
 ## 1. Instrument Your Agents (30 seconds)
 

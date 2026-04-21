@@ -57,6 +57,17 @@ def test_detect_context_loss_required():
     assert "b" in result["required_missing"]
 
 
+def test_detect_context_loss_critical_keys():
+    """Critical keys are surfaced separately from generic missing keys."""
+    result = detect_context_loss(
+        sent_context={"query": "refund", "notes": "verbose", "priority": "high"},
+        received_input={"notes": "verbose"},
+        critical_keys=["query", "priority"],
+    )
+    assert result["loss_detected"] is True
+    assert set(result["critical_missing"]) == {"query", "priority"}
+
+
 def test_analyze_flow_prefers_explicit_handoffs():
     """analyze_flow uses explicit HANDOFF spans instead of inferring from sequence."""
     from datetime import datetime, timedelta

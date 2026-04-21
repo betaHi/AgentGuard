@@ -6,9 +6,11 @@ verifies that concurrent threads don't corrupt each other's traces.
 
 import threading
 import time
+from pathlib import Path
 
+from agentguard.core.trace import Span, SpanType
 from agentguard.sdk.decorators import record_agent, record_tool
-from agentguard.sdk.recorder import get_recorder
+from agentguard.sdk.recorder import TraceRecorder, get_recorder
 
 
 class TestConcurrentRecording:
@@ -152,3 +154,56 @@ class TestConcurrentRecording:
             t.join(timeout=10)
 
         assert count["done"] == 50
+
+    def test_fifty_threads_record_separate_traces_without_leakage(self, tmp_path):
+        """50 threads recording separate traces should not leak spans across traces."""
+        trace_dir = Path(tmp_path) / "isolated-traces"
+        barrier = threading.Barrier(50)
+        traces = {}
+        errors = []
+        lock = threading.Lock()
+
+        def worker(thread_id):
+            try:
+                recorder = TraceRecorder(task=f"thread-{thread_id}", output_dir=str(trace_dir))
+                barrier.wait(timeout=10)
+
+                agent = Span(span_type=SpanType.AGENT, name=f"agent-{thread_id}")
+                recorder.push_span(agent)
+
+                tool = Span(
+                    span_type=SpanType.TOOL,
+                    name=f"tool-{thread_id}",
+                    parent_span_id=agent.span_id,
+                )
+                recorder.push_span(tool)
+                time.sleep(0.01)
+                tool.complete({"thread": thread_id})
+                recorder.pop_span(tool)
+
+                agent.complete({"thread": thread_id, "status": "done"})
+                recorder.pop_span(agent)
+                trace = recorder.finish()
+
+                with lock:
+                    traces[thread_id] = trace
+            except Exception as exc:
+                with lock:
+                    errors.append(f"thread {thread_id}: {exc}")
+
+        threads = [threading.Thread(target=worker, args=(i,)) for i in range(50)]
+        for thread in threads:
+            thread.start()
+        for thread in threads:
+            thread.join(timeout=15)
+
+        assert not errors, f"Errors: {errors}"
+        assert len(traces) == 50
+        assert len(list(trace_dir.glob("*.json"))) == 50
+
+        for thread_id, trace in traces.items():
+            names = {span.name for span in trace.spans}
+            assert names == {f"agent-{thread_id}", f"tool-{thread_id}"}
+            tool_spans = [span for span in trace.spans if span.name == f"tool-{thread_id}"]
+            assert len(tool_spans) == 1
+            assert tool_spans[0].parent_span_id is not None

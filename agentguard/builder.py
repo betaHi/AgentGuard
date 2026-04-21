@@ -84,6 +84,7 @@ class TraceBuilder:
         to_agent: str,
         context_size: int = 0,
         dropped_keys: list[str] | None = None,
+        critical_keys: list[str] | None = None,
     ) -> TraceBuilder:
         """Add a handoff span."""
         span = Span(
@@ -100,6 +101,7 @@ class TraceBuilder:
         )
         span.metadata["handoff.context_keys"] = []
         span.metadata["handoff.context_size_bytes"] = context_size
+        span.metadata["handoff.critical_keys"] = critical_keys or []
         self._spans.append(span)
         return self
 

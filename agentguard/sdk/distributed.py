@@ -33,12 +33,39 @@ from pathlib import Path
 
 from agentguard.core.trace import ExecutionTrace
 from agentguard.sdk.recorder import TraceRecorder, get_recorder, init_recorder
+from agentguard.settings import get_settings
 
 ENV_TRACE_ID = "AGENTGUARD_TRACE_ID"
 ENV_PARENT_SPAN_ID = "AGENTGUARD_PARENT_SPAN_ID"
 ENV_TASK = "AGENTGUARD_TASK"
 ENV_TRIGGER = "AGENTGUARD_TRIGGER"
 ENV_OUTPUT_DIR = "AGENTGUARD_OUTPUT_DIR"
+
+
+def _load_child_traces(dir_path: Path, pattern: str) -> tuple[list[Path], list[ExecutionTrace]]:
+    """Load valid child traces from disk in deterministic order."""
+    child_files = sorted(dir_path.glob(pattern), key=lambda path: path.name)
+    child_traces: list[ExecutionTrace] = []
+    for child_file in child_files:
+        try:
+            child_data = json.loads(child_file.read_text(encoding="utf-8"))
+            child_traces.append(ExecutionTrace.from_dict(child_data))
+        except Exception:
+            continue
+    return child_files, child_traces
+
+
+def _merge_spans(parent_trace: ExecutionTrace, child_traces: list[ExecutionTrace]) -> None:
+    """Merge child spans into parent trace without duplicating span IDs."""
+    existing_span_ids = {span.span_id for span in parent_trace.spans}
+    for child_trace in child_traces:
+        for span in child_trace.spans:
+            if span.span_id in existing_span_ids:
+                continue
+            span.trace_id = parent_trace.trace_id
+            parent_trace.spans.append(span)
+            existing_span_ids.add(span.span_id)
+    parent_trace.spans.sort(key=lambda span: (span.started_at or "", span.ended_at or "", span.span_id))
 
 
 def inject_trace_context(
@@ -77,7 +104,7 @@ def init_recorder_from_env() -> TraceRecorder:
     parent_span_id = os.environ.get(ENV_PARENT_SPAN_ID, "")
     task = os.environ.get(ENV_TASK, "")
     trigger = os.environ.get(ENV_TRIGGER, "manual")
-    output_dir = os.environ.get(ENV_OUTPUT_DIR, ".agentguard/traces")
+    output_dir = os.environ.get(ENV_OUTPUT_DIR, get_settings().output_dir)
 
     recorder = init_recorder(task=task, trigger=trigger, output_dir=output_dir)
 
@@ -119,21 +146,12 @@ def merge_child_traces(
         return parent_trace
 
     pattern = f"{parent_trace.trace_id}_child_*.json"
-    child_files = list(dir_path.glob(pattern))
+    child_files, child_traces = _load_child_traces(dir_path, pattern)
 
     if not child_files:
         return parent_trace
 
-    for child_file in child_files:
-        try:
-            child_data = json.loads(child_file.read_text(encoding="utf-8"))
-            child_trace = ExecutionTrace.from_dict(child_data)
-
-            for span in child_trace.spans:
-                span.trace_id = parent_trace.trace_id
-                parent_trace.spans.append(span)
-        except Exception:
-            pass
+    _merge_spans(parent_trace, child_traces)
 
     # Persist merged trace to the parent file
     if persist:

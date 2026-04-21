@@ -20,7 +20,7 @@ class TestAnalyzeJson:
         """JSON output includes all analysis sections."""
         result = _build_analysis_dict(_sample_trace())
         required = ["trace", "score", "failures", "flow", "bottleneck",
-                     "context_flow", "cost_yield", "decisions", "propagation"]
+                     "context_flow", "cost_yield", "decisions", "counterfactual", "workflow_patterns", "propagation"]
         for key in required:
             assert key in result, f"Missing section: {key}"
 
@@ -55,10 +55,106 @@ class TestAnalyzeJson:
     def test_matches_viewer_sections(self):
         """JSON sections match what the HTML viewer renders."""
         result = _build_analysis_dict(_sample_trace())
-        # Viewer renders: failures, bottleneck, flow, context_flow,
-        # cost_yield, decisions, propagation
+        # CLI structured analysis includes the viewer sections plus counterfactual.
         viewer_sections = ["failures", "bottleneck", "flow",
                            "context_flow", "cost_yield", "decisions",
+                           "counterfactual",
+                           "workflow_patterns",
                            "propagation"]
         for section in viewer_sections:
             assert section in result
+
+    def test_context_flow_includes_semantic_criticality(self):
+        trace = (TraceBuilder("cli context")
+            .agent("coordinator", duration_ms=3000)
+                .agent("sender", duration_ms=1000, output_data={"query": "refund", "notes": "n", "priority": "high"})
+                .end()
+                .agent("receiver", duration_ms=1000, input_data={"notes": "n"})
+                .end()
+            .end()
+            .build())
+        result = _build_analysis_dict(trace)
+        point = result["context_flow"]["points"][0]
+        assert set(point["critical_keys_lost"]) == {"query", "priority"}
+        assert point["semantic_retention_score"] is not None
+
+    def test_context_flow_includes_downstream_impact(self):
+        trace = (TraceBuilder("cli context impact")
+            .agent("coordinator", duration_ms=3000)
+                .agent("sender", duration_ms=1000, output_data={"query": "refund", "notes": "n", "priority": "high"})
+                .end()
+                .agent("receiver", duration_ms=1000, status="failed", error="missing query", input_data={"notes": "n"})
+                .end()
+            .end()
+            .build())
+        result = _build_analysis_dict(trace)
+        point = result["context_flow"]["points"][0]
+        assert point["downstream_impact_score"] is not None
+        assert "downstream failure" in point["downstream_impact_reason"]
+
+    def test_context_flow_includes_risk_fields(self):
+        trace = (TraceBuilder("cli context risk")
+            .agent("coordinator", duration_ms=3000)
+                .agent("sender", duration_ms=1000, output_data={"query": "refund", "notes": "n", "priority": "high"})
+                .end()
+                .agent("receiver", duration_ms=1000, status="failed", error="missing query", input_data={"notes": "n"})
+                .end()
+            .end()
+            .build())
+        result = _build_analysis_dict(trace)
+        point = result["context_flow"]["points"][0]
+        assert point["risk_score"] is not None
+        assert point["risk_label"] in {"high", "severe"}
+
+    def test_context_flow_includes_reference_loss_fields(self):
+        trace = (TraceBuilder("cli reference loss")
+            .agent("coordinator", duration_ms=3000)
+                .agent(
+                    "sender",
+                    duration_ms=1000,
+                    output_data={
+                        "top_documents": [{"doc_id": "doc-1"}, {"doc_id": "doc-2"}, {"doc_id": "doc-3"}],
+                        "source_map": {"doc-1": "u1", "doc-2": "u2", "doc-3": "u3"},
+                    },
+                )
+                .end()
+                .agent(
+                    "receiver",
+                    duration_ms=1000,
+                    input_data={
+                        "top_documents": [{"doc_id": "doc-1"}, {"doc_id": "doc-2"}],
+                        "source_map": {"doc-1": "u1", "doc-2": "u2"},
+                    },
+                )
+                .end()
+            .end()
+            .build())
+        result = _build_analysis_dict(trace)
+        point = result["context_flow"]["points"][0]
+        assert point["reference_ids_lost"] == ["doc-3"]
+        assert point["reference_ids_sent"]
+
+    def test_cost_yield_includes_grounding_breakdown(self):
+        trace = (TraceBuilder("cli grounding breakdown")
+            .agent("coordinator", duration_ms=3000)
+                .agent(
+                    "generator",
+                    duration_ms=1200,
+                    token_count=1200,
+                    cost_usd=0.05,
+                    output_data={
+                        "claims": ["c1", "c2", "c3"],
+                        "citations": ["doc-1", "doc-2"],
+                        "unverified_claims": ["c3"],
+                    },
+                )
+                .end()
+            .end()
+            .build())
+        result = _build_analysis_dict(trace)
+        agent = next(item for item in result["cost_yield"]["agents"] if item["agent"] == "generator")
+        path = result["cost_yield"]["path_summaries"][0]
+        assert agent["grounding_issue_count"] == 1
+        assert agent["citation_coverage"] is not None
+        assert path["grounding_issue_count"] >= 1
+        assert path["citation_coverage"] is not None

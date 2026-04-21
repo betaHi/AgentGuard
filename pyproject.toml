@@ -5,14 +5,14 @@ build-backend = "setuptools.build_meta"
 [project]
 name = "agentguard"
 version = "0.1.0"
-description = "Record, Replay, Evaluate, and Guard your AI Agents."
+description = "Diagnostics for multi-agent orchestration."
 readme = "README.md"
 license = {text = "MIT"}
 requires-python = ">=3.11"
 authors = [
     {name = "betaHi"},
 ]
-keywords = ["ai", "agent", "observability", "testing", "reliability", "multi-agent", "evaluation"]
+keywords = ["ai", "agent", "multi-agent", "diagnostics", "orchestration", "trace", "claude"]
 classifiers = [
     "Development Status :: 4 - Beta",
     "Intended Audience :: Developers",
@@ -20,8 +20,8 @@ classifiers = [
     "Programming Language :: Python :: 3.11",
     "Programming Language :: Python :: 3.12",
     "Programming Language :: Python :: 3.13",
-    "Topic :: Software Development :: Testing",
     "Topic :: Software Development :: Quality Assurance",
+    "Topic :: Scientific/Engineering :: Artificial Intelligence",
     "Topic :: System :: Monitoring",
 ]
 
@@ -38,6 +38,9 @@ Homepage = "https://github.com/betaHi/AgentGuard"
 Repository = "https://github.com/betaHi/AgentGuard"
 Issues = "https://github.com/betaHi/AgentGuard/issues"
 Documentation = "https://github.com/betaHi/AgentGuard#readme"
+
+[tool.setuptools]
+include-package-data = false
 
 [tool.setuptools.packages.find]
 include = ["agentguard*"]

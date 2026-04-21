@@ -7,6 +7,7 @@ Project-level config created by `agentguard init`. Placed in your project root.
 ```json
 {
   "traces_dir": ".agentguard/traces",
+  "knowledge_dir": ".agentguard/knowledge",
   "report_output": ".agentguard/report.html",
   "agents": [
     {
@@ -28,6 +29,7 @@ Project-level config created by `agentguard init`. Placed in your project root.
 | Field | Type | Default | Description |
 |-------|------|---------|-------------|
 | `traces_dir` | string | `.agentguard/traces` | Directory for trace JSON files |
+| `knowledge_dir` | string | `.agentguard/knowledge` | Directory for evolution knowledge |
 | `report_output` | string | `.agentguard/report.html` | HTML report output path |
 | `agents` | array | `[]` | Per-agent evaluation rules |
 | `agents[].name` | string | — | Agent name to match |
@@ -84,6 +86,11 @@ recorder = init_recorder_from_env()  # reads env vars automatically
 | Command | Description |
 |---------|-------------|
 | `agentguard analyze <file>` | Failure propagation + flow analysis |
+| `agentguard learn <file>` | Learn recurring lessons from a trace |
+| `agentguard suggest` | Show high-confidence learned suggestions |
+| `agentguard trends` | Show recurring evolution trends |
+| `agentguard prd` | Draft an improvement PRD from recurring issues |
+| `agentguard auto-apply <file>` | Generate or apply config patches from learned issues |
 | `agentguard score <file> [--expected-ms N]` | Quality score (0-100) |
 | `agentguard summarize <file> [--brief]` | Natural language summary |
 | `agentguard flowgraph <file> [--mermaid]` | Agent flow graph |
@@ -129,7 +136,8 @@ SLA flags: `--max-duration MS`, `--min-score N`, `--max-cost USD`, `--max-error-
 
 | Setting | Default | Set via |
 |---------|---------|---------|
-| Traces directory | `.agentguard/traces` | `init_recorder(output_dir=...)` |
+| Traces directory | `.agentguard/traces` | `agentguard.configure(output_dir=...)` or `init_recorder(output_dir=...)` |
+| Auto thread context | `False` | `agentguard.configure(auto_thread_context=True)` |
 | Trigger type | `"manual"` | `init_recorder(trigger=...)` |
 | Score weights | success=0.30, performance=0.20, context=0.20, resilience=0.15, efficiency=0.15 | `score_trace(weights={...})` |
 | Knowledge base | `.agentguard/knowledge/` | `EvolutionEngine(knowledge_dir=...)` |

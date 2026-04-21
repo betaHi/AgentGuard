@@ -5,7 +5,7 @@ import json
 
 from agentguard import record_agent, record_decision
 from agentguard.analysis import analyze_decisions
-from agentguard.core.trace import ExecutionTrace, SpanStatus, SpanType
+from agentguard.core.trace import ExecutionTrace, Span, SpanStatus, SpanType
 from agentguard.sdk.recorder import finish_recording, init_recorder
 
 
@@ -91,8 +91,106 @@ def test_analyze_decisions_with_failure():
     analysis = analyze_decisions(trace)
     assert analysis.total_decisions == 1
     assert analysis.decisions_leading_to_failure == 1
+    assert analysis.decisions_with_degradation == 1
     assert analysis.decision_quality_score == 0.0
     assert analysis.decisions[0].led_to_failure
+    assert analysis.decisions[0].led_to_degradation
+    assert analysis.decisions[0].failure_source == "buggy-agent"
+    assert analysis.decisions[0].degradation_signals
+
+
+def test_decision_analysis_includes_suggestions_for_failed_choice():
+    """A failed choice with a healthy alternative should produce a suggestion."""
+    init_recorder(task="decision suggestion")
+
+    @record_agent(name="router", version="v1")
+    def router():
+        record_decision(
+            coordinator="router",
+            chosen_agent="buggy-agent",
+            alternatives=["stable-agent"],
+            rationale="Tried the new path first",
+        )
+
+        @record_agent(name="buggy-agent", version="v1")
+        def buggy_agent():
+            raise RuntimeError("crash")
+
+        @record_agent(name="stable-agent", version="v1")
+        def stable_agent():
+            return {"ok": True}
+
+        with contextlib.suppress(RuntimeError):
+            buggy_agent()
+        stable_agent()
+
+    router()
+    analysis = analyze_decisions(finish_recording())
+
+    assert analysis.suggestions
+    assert analysis.suggestions[0]["current_agent"] == "buggy-agent"
+    assert analysis.suggestions[0]["suggested_agent"] == "stable-agent"
+
+
+def test_decision_analysis_flags_context_loss_as_degradation():
+    """Context loss inside the chosen subtree should count as decision degradation."""
+    trace = ExecutionTrace(task="context loss decision")
+    coordinator = Span(name="router", span_type=SpanType.AGENT, status=SpanStatus.COMPLETED)
+    decision = Span(
+        name="router → analyst (decision)",
+        span_type=SpanType.HANDOFF,
+        parent_span_id=coordinator.span_id,
+        status=SpanStatus.COMPLETED,
+        metadata={
+            "decision.type": "orchestration",
+            "decision.coordinator": "router",
+            "decision.chosen": "analyst",
+            "decision.alternatives": ["fallback"],
+            "decision.rationale": "Analyst has deeper domain context",
+        },
+    )
+    analyst = Span(
+        name="analyst",
+        span_type=SpanType.AGENT,
+        parent_span_id=coordinator.span_id,
+        status=SpanStatus.COMPLETED,
+        output_data={
+            "brief": "x" * 120,
+            "facts": ["a", "b", "c"],
+            "source_text": "y" * 400,
+        },
+    )
+    handoff = Span(
+        name="analyst → writer",
+        span_type=SpanType.HANDOFF,
+        parent_span_id=analyst.span_id,
+        status=SpanStatus.COMPLETED,
+        handoff_from="analyst",
+        handoff_to="writer",
+        context_size_bytes=520,
+        context_dropped_keys=["facts", "source_text"],
+    )
+    handoff.metadata["handoff.context_keys"] = ["brief", "facts", "source_text"]
+    handoff.metadata["handoff.context_size_bytes"] = 520
+    writer = Span(
+        name="writer",
+        span_type=SpanType.AGENT,
+        parent_span_id=analyst.span_id,
+        status=SpanStatus.COMPLETED,
+        input_data={"brief": "x" * 20},
+        output_data={"draft": "done"},
+    )
+    for span in [coordinator, decision, analyst, handoff, writer]:
+        trace.add_span(span)
+    trace.complete()
+
+    analysis = analyze_decisions(trace)
+
+    assert analysis.decisions_with_degradation == 1
+    assert analysis.decision_quality_score == 0.0
+    assert analysis.decisions[0].led_to_degradation
+    assert analysis.decisions[0].context_loss_handoffs == ["analyst → writer"]
+    assert any("Context loss" in signal for signal in analysis.decisions[0].degradation_signals)
 
 
 def test_empty_trace_no_decisions():
@@ -166,6 +264,7 @@ def test_to_dict_serializable():
     serialized = json.dumps(d)
     assert "fast-model" in serialized
     assert "decision_quality_score" in serialized
+    assert "decisions_with_degradation" in serialized
 
 
 def test_to_report_readable():

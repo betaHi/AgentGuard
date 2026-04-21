@@ -1,110 +1,146 @@
 # AgentGuard Architecture
 
-## Module Map
+## Product Boundary
 
+AgentGuard is a diagnostics SDK for multi-agent orchestration.
+
+It is built to answer five core questions from one execution trace:
+
+1. Which agent is the bottleneck?
+2. Which handoff lost critical information?
+3. Which failure started propagating downstream?
+4. Which execution path cost the most but yielded the least?
+5. Which orchestration decision degraded the run?
+
+The product boundary is therefore:
+
+- capture runtime evidence as a trace
+- normalize that evidence into a stable trace model
+- run orchestration diagnostics on the trace
+- deliver the result through CLI, HTML, and structured outputs
+
+AgentGuard does not aim to be a general LLM observability platform or an agent framework.
+
+## Main Runtime Path
+
+The main runtime path is Claude-native.
+
+```text
+Claude Agent SDK
+    -> agentguard.runtime.claude
+    -> ExecutionTrace / Span
+    -> agentguard.diagnostics
+    -> CLI / HTML report / structured output
 ```
-agentguard/
-├── core/
-│   ├── trace.py          — ExecutionTrace + Span data model
-│   ├── config.py         — Configuration
-│   └── eval_schema.py    — Evaluation schema
-│
-├── sdk/                  — Instrumentation (7 integration styles)
-│   ├── decorators.py     — @record_agent, @record_tool
-│   ├── async_decorators  — Async versions
-│   ├── context.py        — AgentTrace, ToolContext context managers
-│   ├── manual.py         — Manual API
-│   ├── middleware.py      — Middleware/wrap pattern
-│   ├── distributed.py    — Cross-process trace propagation
-│   ├── handoff.py        — Handoff recording + context tracking
-│   ├── hooks.py          — Span lifecycle callbacks
-│   └── recorder.py       — TraceRecorder (thread-safe)
-│
-├── analysis/             — Trace analysis (Tier 1)
-│   ├── analysis.py       — 7 analysis functions
-│   ├── propagation.py    — Failure causal chains, circuit breakers
-│   ├── flowgraph.py      — DAG, phases, critical path, Mermaid
-│   ├── context_flow.py   — Compression/truncation/expansion
-│   ├── correlation.py    — Fingerprints, patterns
-│   ├── timeline.py       — Chronological event stream
-│   └── tree.py           — Span tree utilities
-│
-├── extensions/           — Built on traces (Tier 2)
-│   ├── scoring.py        — 5-component quality score (A-F)
-│   ├── annotations.py    — Structured span tags
-│   ├── aggregate.py      — Multi-trace trends
-│   ├── filter.py         — Composable query DSL
-│   ├── ab_test.py        — A/B testing
-│   ├── metrics.py        — Duration percentiles, Prometheus
-│   ├── alerts.py         — Declarative alert rules
-│   ├── sla.py            — SLA checking
-│   ├── dependency.py     — Agent dependency graph
-│   ├── profile.py        — Per-agent performance profiles
-│   ├── optimize.py       — Optimization suggestions
-│   ├── budget.py         — Token budget tracking
-│   ├── errors.py         — Error classification
-│   ├── comparison.py     — Rich trace comparison
-│   ├── diff.py           — Trace diff
-│   ├── span_diff.py      — Span-level diff
-│   └── summarize.py      — Natural language summaries
-│
-├── tools/
-│   ├── builder.py        — Fluent trace builder
-│   ├── generate.py       — Synthetic trace generator
-│   ├── templates.py      — Pipeline templates
-│   ├── store.py          — File-based storage
-│   ├── search.py         — Full-text search
-│   ├── manipulate.py     — Clone, slice, anonymize, merge
-│   ├── compress.py       — Trace compression
-│   ├── normalize.py      — Trace cleanup
-│   ├── benchmark.py      — Performance benchmarks
-│   └── importer.py       — OTel import
-│
-├── eval/                 — Rule evaluation
-│   ├── rules.py          — Built-in eval rules
-│   ├── compare.py        — Comparison evaluators
-│   └── llm.py            — LLM-based evaluation
-│
-├── web/
-│   └── viewer.py         — HTML report generator
-│
-├── cli/
-│   └── main.py           — 30 CLI commands
-│
-├── plugin.py             — Plugin registry
-├── stats.py              — Statistical utilities
-├── compat.py             — Schema versioning
-├── schema.py             — JSON Schema validation
-├── markdown.py           — Markdown export
-├── ascii_viz.py          — Terminal visualizations
-├── dashboard.py          — Dashboard data
-└── export*.py            — JSON/JSONL/OTel/CSV export
+
+This path currently includes:
+
+- live Claude runtime capture through `wrap_claude_client(...)`
+- Claude session import through `import_claude_session(...)`
+- context usage, task, tool, assistant, result, and rate-limit evidence capture
+
+## Compatibility Runtime Paths
+
+For existing Python agent systems, AgentGuard still supports:
+
+- decorators
+- context managers
+- async wrappers
+- middleware wrapping
+- distributed trace propagation
+- manual tracing
+
+These remain valid integration paths, but they are compatibility surfaces rather than the primary product story.
+
+## Layering
+
+The architecture is easiest to reason about as four layers:
+
+```text
+runtime
+    -> trace model
+    -> diagnostics
+    -> delivery
 ```
+
+### Runtime
+
+Runtime code collects evidence from Claude or existing Python agent systems.
+
+Rules:
+
+- runtime produces trace facts only
+- runtime should not contain diagnostic policy
+- runtime should preserve source evidence instead of collapsing it early
+
+### Trace Model
+
+The stable model is still centered on `ExecutionTrace` and `Span` in [agentguard/core/trace.py](../agentguard/core/trace.py).
+
+Rules:
+
+- diagnostics consume model objects, not runtime-specific types
+- runtime-specific metadata is allowed, but it must remain attached as data, not behavior
+
+### Diagnostics
+
+Diagnostics are the core value layer.
+
+Current major surfaces include:
+
+- bottleneck
+- context flow
+- failure propagation
+- cost-yield
+- decisions and counterfactuals
+- scoring, timeline, tree, and correlation helpers
+
+The compatibility import surface for this layer lives in [agentguard/diagnostics/__init__.py](../agentguard/diagnostics/__init__.py).
+
+### Delivery
+
+Delivery turns diagnostics into consumable artifacts.
+
+Current delivery surfaces include:
+
+- CLI
+- single-file HTML report
+- JSON-style structured output
+
+## Current Repository Shape
+
+The repository is still broader than the desired long-term public surface.
+
+What should remain central:
+
+- `agentguard.runtime.claude`
+- `agentguard.diagnostics`
+- trace model
+- CLI and HTML report
+
+What should gradually shrink as public surface:
+
+- very broad top-level exports in `agentguard.__init__`
+- long-tail instrumentation-first documentation
+- old utility-first product framing
 
 ## Data Flow
 
-```
-Your Code (agents, tools)
-    │
-    ▼ instrumentation (decorators/context managers)
-    │
-TraceRecorder (thread-safe)
-    │
-    ▼ finish_recording()
-    │
-ExecutionTrace (spans, relationships)
-    │
-    ├──▶ Analysis (scoring, flow, propagation, ...)
-    ├──▶ Export (JSON, CSV, OTel, Prometheus, HTML, Markdown)
-    ├──▶ Storage (file store, query, prune)
-    ├──▶ Monitoring (SLA, alerts, guard mode)
-    └──▶ Comparison (diff, A/B test, aggregate)
+```text
+Runtime event source
+    -> Trace capture
+    -> ExecutionTrace
+    -> Diagnostics
+    -> Report / CLI / Export
 ```
 
-## Key Design Decisions
+For Claude live runs, the event source is the Claude Agent SDK message and hook stream.
+For imported sessions, the event source is the Claude SDK session transcript helpers.
 
-1. **Zero external dependencies** for core/ and sdk/
-2. **Thread-safe** recorder using thread-local span stacks
-3. **Flat span list** with parent_span_id (tree assembled on demand)
-4. **Analysis consumes trace** — modules are pure functions on ExecutionTrace
-5. **Viewer = single HTML file** — no server, no JS framework, just one file
+## Design Decisions
+
+1. Claude runtime is the strongest primary path.
+2. Diagnostics remain the product core.
+3. The trace model is the contract between capture and analysis.
+4. Repository and API surface should get smaller, not larger.
+5. Delivery stays local-first and easy to inspect.

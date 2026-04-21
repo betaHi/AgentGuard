@@ -3,7 +3,15 @@
 import threading
 import time
 
-from agentguard import TraceThread, record_agent, record_handoff, record_tool
+from agentguard import (
+    TraceThread,
+    disable_auto_trace_threading,
+    enable_auto_trace_threading,
+    is_auto_trace_threading_enabled,
+    record_agent,
+    record_handoff,
+    record_tool,
+)
 from agentguard.core.trace import SpanType
 from agentguard.sdk.recorder import finish_recording, init_recorder
 
@@ -154,4 +162,81 @@ class TestThreadSafety:
         workers = [span for span in trace.spans if span.name == "worker"]
         assert len(workers) == 3
         assert all(span.parent_span_id == roots[0].span_id for span in workers)
+
+    def test_auto_threading_preserves_parent_child_topology(self):
+        """Standard threads should inherit parent context when auto mode is on."""
+        enable_auto_trace_threading()
+        try:
+            init_recorder(task="auto_thread_topology_test")
+
+            @record_agent(name="worker")
+            def worker(label):
+                time.sleep(0.01)
+                return {"label": label}
+
+            @record_agent(name="coordinator")
+            def coordinator():
+                threads = [
+                    threading.Thread(target=worker, args=("a",)),
+                    threading.Thread(target=worker, args=("b",)),
+                    threading.Thread(target=worker, args=("c",)),
+                ]
+                for thread in threads:
+                    thread.start()
+                for thread in threads:
+                    thread.join()
+
+            coordinator()
+            trace = finish_recording()
+
+            roots = [span for span in trace.spans if span.parent_span_id is None]
+            workers = [span for span in trace.spans if span.name == "worker"]
+            assert len(roots) == 1
+            assert roots[0].name == "coordinator"
+            assert len(workers) == 3
+            assert all(span.parent_span_id == roots[0].span_id for span in workers)
+        finally:
+            disable_auto_trace_threading()
+
+    def test_disable_auto_threading_restores_default_behavior(self):
+        """Disabling auto mode should restore standard thread isolation."""
+        enable_auto_trace_threading()
+        disable_auto_trace_threading()
+        assert not is_auto_trace_threading_enabled()
+
+        init_recorder(task="auto_thread_disabled_test")
+
+        @record_agent(name="worker")
+        def worker(label):
+            time.sleep(0.01)
+            return {"label": label}
+
+        @record_agent(name="coordinator")
+        def coordinator():
+            threads = [
+                threading.Thread(target=worker, args=("a",)),
+                threading.Thread(target=worker, args=("b",)),
+            ]
+            for thread in threads:
+                thread.start()
+            for thread in threads:
+                thread.join()
+
+        coordinator()
+        trace = finish_recording()
+
+        roots = [span for span in trace.spans if span.parent_span_id is None]
+        workers = [span for span in trace.spans if span.name == "worker"]
+        assert len(workers) == 2
+        assert len(roots) == 3
+        assert any(span.name == "coordinator" for span in roots)
+
+    def test_enable_auto_threading_is_idempotent(self):
+        """Repeated enable/disable calls should be safe."""
+        enable_auto_trace_threading()
+        enable_auto_trace_threading()
+        assert is_auto_trace_threading_enabled()
+        disable_auto_trace_threading()
+        disable_auto_trace_threading()
+        assert not is_auto_trace_threading_enabled()
 

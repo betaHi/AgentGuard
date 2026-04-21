@@ -1,0 +1,73 @@
+#!/usr/bin/env bash
+# AgentGuard plugin launcher.
+#
+# Discovers a working `agentguard` entry point without requiring the user to
+# activate any particular Python environment before starting Claude Code.
+# Resolution order (first match wins):
+#
+#   1. AGENTGUARD_BIN environment variable, if set and executable
+#   2. `agentguard` already on PATH (pipx, system install, active venv)
+#   3. `~/AgentGuard/.venv/bin/agentguard` (the canonical dev checkout)
+#   4. Any `.venv/bin/agentguard` next to common repo checkouts:
+#        - $CLAUDE_PROJECT_ROOT, $PWD
+#        - $HOME/AgentGuard, $HOME/agentguard, $HOME/src/AgentGuard
+#   5. `python3 -m agentguard` if the module imports successfully
+#
+# Exits with code 127 and a clear message when nothing works, mirroring
+# "command not found" semantics so callers can fail loudly.
+set -u
+
+_try_run() {
+  # Runs "$@" and returns its exit code. Preserves stdin/stdout/stderr.
+  "$@"
+}
+
+_is_executable() {
+  [ -n "${1:-}" ] && [ -x "$1" ]
+}
+
+# 1. Explicit override.
+if _is_executable "${AGENTGUARD_BIN:-}"; then
+  exec "$AGENTGUARD_BIN" "$@"
+fi
+
+# 2. Already on PATH.
+if command -v agentguard >/dev/null 2>&1; then
+  exec agentguard "$@"
+fi
+
+# 3 & 4. Known venv locations.
+candidates=(
+  "${HOME}/AgentGuard/.venv/bin/agentguard"
+  "${HOME}/agentguard/.venv/bin/agentguard"
+  "${HOME}/src/AgentGuard/.venv/bin/agentguard"
+  "${CLAUDE_PROJECT_ROOT:-}/.venv/bin/agentguard"
+  "${PWD}/.venv/bin/agentguard"
+)
+for candidate in "${candidates[@]}"; do
+  if _is_executable "$candidate"; then
+    exec "$candidate" "$@"
+  fi
+done
+
+# 5. python3 -m agentguard fallback, trying common pythons.
+for py in python3 python; do
+  if command -v "$py" >/dev/null 2>&1; then
+    if "$py" -c "import agentguard" >/dev/null 2>&1; then
+      exec "$py" -m agentguard "$@"
+    fi
+  fi
+done
+
+cat >&2 <<'EOF'
+agentguard not found.
+
+Install one of:
+  pipx install agentguard              # recommended, puts it on PATH globally
+  pip install agentguard               # inside an env you plan to activate
+  (or clone AgentGuard and create a venv at ~/AgentGuard/.venv)
+
+Or set AGENTGUARD_BIN to point at an existing executable:
+  export AGENTGUARD_BIN=/path/to/agentguard
+EOF
+exit 127

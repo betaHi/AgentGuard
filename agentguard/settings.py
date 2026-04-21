@@ -34,12 +34,14 @@ class Settings:
         sampling_rate: Fraction of traces to record (0.0–1.0).
             1.0 records everything; 0.1 records ~10%.
         auto_truncate: If True, automatically truncate oversized traces.
+        auto_thread_context: If True, standard threads inherit trace context.
         log_level: Logging level for AgentGuard internal logs.
     """
-    output_dir: str = ".agentguard"
+    output_dir: str = ".agentguard/traces"
     max_trace_size_mb: float = 10.0
     sampling_rate: float = 1.0
     auto_truncate: bool = False
+    auto_thread_context: bool = False
     log_level: str = "WARNING"
 
     def validate(self) -> list[str]:
@@ -69,6 +71,7 @@ def configure(
     max_trace_size_mb: float | None = None,
     sampling_rate: float | None = None,
     auto_truncate: bool | None = None,
+    auto_thread_context: bool | None = None,
     log_level: str | None = None,
 ) -> None:
     """Configure global AgentGuard settings.
@@ -81,6 +84,7 @@ def configure(
         max_trace_size_mb: Size warning/truncation threshold (default 10).
         sampling_rate: Fraction of traces to record, 0.0–1.0 (default 1.0).
         auto_truncate: Auto-truncate oversized traces on serialization.
+        auto_thread_context: Propagate trace context into standard threads.
         log_level: Logging level for AgentGuard internals.
 
     Raises:
@@ -95,6 +99,8 @@ def configure(
         _settings.sampling_rate = sampling_rate
     if auto_truncate is not None:
         _settings.auto_truncate = auto_truncate
+    if auto_thread_context is not None:
+        _settings.auto_thread_context = auto_thread_context
     if log_level is not None:
         _settings.log_level = log_level
         logging.getLogger("agentguard").setLevel(log_level)
@@ -102,6 +108,16 @@ def configure(
     errors = _settings.validate()
     if errors:
         raise ValueError(f"Invalid settings: {'; '.join(errors)}")
+
+    from agentguard.sdk.threading import (
+        disable_auto_trace_threading,
+        enable_auto_trace_threading,
+    )
+
+    if _settings.auto_thread_context:
+        enable_auto_trace_threading()
+    else:
+        disable_auto_trace_threading()
 
     _logger.info("AgentGuard configured: %s", _settings)
 
@@ -118,4 +134,7 @@ def get_settings() -> Settings:
 def reset_settings() -> None:
     """Reset all settings to defaults. Primarily for testing."""
     global _settings
+    from agentguard.sdk.threading import disable_auto_trace_threading
+
     _settings = Settings()
+    disable_auto_trace_threading()

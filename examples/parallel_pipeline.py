@@ -24,12 +24,13 @@ This demonstrates:
 import os
 import random
 import sys
+import threading
 import time
 
 random.seed(42)
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
-from agentguard import TraceThread, mark_context_used, record_agent, record_handoff, record_tool
+from agentguard import configure, mark_context_used, record_agent, record_handoff, record_tool
 from agentguard.ascii_viz import gantt_chart, status_summary
 from agentguard.context_flow import analyze_context_flow_deep
 from agentguard.flowgraph import build_flow_graph
@@ -143,7 +144,8 @@ def write_report(analysis_data: dict, sources: list) -> str:
 def orchestrate_pipeline(topic: str) -> dict:
     """Coordinate the full parallel research workflow under one root span."""
     # ── Phase 1: PARALLEL research ──
-    # Run 3 researchers concurrently using trace-aware threads
+    # Run 3 researchers concurrently using standard threads.
+    # configure(auto_thread_context=True) makes them trace-aware.
     results = {}
     errors = {}
 
@@ -155,9 +157,9 @@ def orchestrate_pipeline(topic: str) -> dict:
             results[name] = {"source": name, "results": [], "error": str(e)}
 
     threads = [
-        TraceThread(target=run_researcher, args=("web", web_researcher, topic)),
-        TraceThread(target=run_researcher, args=("academic", academic_researcher, topic)),
-        TraceThread(target=run_researcher, args=("social", social_researcher, topic)),
+        threading.Thread(target=run_researcher, args=("web", web_researcher, topic)),
+        threading.Thread(target=run_researcher, args=("academic", academic_researcher, topic)),
+        threading.Thread(target=run_researcher, args=("social", social_researcher, topic)),
     ]
 
     print("\n📡 Phase 1: Parallel Research")
@@ -218,6 +220,11 @@ def orchestrate_pipeline(topic: str) -> dict:
 
 def run_pipeline(topic: str = "Multi-agent AI systems"):
     """Run the parallel research pipeline."""
+
+    configure(
+        output_dir=".agentguard/traces",
+        auto_thread_context=True,
+    )
 
     print(f"🔬 Starting parallel research pipeline: '{topic}'")
     print("=" * 60)

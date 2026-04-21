@@ -14,6 +14,8 @@ import argparse
 import json
 import sys
 from pathlib import Path
+from datetime import datetime
+from typing import Any
 
 from agentguard.core.trace import ExecutionTrace
 
@@ -87,6 +89,21 @@ def _load_trace_file(filepath: str) -> ExecutionTrace:
     except (KeyError, TypeError, ValueError) as e:
         print(f"{C.RED}Error: Invalid trace format in {filepath}: {e}{C.RESET}", file=sys.stderr)
         sys.exit(1)
+
+
+def _default_trace_output(output: str | None, trace_id: str) -> Path:
+    """Resolve the output path for a persisted trace."""
+    if output:
+        return Path(output)
+    return Path(".agentguard/traces") / f"{trace_id}.json"
+
+
+def _write_trace_file(trace: ExecutionTrace, output: str | None) -> str:
+    """Persist a trace JSON file and return the final path."""
+    out_path = _default_trace_output(output, trace.trace_id)
+    out_path.parent.mkdir(parents=True, exist_ok=True)
+    out_path.write_text(trace.to_json(), encoding="utf-8")
+    return str(out_path)
 
 
 
@@ -397,15 +414,29 @@ def _output_structured_json(trace) -> None:
     print(json.dumps(result, indent=2, default=str))
 
 
+def _cli_fail(message: str) -> None:
+    """Exit a CLI command with a clear user-facing error."""
+    print(f"{C.RED}Error: {message}{C.RESET}", file=sys.stderr)
+    sys.exit(1)
+
+
+def _require_positive(name: str, value: int) -> None:
+    """Validate positive integer CLI arguments."""
+    if value < 1:
+        _cli_fail(f"{name} must be >= 1")
+
+
 def _build_analysis_dict(trace) -> dict:
     """Build the complete analysis dictionary for JSON output."""
     from agentguard.analysis import (
         analyze_bottleneck,
+        analyze_counterfactual,
         analyze_context_flow,
         analyze_cost_yield,
         analyze_decisions,
         analyze_failures,
         analyze_flow,
+        analyze_workflow_patterns,
     )
     from agentguard.propagation import analyze_propagation
     from agentguard.scoring import score_trace
@@ -416,6 +447,8 @@ def _build_analysis_dict(trace) -> dict:
     ctx = analyze_context_flow(trace)
     cost_yield = analyze_cost_yield(trace)
     decisions = analyze_decisions(trace)
+    counterfactual = analyze_counterfactual(trace)
+    workflow_patterns = analyze_workflow_patterns(trace)
     propagation = analyze_propagation(trace)
     score = score_trace(trace)
 
@@ -428,6 +461,8 @@ def _build_analysis_dict(trace) -> dict:
         "context_flow": ctx.to_dict(),
         "cost_yield": cost_yield.to_dict(),
         "decisions": decisions.to_dict(),
+        "counterfactual": counterfactual.to_dict(),
+        "workflow_patterns": workflow_patterns.to_dict(),
         "propagation": propagation.to_dict(),
     }
 
@@ -454,17 +489,55 @@ def _build_trace_metadata(trace) -> dict:
     }
 
 
-def cmd_analyze(args) -> None:
-    """Analyze failure propagation and flow in a trace."""
-    trace = _load_trace_file(args.file)
+def _generate_html_report(trace: ExecutionTrace, output: str | None) -> str | None:
+    """Generate an HTML report for a single trace when requested."""
+    if not output:
+        return None
+    from agentguard.web.viewer import generate_report_from_trace
 
-    if getattr(args, 'json', False):
-        _output_structured_json(trace)
-        return
+    return generate_report_from_trace(trace, output=output)
 
+
+def _default_html_report_path(trace_path: str | None, trace_id: str | None = None) -> str:
+    """Derive a companion HTML report path for a trace.
+
+    Preference order:
+    1. Next to the trace file: ``foo.json`` -> ``foo.html``
+    2. ``.agentguard/reports/<trace_id>.html`` when only a trace id is known.
+    3. ``.agentguard/report.html`` as a last resort.
+    """
+    if trace_path:
+        p = Path(trace_path)
+        if p.suffix:
+            return str(p.with_suffix(".html"))
+        return str(p.parent / f"{p.name}.html")
+    if trace_id:
+        return str(Path(".agentguard") / "reports" / f"{trace_id}.html")
+    return str(Path(".agentguard") / "report.html")
+
+
+def _print_dense_diagnostics(
+    trace: ExecutionTrace,
+    *,
+    trace_path: str | None = None,
+    html_report: str | None = None,
+) -> None:
+    """Render the high-density terminal diagnostics view."""
+    from agentguard.terminal_diagnostics import render_dense_diagnostics
+
+    print(render_dense_diagnostics(trace, trace_path=trace_path, html_report=html_report), end="")
+
+
+def _print_analysis(trace: ExecutionTrace) -> None:
+    """Render the human-readable CLI diagnostics summary for a trace."""
     from agentguard.analysis import (
+        analyze_context_flow,
+        analyze_counterfactual,
+        analyze_cost_yield,
+        analyze_decisions,
         analyze_failures,
         analyze_flow,
+        analyze_workflow_patterns,
     )
 
     # Failure analysis
@@ -504,7 +577,116 @@ def cmd_analyze(args) -> None:
         if h.context_keys:
             print(f"     {C.DIM}context: {h.context_keys}{C.RESET}")
 
+    context_flow = analyze_context_flow(trace)
+    print(f"\n{C.BOLD}  🧠 Context Flow{C.RESET}")
+    print(f"  {'─' * 50}")
+    print(f"  {C.DIM}Handoffs:{C.RESET}         {context_flow.handoff_count}")
+    print(f"  {C.DIM}Anomalies:{C.RESET}        {len(context_flow.anomalies)}")
+    top_risks = [point for point in context_flow.ranked_points if point.risk_label != 'ok'][:3]
+    if not top_risks:
+        print(f"  {C.DIM}Top risk:{C.RESET}         none")
+    for point in top_risks:
+        print(
+            f"\n  {C.RED if point.risk_label in {'severe', 'high'} else C.YELLOW}⚠{C.RESET} "
+            f"{C.BOLD}{point.from_agent}{C.RESET} → {C.BOLD}{point.to_agent}{C.RESET} [{point.risk_label}]"
+        )
+        print(f"     {C.DIM}risk {point.risk_score:.0%} · semantic {((point.semantic_retention_score or 0) * 100):.0f}%{C.RESET}")
+        if point.critical_keys_lost:
+            print(f"     {C.DIM}critical loss: {point.critical_keys_lost}{C.RESET}")
+        if point.reference_ids_lost:
+            print(f"     {C.DIM}evidence refs: {point.reference_ids_lost[:3]}{C.RESET}")
+        if point.downstream_impact_reason:
+            print(f"     {C.DIM}{point.downstream_impact_reason}{C.RESET}")
+
+    cost_yield = analyze_cost_yield(trace)
+    print(f"\n{C.BOLD}  📈 Cost-Yield Analysis{C.RESET}")
+    print(f"  {'─' * 50}")
+    print(f"  {C.DIM}Highest cost:{C.RESET}     {cost_yield.highest_cost_agent}")
+    print(f"  {C.DIM}Lowest yield:{C.RESET}     {cost_yield.lowest_yield_agent}")
+    print(f"  {C.DIM}Most wasteful:{C.RESET}    {cost_yield.most_wasteful_agent or 'N/A'}")
+    print(f"  {C.DIM}Worst path:{C.RESET}       {cost_yield.worst_path or 'N/A'}")
+    if cost_yield.critical_path_summary:
+        cp = cost_yield.critical_path_summary
+        print(
+            f"  {C.DIM}Critical path:{C.RESET}    {' → '.join(cp.agents)} · ${cp.total_cost_usd:.4f} · yield {cp.avg_yield_score:.0f}/100"
+        )
+    for path in cost_yield.path_summaries[:2]:
+        grounding = ""
+        if path.claim_count and path.citation_coverage is not None:
+            grounding = (
+                f"\n     {C.DIM}grounding issues {path.grounding_issue_count} · citations {path.citation_coverage:.0%}"
+                f" · unsupported {path.unsupported_claim_count} · missing refs {path.missing_citation_count}{C.RESET}"
+            )
+        print(
+            f"\n  • {C.BOLD}{' → '.join(path.agents)}{C.RESET} [{path.path_kind}]"
+            f"\n     {C.DIM}${path.total_cost_usd:.4f}, yield {path.avg_yield_score:.0f}/100, waste {path.waste_score:.0f}/100{C.RESET}"
+            f"{grounding}"
+        )
+    for recommendation in cost_yield.recommendations[:2]:
+        print(f"\n  💡 {recommendation}")
+
+    workflow = analyze_workflow_patterns(trace)
+    print(f"\n{C.BOLD}  🧭 Workflow Patterns{C.RESET}")
+    print(f"  {'─' * 50}")
+    print(f"  {C.DIM}Primary:{C.RESET}          {workflow.primary_pattern}")
+    for pattern in workflow.patterns:
+        heur = " (heuristic)" if pattern.heuristic else ""
+        print(f"  • {pattern.name}{heur} — {pattern.evidence}")
+
+    decisions = analyze_decisions(trace)
+    print(f"\n{C.BOLD}  🎯 Decision Impact{C.RESET}")
+    print(f"  {'─' * 50}")
+    print(f"  {C.DIM}Decisions:{C.RESET}        {decisions.total_decisions}")
+    print(f"  {C.DIM}Degradation:{C.RESET}      {decisions.decisions_with_degradation}")
+    print(f"  {C.DIM}Quality:{C.RESET}          {decisions.decision_quality_score:.0%}")
+    for decision in decisions.decisions[:3]:
+        icon = f"{C.RED}✗{C.RESET}" if decision.led_to_degradation else f"{C.GREEN}✓{C.RESET}"
+        print(f"\n  {icon} {C.BOLD}{decision.coordinator}{C.RESET} chose {C.BOLD}{decision.chosen_agent}{C.RESET}")
+        for signal in decision.degradation_signals[:3]:
+            print(f"     {C.DIM}→ {signal}{C.RESET}")
+    for suggestion in decisions.suggestions[:2]:
+        print(f"\n  💡 Consider {C.BOLD}{suggestion['suggested_agent']}{C.RESET} instead of {C.BOLD}{suggestion['current_agent']}{C.RESET}")
+        print(f"     {C.DIM}{suggestion['reason']}{C.RESET}")
+
+    counterfactual = analyze_counterfactual(trace)
+    print(f"\n{C.BOLD}  ↺ Counterfactual{C.RESET}")
+    print(f"  {'─' * 50}")
+    print(f"  {C.DIM}Decisions:{C.RESET}        {counterfactual.total_decisions}")
+    print(f"  {C.DIM}Suboptimal:{C.RESET}       {counterfactual.suboptimal_count}")
+    print(f"  {C.DIM}Catastrophic:{C.RESET}     {counterfactual.catastrophic_count}")
+    print(f"  {C.DIM}Regret:{C.RESET}           {counterfactual.total_regret_ms:.0f}ms")
+    for result in counterfactual.results[:3]:
+        icon = (
+            f"{C.RED}✗{C.RESET}" if result.verdict == "catastrophic"
+            else f"{C.YELLOW}⚠{C.RESET}" if result.verdict == "suboptimal"
+            else f"{C.GREEN}✓{C.RESET}"
+        )
+        print(f"\n  {icon} {C.BOLD}{result.coordinator}{C.RESET} chose {C.BOLD}{result.chosen_agent}{C.RESET} [{result.verdict}]")
+        if result.best_alternative:
+            print(f"     {C.DIM}best alt: {result.best_alternative} ({result.evidence_runs} run(s), {result.evidence_source}){C.RESET}")
+        if result.rationale:
+            print(f"     {C.DIM}{result.rationale}{C.RESET}")
+
     print()
+
+
+def cmd_analyze(args) -> None:
+    """Analyze failure propagation and flow in a trace."""
+    trace = _load_trace_file(args.file)
+
+    if getattr(args, 'json', False):
+        _output_structured_json(trace)
+        return
+
+    _print_analysis(trace)
+
+
+def cmd_diagnose(args) -> None:
+    """Render a high-density terminal diagnosis and optional HTML report."""
+    trace = _load_trace_file(args.file)
+    report_target = args.report_output or _default_html_report_path(args.file)
+    report_output = _generate_html_report(trace, report_target)
+    _print_dense_diagnostics(trace, trace_path=args.file, html_report=report_output)
 
 
 
@@ -724,6 +906,138 @@ def cmd_benchmark(args) -> None:
     print(suite.to_report())
 
 
+def _evolution_engine(knowledge_dir: str):
+    """Create the evolution engine for CLI commands."""
+    from agentguard.evolve import EvolutionEngine
+
+    return EvolutionEngine(knowledge_dir=knowledge_dir)
+
+
+def cmd_learn(args) -> None:
+    """Learn from a trace and persist recurring lessons."""
+    trace = _load_trace_file(args.file)
+    engine = _evolution_engine(args.knowledge_dir)
+    reflection = engine.learn(trace)
+    comparison = engine.compare_to_best(trace)
+
+    print(f"\n{C.BOLD}  🧠 Evolution Learn{C.RESET}")
+    print(f"  {'─' * 50}")
+    print(f"  {C.DIM}Trace:{C.RESET}            {trace.trace_id}")
+    print(f"  {C.DIM}Lessons:{C.RESET}          {len(reflection.lessons)}")
+    print(f"  {C.DIM}Patterns:{C.RESET}         {len(reflection.patterns_detected)}")
+    print(f"  {C.DIM}Traces learned:{C.RESET}   {engine.kb.trace_count}")
+    print(f"  {C.DIM}Knowledge dir:{C.RESET}    {args.knowledge_dir}")
+    print(f"  {C.DIM}Trend vs best:{C.RESET}    {comparison['trend']}")
+    if engine.load_warning:
+        print(f"  {C.YELLOW}Recovered:{C.RESET}        {engine.load_warning}")
+
+    for lesson in reflection.lessons[:5]:
+        icon = {"failure": "🔴", "bottleneck": "🐢", "handoff": "🔀"}.get(lesson.category, "•")
+        print(f"\n  {icon} {C.BOLD}{lesson.agent}{C.RESET}")
+        print(f"     {lesson.observation}")
+        print(f"     → {lesson.suggestion}")
+    print()
+
+
+def cmd_suggest(args) -> None:
+    """Show learned high-confidence suggestions."""
+    engine = _evolution_engine(args.knowledge_dir)
+    _require_positive("limit", args.limit)
+    try:
+        suggestions = engine.suggest(min_confidence=args.min_confidence)
+    except ValueError as exc:
+        _cli_fail(str(exc))
+
+    print(f"\n{C.BOLD}  💡 Evolution Suggestions{C.RESET}")
+    print(f"  {'─' * 50}")
+    print(f"  {C.DIM}Knowledge dir:{C.RESET}    {args.knowledge_dir}")
+    print(f"  {C.DIM}Traces learned:{C.RESET}   {engine.kb.trace_count}")
+    if engine.load_warning:
+        print(f"  {C.YELLOW}Recovered:{C.RESET}        {engine.load_warning}")
+
+    if not suggestions:
+        print(f"  {C.DIM}No suggestions yet. Learn from more traces first.{C.RESET}\n")
+        return
+
+    for lesson in suggestions[: args.limit]:
+        print(f"\n  {C.BOLD}{lesson.agent}{C.RESET} [{lesson.category}]")
+        print(f"     confidence: {lesson.confidence:.0%} · seen {lesson.occurrences}x")
+        if lesson.evidence:
+            latest = lesson.evidence[-1]
+            print(f"     evidence: {latest.get('task') or '(unnamed)'} · {latest.get('trace_id')} · {latest.get('span')}")
+        print(f"     {lesson.observation}")
+        print(f"     → {lesson.suggestion}")
+    print()
+
+
+def cmd_trends(args) -> None:
+    """Show recurring evolution trends from the knowledge base."""
+    engine = _evolution_engine(args.knowledge_dir)
+    _require_positive("window", args.window)
+    _require_positive("limit", args.limit)
+    try:
+        trends = engine.detect_trends(window=args.window)
+    except ValueError as exc:
+        _cli_fail(str(exc))
+
+    print(f"\n{C.BOLD}  📈 Evolution Trends{C.RESET}")
+    print(f"  {'─' * 50}")
+    if engine.load_warning:
+        print(f"  {C.YELLOW}Recovered:{C.RESET}        {engine.load_warning}")
+    if not trends:
+        print(f"  {C.DIM}No trends yet. Learn from more traces first.{C.RESET}\n")
+        return
+
+    for trend in trends[: args.limit]:
+        sev = trend.get("severity", "info")
+        color = C.RED if sev == "high" else (C.YELLOW if sev == "medium" else C.GREEN)
+        print(f"  {color}{trend['type']}{C.RESET} · {trend['agent']} · {trend['occurrences']}x")
+        print(f"     {trend['message']}")
+    print()
+
+
+def cmd_prd(args) -> None:
+    """Generate a markdown PRD from recurring evolution patterns."""
+    engine = _evolution_engine(args.knowledge_dir)
+    try:
+        print(engine.generate_prd(min_occurrences=args.min_occurrences))
+    except ValueError as exc:
+        _cli_fail(str(exc))
+
+
+def cmd_auto_apply(args) -> None:
+    """Generate or apply config patches from evolution knowledge."""
+    trace = _load_trace_file(args.file)
+    engine = _evolution_engine(args.knowledge_dir)
+    _require_positive("limit", args.limit)
+    try:
+        result = engine.auto_apply(
+            trace,
+            min_confidence=args.min_confidence,
+            dry_run=not args.write,
+        )
+    except ValueError as exc:
+        _cli_fail(str(exc))
+
+    print(f"\n{C.BOLD}  🛠 Evolution Auto-Apply{C.RESET}")
+    print(f"  {'─' * 50}")
+    print(f"  {C.DIM}Status:{C.RESET}           {result['status']}")
+    print(f"  {C.DIM}Patches:{C.RESET}          {result.get('patch_count', 0)}")
+    print(f"  {C.DIM}Current score:{C.RESET}    {result.get('current_score', 0):.1f}")
+    print(f"  {C.DIM}Trend:{C.RESET}            {result.get('trend', 'n/a')}")
+    if engine.load_warning:
+        print(f"  {C.YELLOW}Recovered:{C.RESET}        {engine.load_warning}")
+
+    for patch in result.get("patches", [])[: args.limit]:
+        print(f"\n  {C.BOLD}{patch['agent']}{C.RESET} [{patch['category']}] {patch['confidence']:.0%}")
+        print(f"     {patch['suggestion']}")
+        print(f"     config: {json.dumps(patch['config'], ensure_ascii=False)}")
+
+    if result.get("config_path"):
+        print(f"\n  {C.GREEN}Updated:{C.RESET} {result['config_path']}")
+    print()
+
+
 def cmd_generate(args) -> None:
     """Generate synthetic traces."""
     from agentguard.generate import generate_trace
@@ -770,6 +1084,7 @@ def cmd_compare(args) -> None:
 def cmd_init(args) -> None:
     """Scaffold a new AgentGuard project with default config and directories."""
     traces_dir = Path(".agentguard/traces")
+    knowledge_dir = Path(".agentguard/knowledge")
     config_file = Path("agentguard.json")
 
     created = []
@@ -779,10 +1094,15 @@ def cmd_init(args) -> None:
         traces_dir.mkdir(parents=True, exist_ok=True)
         created.append(str(traces_dir))
 
+    if not knowledge_dir.exists():
+        knowledge_dir.mkdir(parents=True, exist_ok=True)
+        created.append(str(knowledge_dir))
+
     # Create default config
     if not config_file.exists():
         default_config = {
             "traces_dir": ".agentguard/traces",
+            "knowledge_dir": ".agentguard/knowledge",
             "report_output": ".agentguard/report.html",
             "agents": [],
         }
@@ -854,6 +1174,14 @@ def cmd_doctor(args) -> None:
     else:
         print(f"  {C.YELLOW}⚠{C.RESET} Traces directory not found (run: agentguard init)")
 
+    knowledge_dir = Path(".agentguard/knowledge")
+    if knowledge_dir.exists():
+        kb_file = knowledge_dir / "knowledge.json"
+        status = "knowledge base ready" if kb_file.exists() else "knowledge dir ready"
+        print(f"  {C.GREEN}✓{C.RESET} Knowledge directory ({status})")
+    else:
+        print(f"  {C.YELLOW}⚠{C.RESET} Knowledge directory not found (run: agentguard init)")
+
     # 5. Config file
     config_path = Path("agentguard.json")
     if config_path.exists():
@@ -878,6 +1206,188 @@ def cmd_version(args) -> None:
     """Show AgentGuard version."""
     from agentguard import __version__
     print(f"AgentGuard {__version__}")
+
+
+def _format_timestamp_ms(timestamp_ms: int | None) -> str:
+    """Format millisecond timestamps for CLI output."""
+    if not timestamp_ms:
+        return "unknown"
+    return datetime.fromtimestamp(timestamp_ms / 1000).strftime("%Y-%m-%d %H:%M")
+
+
+def cmd_list_claude_sessions(args) -> None:
+    """List Claude sessions available for import."""
+    from agentguard.runtime.claude import list_claude_sessions
+    from agentguard.runtime.claude.session_import import ClaudeSessionImportError
+
+    all_projects = getattr(args, "all", False)
+    group_by_project = getattr(args, "group_by_project", False)
+    effective_limit = None if all_projects else args.limit
+
+    try:
+        sessions = list_claude_sessions(
+            directory=args.directory,
+            limit=effective_limit,
+            include_worktrees=not args.no_worktrees,
+        )
+    except ClaudeSessionImportError as exc:
+        guidance = [str(exc)]
+        if "claude-agent-sdk" in str(exc):
+            guidance.append("Install it with: pip install claude-agent-sdk")
+        _cli_fail(". ".join(guidance))
+
+    if args.project:
+        project_root = str(Path(args.project).resolve())
+        sessions = [
+            session for session in sessions
+            if session.cwd and (
+                session.cwd == project_root or session.cwd.startswith(project_root + "/")
+            )
+        ]
+
+    compact = not sys.stdout.isatty()
+
+    if compact:
+        print("Claude Sessions")
+        print("-" * 50)
+    else:
+        print(f"\n{C.BOLD}  Claude Sessions{C.RESET}")
+        print(f"  {'─' * 50}")
+    if not sessions:
+        scope = f" for {args.project}" if args.project else ""
+        if compact:
+            print(f"No Claude sessions found{scope}.")
+        else:
+            print(f"  {C.DIM}No Claude sessions found{scope}.{C.RESET}\n")
+        return
+
+    if group_by_project:
+        _print_sessions_grouped_by_project(sessions, compact=compact)
+        return
+
+    for session in sessions:
+        _print_session_entry(session, compact=compact)
+
+
+def _print_session_entry(session, *, compact: bool = False) -> None:
+    """Print a single Claude session summary block."""
+    title = session.custom_title or session.summary
+    if compact:
+        # One plain-text line per session. Designed for LLM / pipeline
+        # consumption: no ANSI, no emoji, stable column order.
+        updated = _format_timestamp_ms(session.last_modified)
+        cwd = session.cwd or "-"
+        branch = session.git_branch or "-"
+        print(f"{session.session_id}\t{updated}\t{branch}\t{cwd}\t{title}")
+        return
+    print(f"  {C.BOLD}{title}{C.RESET}")
+    print(f"    {C.DIM}session:{C.RESET} {session.session_id}")
+    print(f"    {C.DIM}updated:{C.RESET} {_format_timestamp_ms(session.last_modified)}")
+    if session.cwd:
+        print(f"    {C.DIM}cwd:{C.RESET}     {session.cwd}")
+    if session.git_branch:
+        print(f"    {C.DIM}branch:{C.RESET}  {session.git_branch}")
+    if session.first_prompt and session.first_prompt != session.summary:
+        print(f"    {C.DIM}prompt:{C.RESET}  {session.first_prompt[:120]}")
+    print()
+
+
+def _print_sessions_grouped_by_project(sessions, *, compact: bool = False) -> None:
+    """Print Claude sessions grouped by their working directory."""
+    groups: dict[str, list] = {}
+    for session in sessions:
+        key = session.cwd or "(unknown project)"
+        groups.setdefault(key, []).append(session)
+
+    def _group_sort_key(item: tuple[str, list]) -> int:
+        _, entries = item
+        return -max((entry.last_modified or 0) for entry in entries)
+
+    ordered = sorted(groups.items(), key=_group_sort_key)
+
+    if compact:
+        # Compact grouped format for pipelines / LLM ingestion: one header
+        # line per project, one line per session, no ANSI, no emoji.
+        for cwd, entries in ordered:
+            plural = "s" if len(entries) != 1 else ""
+            print(f"[{cwd}] ({len(entries)} session{plural})")
+            for session in entries:
+                title = session.custom_title or session.summary
+                updated = _format_timestamp_ms(session.last_modified)
+                branch = session.git_branch or "-"
+                print(f"  {session.session_id}\t{updated}\t{branch}\t{title}")
+        return
+
+    for cwd, entries in ordered:
+        print(f"  {C.BOLD}{cwd}{C.RESET}  {C.DIM}({len(entries)} session{'s' if len(entries) != 1 else ''}){C.RESET}")
+        for session in entries:
+            title = session.custom_title or session.summary
+            print(f"    {C.BOLD}•{C.RESET} {title}")
+            print(f"      {C.DIM}session:{C.RESET} {session.session_id}")
+            print(f"      {C.DIM}updated:{C.RESET} {_format_timestamp_ms(session.last_modified)}")
+            if session.git_branch:
+                print(f"      {C.DIM}branch:{C.RESET}  {session.git_branch}")
+        print()
+
+
+def cmd_import_claude_session(args) -> None:
+    """Import a Claude session into a local AgentGuard trace and optional HTML report."""
+    from agentguard.runtime.claude import import_claude_session
+    from agentguard.runtime.claude.session_import import ClaudeSessionImportError
+    try:
+        trace = import_claude_session(
+            args.session_id,
+            directory=args.directory,
+            include_subagents=not args.no_subagents,
+        )
+    except ClaudeSessionImportError as exc:
+        guidance = [str(exc)]
+        if "claude-agent-sdk" in str(exc):
+            guidance.append("Install it with: pip install claude-agent-sdk")
+        elif not args.directory:
+            guidance.append("Retry with --directory <claude-session-dir> if the SDK cannot find this session in its default lookup path")
+        _cli_fail(". ".join(guidance))
+
+    output = _write_trace_file(trace, args.output)
+    report_output = _generate_html_report(trace, args.report_output)
+
+    print(f"\n{C.BOLD}  Claude Session Imported{C.RESET}")
+    print(f"  {'─' * 50}")
+    print(f"  {C.DIM}Session:{C.RESET}         {args.session_id}")
+    print(f"  {C.DIM}Task:{C.RESET}            {trace.task or '(unnamed)'}")
+    print(f"  {C.DIM}Agents:{C.RESET}          {len(trace.agent_spans)}")
+    print(f"  {C.DIM}Spans:{C.RESET}           {len(trace.spans)}")
+    print(f"  {C.DIM}Trace JSON:{C.RESET}      {output}")
+    if report_output:
+        print(f"  {C.DIM}HTML report:{C.RESET}     {report_output}")
+    if getattr(args, "analyze", False):
+        _print_analysis(trace)
+    print()
+
+
+def cmd_diagnose_claude_session(args) -> None:
+    """Import and diagnose a Claude session in one terminal-first flow."""
+    from agentguard.runtime.claude import import_claude_session
+    from agentguard.runtime.claude.session_import import ClaudeSessionImportError
+
+    try:
+        trace = import_claude_session(
+            args.session_id,
+            directory=args.directory,
+            include_subagents=not args.no_subagents,
+        )
+    except ClaudeSessionImportError as exc:
+        guidance = [str(exc)]
+        if "claude-agent-sdk" in str(exc):
+            guidance.append("Install it with: pip install claude-agent-sdk")
+        elif not args.directory:
+            guidance.append("Retry with --directory <claude-session-dir> if the SDK cannot find this session in its default lookup path")
+        _cli_fail(". ".join(guidance))
+
+    output = _write_trace_file(trace, args.output)
+    report_target = args.report_output or _default_html_report_path(output, trace.trace_id)
+    report_output = _generate_html_report(trace, report_target)
+    _print_dense_diagnostics(trace, trace_path=output, html_report=report_output)
 
 
 
@@ -918,7 +1428,22 @@ def _register_subcommands(sub: Any) -> None:
     sub.add_parser("init", help="Initialize AgentGuard in current directory")
     sub.add_parser("doctor", help="Check installation health")
     sub.add_parser("version", help="Show version")
+    p = sub.add_parser("list-claude-sessions", help="List Claude sessions available for import")
+    p.add_argument("--directory", help="Claude session directory")
+    p.add_argument("--limit", type=int, default=10, help="Maximum sessions to show")
+    p.add_argument("--all", action="store_true", help="List all sessions across all projects (ignores --limit)")
+    p.add_argument("--project", help="Filter sessions by project path / cwd")
+    p.add_argument("--group-by-project", action="store_true", help="Group output by project cwd")
+    p.add_argument("--no-worktrees", action="store_true", help="Exclude Claude worktree sessions")
     sub.add_parser("schema", help="Print trace JSON schema")
+
+    p = sub.add_parser("import-claude-session", help="Import a Claude session into a trace")
+    p.add_argument("session_id", help="Claude session id")
+    p.add_argument("--directory", help="Claude session directory")
+    p.add_argument("--no-subagents", action="store_true", help="Skip subagent transcript import")
+    p.add_argument("--output", help="Output trace JSON path")
+    p.add_argument("--report-output", help="Optional HTML report output path")
+    p.add_argument("--analyze", action="store_true", help="Print diagnostics summary after import")
 
     # Trace viewing
     p = sub.add_parser("show", help="Display a trace file")
@@ -942,6 +1467,42 @@ def _register_analysis_commands(sub: Any) -> None:
     """Register analysis subcommands."""
     p = sub.add_parser("analyze", help="Analyze failure propagation and flow")
     p.add_argument("file", help="Path to trace JSON file")
+
+    p = sub.add_parser("diagnose", help="Dense terminal diagnosis for a trace")
+    p.add_argument("file", help="Path to trace JSON file")
+    p.add_argument("--report-output", help="Optional HTML report output path")
+
+    p = sub.add_parser("diagnose-claude-session", help="Import and densely diagnose a Claude session")
+    p.add_argument("session_id", help="Claude session id")
+    p.add_argument("--directory", help="Claude session directory")
+    p.add_argument("--no-subagents", action="store_true", help="Skip subagent transcript import")
+    p.add_argument("--output", help="Output trace JSON path")
+    p.add_argument("--report-output", help="Optional HTML report output path")
+
+    p = sub.add_parser("learn", help="Learn evolution lessons from a trace")
+    p.add_argument("file", help="Path to trace JSON file")
+    p.add_argument("--knowledge-dir", default=".agentguard/knowledge", help="Knowledge base directory")
+
+    p = sub.add_parser("suggest", help="Show learned evolution suggestions")
+    p.add_argument("--knowledge-dir", default=".agentguard/knowledge", help="Knowledge base directory")
+    p.add_argument("--min-confidence", type=float, default=0.6, help="Minimum confidence threshold")
+    p.add_argument("--limit", type=int, default=10, help="Maximum suggestions to show")
+
+    p = sub.add_parser("trends", help="Show recurring evolution trends")
+    p.add_argument("--knowledge-dir", default=".agentguard/knowledge", help="Knowledge base directory")
+    p.add_argument("--window", type=int, default=10, help="Recent trace window to analyze")
+    p.add_argument("--limit", type=int, default=10, help="Maximum trends to show")
+
+    p = sub.add_parser("prd", help="Generate improvement PRD from learned patterns")
+    p.add_argument("--knowledge-dir", default=".agentguard/knowledge", help="Knowledge base directory")
+    p.add_argument("--min-occurrences", type=int, default=3, help="Minimum recurring count")
+
+    p = sub.add_parser("auto-apply", help="Generate or apply evolution config patches")
+    p.add_argument("file", help="Path to trace JSON file")
+    p.add_argument("--knowledge-dir", default=".agentguard/knowledge", help="Knowledge base directory")
+    p.add_argument("--min-confidence", type=float, default=0.8, help="Minimum confidence threshold")
+    p.add_argument("--limit", type=int, default=10, help="Maximum patches to show")
+    p.add_argument("--write", action="store_true", help="Write patches into agentguard.json")
 
     p = sub.add_parser("eval", help="Evaluate a trace against rules")
     p.add_argument("file", help="Path to trace JSON file")
@@ -1062,9 +1623,15 @@ def main() -> None:
 
     cmds = {
         "init": cmd_init, "doctor": cmd_doctor, "version": cmd_version,
+        "list-claude-sessions": cmd_list_claude_sessions,
+        "import-claude-session": cmd_import_claude_session,
         "schema": cmd_schema, "show": cmd_show, "list": cmd_list,
         "tree": cmd_tree, "timeline": cmd_timeline, "summary": cmd_summary,
-        "analyze": cmd_analyze, "eval": cmd_eval, "score": cmd_score,
+        "analyze": cmd_analyze, "diagnose": cmd_diagnose,
+        "diagnose-claude-session": cmd_diagnose_claude_session,
+        "learn": cmd_learn, "suggest": cmd_suggest,
+        "trends": cmd_trends, "prd": cmd_prd, "auto-apply": cmd_auto_apply,
+        "eval": cmd_eval, "score": cmd_score,
         "propagation": cmd_propagation, "flowgraph": cmd_flowgraph,
         "context-flow": cmd_context_flow, "metrics": cmd_metrics,
         "correlate": cmd_correlate, "annotate": cmd_annotate,

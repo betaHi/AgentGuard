@@ -127,6 +127,7 @@ def test_retention_in_to_dict():
     serialized = json.dumps(d)
     assert "retention_ratio" in serialized
     assert "avg_retention_ratio" in serialized
+    assert "semantic_retention_score" in serialized
 
 
 def test_no_handoffs_no_ratio():

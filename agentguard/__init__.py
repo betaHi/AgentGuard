@@ -1,6 +1,17 @@
-"""AgentGuard — Record, Replay, Evaluate, and Guard your AI Agents.
+"""AgentGuard — diagnostics for multi-agent orchestration.
 
-Integration styles:
+Primary SDK surfaces:
+
+    # Claude live runtime capture
+    from agentguard.runtime.claude import wrap_claude_client
+
+    # Claude session import
+    from agentguard.runtime.claude import import_claude_session
+
+    # Diagnostics surface
+    from agentguard.diagnostics import analyze_bottleneck, analyze_context_flow
+
+Compatibility trace-capture styles retained for existing Python agent systems:
 
     # Style 1: Decorators (sync)
     @record_agent(name="my-agent", version="v1")
@@ -61,7 +72,12 @@ from agentguard.sdk.context import AgentTrace, AsyncAgentTrace, AsyncToolContext
 from agentguard.sdk.decorators import record_agent, record_tool
 from agentguard.sdk.handoff import detect_context_loss, mark_context_used, record_decision, record_handoff
 from agentguard.sdk.recorder import annotate, set_correlation_id, set_parent_trace
-from agentguard.sdk.threading import TraceThread
+from agentguard.sdk.threading import (
+    TraceThread,
+    disable_auto_trace_threading,
+    enable_auto_trace_threading,
+    is_auto_trace_threading_enabled,
+)
 from agentguard.settings import configure, get_settings, reset_settings
 from agentguard.sla import SLAChecker
 from agentguard.summarize import summarize_brief, summarize_trace
@@ -74,7 +90,8 @@ __all__ = [
     "record_agent_async", "record_tool_async",
     "AgentTrace", "ToolContext",
     "AsyncAgentTrace", "AsyncToolContext",
-    "TraceThread",
+    "TraceThread", "enable_auto_trace_threading",
+    "disable_auto_trace_threading", "is_auto_trace_threading_enabled",
     "record_handoff", "mark_context_used", "detect_context_loss", "record_decision",
     "analyze_propagation", "hypothetical_failure",
     "build_flow_graph",

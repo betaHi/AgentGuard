@@ -1,6 +1,6 @@
 """Tests for trace analysis — failure propagation, flow analysis."""
 
-from agentguard.analysis import analyze_failures, analyze_flow
+from agentguard.analysis import analyze_failures, analyze_flow, analyze_workflow_patterns
 from agentguard.core.trace import ExecutionTrace, Span, SpanType
 
 
@@ -156,6 +156,52 @@ def test_bottleneck_report():
     report = result.to_report()
     assert "Bottleneck" in report
     assert "Critical path" in report
+
+
+def test_workflow_patterns_detect_parallel_orchestrator_shape():
+    """Workflow taxonomy detects parallel orchestrator-worker traces."""
+    trace = ExecutionTrace(task="parallel-taxonomy")
+    coord = Span(name="coordinator", span_type=SpanType.AGENT)
+    a = Span(name="worker-a", span_type=SpanType.AGENT, parent_span_id=coord.span_id)
+    b = Span(name="worker-b", span_type=SpanType.AGENT, parent_span_id=coord.span_id)
+    a.complete()
+    b.complete()
+    coord.complete()
+    for span in [coord, a, b]:
+        trace.add_span(span)
+    trace.complete()
+
+    workflow = analyze_workflow_patterns(trace)
+    names = {pattern.name for pattern in workflow.patterns}
+    assert "parallelization" in names
+    assert "orchestrator_workers" in names
+    assert workflow.primary_pattern in names
+
+
+def test_workflow_patterns_detect_routing():
+    """Workflow taxonomy detects explicit orchestration routing."""
+    trace = ExecutionTrace(task="routing-taxonomy")
+    coord = Span(name="router", span_type=SpanType.AGENT)
+    handoff = Span(name="router → specialist", span_type=SpanType.HANDOFF, parent_span_id=coord.span_id)
+    handoff.metadata = {
+        "decision.type": "orchestration",
+        "decision.coordinator": "router",
+        "decision.chosen": "specialist",
+        "decision.alternatives": ["specialist", "fallback"],
+    }
+    handoff.handoff_from = "router"
+    handoff.handoff_to = "specialist"
+    handoff.complete()
+    specialist = Span(name="specialist", span_type=SpanType.AGENT, parent_span_id=coord.span_id)
+    specialist.complete()
+    coord.complete()
+    for span in [coord, handoff, specialist]:
+        trace.add_span(span)
+    trace.complete()
+
+    workflow = analyze_workflow_patterns(trace)
+    names = {pattern.name for pattern in workflow.patterns}
+    assert "routing" in names
 
 
 def test_context_flow_with_handoff_spans():

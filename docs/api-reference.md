@@ -2,7 +2,92 @@
 
 Complete reference for all public APIs. See [getting-started.md](getting-started.md) for a guided introduction.
 
-## Recording
+## Main SDK Surface
+
+The main SDK boundary is:
+
+- `agentguard.runtime.claude` for Claude runtime capture and session import
+- `agentguard.diagnostics` for orchestration diagnostics
+- CLI and HTML report for delivery
+
+The older `agentguard.sdk.*` capture APIs remain available for existing Python systems, but they should be treated as compatibility surfaces.
+
+## Claude Runtime
+
+### `wrap_claude_client`
+
+```python
+from agentguard.runtime.claude import wrap_claude_client
+```
+
+**Wrap a Claude SDK client and capture a live run as an AgentGuard trace**
+
+```python
+wrap_claude_client(client: 'Any') -> 'AgentGuardClaudeClient'
+```
+
+The wrapped client exposes:
+
+- `query(...)`
+- `receive_messages()`
+- `receive_response()`
+- `agentguard_trace()`
+
+### `import_claude_session`
+
+```python
+from agentguard.runtime.claude import import_claude_session, list_claude_sessions
+```
+
+### `list_claude_sessions`
+
+**List Claude sessions available for import**
+
+```python
+list_claude_sessions(directory: 'str | None' = None, limit: 'int | None' = None, offset: 'int' = 0, include_worktrees: 'bool' = True) -> 'list[ClaudeSessionSummary]'
+```
+
+Use this when you want to discover recent Claude sessions before choosing one to import.
+
+**Import a Claude SDK session into an AgentGuard trace**
+
+```python
+import_claude_session(session_id: 'str', directory: 'str | None' = None, include_subagents: 'bool' = True) -> 'ExecutionTrace'
+```
+
+This loads the main session transcript and, when available, subagent transcripts as well.
+
+CLI surface:
+
+```bash
+agentguard list-claude-sessions --limit 10
+agentguard import-claude-session <session-id> --output .agentguard/traces/claude-session.json --report-output .agentguard/claude-session.html --analyze
+```
+
+If the SDK does not resolve the session from its default storage location, add `--directory <claude-session-dir>`.
+
+---
+
+## Package-Level Configuration
+
+### `configure`
+
+```python
+import agentguard
+```
+
+**Set package-wide defaults for recorder behavior**
+
+```python
+configure(output_dir: 'str | None' = None, max_trace_size_mb: 'float | None' = None,
+		  sampling_rate: 'float | None' = None, auto_truncate: 'bool | None' = None,
+		  auto_thread_context: 'bool | None' = None, log_level: 'str | None' = None) -> 'None'
+```
+
+Use this as the product-facing startup hook for trace output location,
+sampling, and automatic thread context propagation.
+
+## Compatibility Recording
 
 ### `init_recorder`
 
@@ -13,7 +98,7 @@ from agentguard.sdk.recorder import init_recorder
 **Start recording a new trace**
 
 ```python
-init_recorder(task: 'str' = '', trigger: 'str' = 'manual', output_dir: 'str' = '.agentguard/traces') -> 'TraceRecorder'
+init_recorder(task: 'str' = '', trigger: 'str' = 'manual', output_dir: 'str | None' = None) -> 'TraceRecorder'
 ```
 
 Initialize a new global trace recorder.
@@ -188,6 +273,37 @@ Context manager for recording a single tool call as a trace span.
 
 ## Parallel Execution
 
+### `TraceThread`
+
+```python
+from agentguard import TraceThread
+```
+
+**Thread subclass that preserves active trace context**
+
+```python
+TraceThread(group: 'None' = None, target: 'Any | None' = None, name: 'str | None' = None,
+			args: 'tuple[Any, ...]' = (), kwargs: 'dict[str, Any] | None' = None,
+			daemon: 'bool | None' = None)
+```
+
+Use when you want explicit trace-aware thread creation without globally
+patching `threading.Thread`.
+
+### `enable_auto_trace_threading`
+
+```python
+from agentguard import enable_auto_trace_threading
+```
+
+**Automatically propagate AgentGuard context into standard threads**
+
+```python
+enable_auto_trace_threading() -> 'None'
+```
+
+Typically enabled indirectly through `agentguard.configure(auto_thread_context=True)`.
+
 ### `TracingExecutor`
 
 ```python
@@ -261,6 +377,30 @@ merge_child_traces(parent_trace: 'ExecutionTrace', traces_dir: 'str' = '.agentgu
 ```
 
 Merge child process traces into the parent trace.
+
+---
+
+## Evolution
+
+### `EvolutionEngine`
+
+```python
+from agentguard.evolve import EvolutionEngine
+```
+
+**Accumulate recurring lessons across traces**
+
+```python
+EvolutionEngine(knowledge_dir: 'str' = '.agentguard/knowledge')
+```
+
+Key methods used in the current product path:
+
+- `learn(trace)`
+- `suggest(min_confidence=0.6)`
+- `detect_trends(window=10)`
+- `generate_prd(min_occurrences=3)`
+- `auto_apply(trace, min_confidence=0.8, dry_run=True)`
 
 ---
 
@@ -421,7 +561,7 @@ Fluent builder for constructing execution traces.
 ### `TraceReplay`
 
 ```python
-from agentguard.replay_v2 import TraceReplay
+from agentguard.replay import TraceReplay
 ```
 
 **Assertion-based trace replay**
@@ -435,7 +575,7 @@ Replay a trace with configurable assertions.
 ### `replay_golden`
 
 ```python
-from agentguard.replay_v2 import replay_golden
+from agentguard.replay import replay_golden
 ```
 
 **Compare against golden trace file**
@@ -449,7 +589,7 @@ Compare a current trace against a golden (known-good) baseline.
 ### `compare_golden`
 
 ```python
-from agentguard.replay_v2 import compare_golden
+from agentguard.replay import compare_golden
 ```
 
 **Compare against golden trace (in memory)**
@@ -463,7 +603,7 @@ Compare current trace against a golden baseline (both in memory).
 ### `mutate_trace`
 
 ```python
-from agentguard.replay_v2 import mutate_trace
+from agentguard.replay import mutate_trace
 ```
 
 **Create mutated trace for testing**

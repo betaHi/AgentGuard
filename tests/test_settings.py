@@ -3,6 +3,8 @@
 import pytest
 
 import agentguard
+from agentguard.sdk.threading import is_auto_trace_threading_enabled
+from agentguard.sdk.recorder import finish_recording, init_recorder
 from agentguard.settings import Settings, configure, get_settings, reset_settings
 
 
@@ -12,10 +14,11 @@ class TestConfigure:
 
     def test_defaults(self):
         s = get_settings()
-        assert s.output_dir == ".agentguard"
+        assert s.output_dir == ".agentguard/traces"
         assert s.max_trace_size_mb == 10.0
         assert s.sampling_rate == 1.0
         assert s.auto_truncate is False
+        assert s.auto_thread_context is False
 
     def test_set_output_dir(self):
         configure(output_dir="./my-traces")
@@ -32,6 +35,11 @@ class TestConfigure:
     def test_set_auto_truncate(self):
         configure(auto_truncate=True)
         assert get_settings().auto_truncate is True
+
+    def test_set_auto_thread_context(self):
+        configure(auto_thread_context=True)
+        assert get_settings().auto_thread_context is True
+        assert is_auto_trace_threading_enabled() is True
 
     def test_partial_update_preserves_other(self):
         configure(output_dir="./a")
@@ -56,14 +64,23 @@ class TestConfigure:
         configure(output_dir="./x", sampling_rate=0.1)
         reset_settings()
         s = get_settings()
-        assert s.output_dir == ".agentguard"
+        assert s.output_dir == ".agentguard/traces"
         assert s.sampling_rate == 1.0
+        assert s.auto_thread_context is False
+        assert is_auto_trace_threading_enabled() is False
 
     def test_accessible_from_package(self):
         """configure() is importable from agentguard directly."""
         agentguard.configure(output_dir="./test")
         assert agentguard.get_settings().output_dir == "./test"
         agentguard.reset_settings()
+
+    def test_init_recorder_uses_configured_output_dir(self, tmp_path):
+        traces_dir = tmp_path / "product-traces"
+        configure(output_dir=str(traces_dir))
+        init_recorder(task="configured-output")
+        trace = finish_recording()
+        assert (traces_dir / f"{trace.trace_id}.json").exists()
 
 
 class TestSettingsValidation:

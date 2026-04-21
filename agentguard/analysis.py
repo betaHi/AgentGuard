@@ -12,13 +12,14 @@ Given a multi-agent execution trace, these functions answer:
 
 from __future__ import annotations
 
+import re
 from collections.abc import Callable
 from dataclasses import dataclass, field
 from typing import Any
 
 from agentguard.core.trace import ExecutionTrace, Span, SpanStatus, SpanType
 
-__all__ = ['FailureNode', 'FailureAnalysis', 'analyze_failures', 'HandoffInfo', 'FlowAnalysis', 'analyze_flow', 'BottleneckReport', 'analyze_bottleneck', 'ContextFlowPoint', 'ContextFlowReport', 'analyze_context_flow', 'analyze_retries', 'analyze_cost', 'analyze_cost_yield', 'CostYieldEntry', 'CostYieldReport', 'DecisionRecord', 'DecisionAnalysis', 'analyze_decisions', 'DurationAnomaly', 'DurationAnomalyReport', 'detect_duration_anomalies', 'analyze_timing', 'CounterfactualResult', 'CounterfactualAnalysis', 'analyze_counterfactual', 'RepeatedBadDecision', 'detect_repeated_bad_decisions']
+__all__ = ['FailureNode', 'FailureAnalysis', 'analyze_failures', 'HandoffInfo', 'FlowAnalysis', 'analyze_flow', 'WorkflowPattern', 'WorkflowPatternAnalysis', 'analyze_workflow_patterns', 'BottleneckReport', 'analyze_bottleneck', 'ContextFlowPoint', 'ContextFlowReport', 'analyze_context_flow', 'analyze_retries', 'analyze_cost', 'analyze_cost_yield', 'CostYieldEntry', 'CostYieldPathSummary', 'CostYieldReport', 'DecisionRecord', 'DecisionAnalysis', 'analyze_decisions', 'DurationAnomaly', 'DurationAnomalyReport', 'detect_duration_anomalies', 'analyze_timing', 'CounterfactualResult', 'CounterfactualAnalysis', 'analyze_counterfactual', 'RepeatedBadDecision', 'detect_repeated_bad_decisions']
 
 
 @dataclass
@@ -287,6 +288,61 @@ class FlowAnalysis:
         }
 
 
+@dataclass
+class WorkflowPattern:
+    """A detected orchestration workflow pattern."""
+    name: str
+    confidence: float
+    evidence: str
+    rationale: str
+    heuristic: bool = False
+
+    def to_dict(self) -> dict[str, Any]:
+        """Serialize to dictionary."""
+        return {
+            "name": self.name,
+            "confidence": round(self.confidence, 2),
+            "evidence": self.evidence,
+            "rationale": self.rationale,
+            "heuristic": self.heuristic,
+        }
+
+
+@dataclass
+class WorkflowPatternAnalysis:
+    """Heuristic workflow taxonomy for a trace."""
+    patterns: list[WorkflowPattern]
+    primary_pattern: str
+    caveats: list[str] = field(default_factory=list)
+
+    def to_dict(self) -> dict[str, Any]:
+        """Serialize to dictionary."""
+        return {
+            "primary_pattern": self.primary_pattern,
+            "patterns": [p.to_dict() for p in self.patterns],
+            "caveats": self.caveats,
+        }
+
+    def to_report(self) -> str:
+        """Format as human-readable report string."""
+        lines = [
+            "# Workflow Pattern Analysis", "",
+            f"Primary pattern: {self.primary_pattern}", "",
+        ]
+        for pattern in self.patterns:
+            heur = " (heuristic)" if pattern.heuristic else ""
+            lines.append(
+                f"- **{pattern.name}**{heur}: {pattern.confidence:.0%} confidence — {pattern.evidence}"
+            )
+            lines.append(f"  {pattern.rationale}")
+        if self.caveats:
+            lines.append("")
+            lines.append("Caveats:")
+            for caveat in self.caveats:
+                lines.append(f"- {caveat}")
+        return "\n".join(lines)
+
+
 def _extract_handoffs(
     trace: ExecutionTrace,
     children_map: dict[str, list[Span]],
@@ -422,6 +478,107 @@ def analyze_flow(trace: ExecutionTrace) -> FlowAnalysis:
         critical_path_duration_ms=critical_duration,
         parallel_groups=parallel_groups,
     )
+
+
+def _pattern_prompt_chaining(flow: FlowAnalysis, decisions: "DecisionAnalysis") -> WorkflowPattern | None:
+    """Detect sequential prompt chaining."""
+    if flow.handoffs and not flow.parallel_groups and decisions.total_decisions == 0:
+        return WorkflowPattern(
+            name="prompt_chaining",
+            confidence=0.8,
+            evidence=f"{len(flow.handoffs)} handoffs with no parallel groups or routing decisions",
+            rationale="The trace progresses as a sequential chain of agents passing context downstream.",
+        )
+    return None
+
+
+def _pattern_parallelization(flow: FlowAnalysis) -> WorkflowPattern | None:
+    """Detect parallelized execution groups."""
+    if flow.parallel_groups:
+        size = max(len(group) for group in flow.parallel_groups)
+        return WorkflowPattern(
+            name="parallelization",
+            confidence=0.95,
+            evidence=f"{len(flow.parallel_groups)} parallel groups detected (largest group: {size} agents)",
+            rationale="Multiple sibling agents execute under the same parent, indicating sectioning or parallel fan-out.",
+        )
+    return None
+
+
+def _pattern_routing(decisions: "DecisionAnalysis") -> WorkflowPattern | None:
+    """Detect routing based on orchestration decisions."""
+    if decisions.total_decisions > 0:
+        return WorkflowPattern(
+            name="routing",
+            confidence=0.95,
+            evidence=f"{decisions.total_decisions} orchestration decisions were explicitly recorded",
+            rationale="A coordinator selected downstream agents based on a routing decision rather than fixed sequencing alone.",
+        )
+    return None
+
+
+def _pattern_orchestrator_workers(trace: ExecutionTrace) -> WorkflowPattern | None:
+    """Detect orchestrator-workers topology."""
+    fanouts = []
+    for span in trace.agent_spans:
+        child_agents = [s for s in trace.spans if s.parent_span_id == span.span_id and s.span_type == SpanType.AGENT]
+        if len(child_agents) >= 2:
+            fanouts.append((span.name, len(child_agents)))
+    if fanouts:
+        leader, count = max(fanouts, key=lambda item: item[1])
+        return WorkflowPattern(
+            name="orchestrator_workers",
+            confidence=0.9,
+            evidence=f"Agent '{leader}' fans out to {count} worker agents",
+            rationale="A central coordinator delegates work to multiple child agents within the same trace.",
+        )
+    return None
+
+
+def _pattern_evaluator_optimizer(trace: ExecutionTrace, flow: FlowAnalysis) -> tuple[WorkflowPattern | None, str | None]:
+    """Detect evaluator-optimizer loops using conservative heuristics."""
+    names = [span.name.lower() for span in trace.agent_spans]
+    keywords = ("review", "critic", "judge", "evaluator", "fact-check")
+    if flow.handoffs and any(keyword in name for name in names for keyword in keywords):
+        return (
+            WorkflowPattern(
+                name="evaluator_optimizer",
+                confidence=0.6,
+                evidence="Reviewer/evaluator-style agent names appear in a multi-step handoff chain",
+                rationale="The trace includes an evaluation stage that likely critiques or refines upstream work.",
+                heuristic=True,
+            ),
+            "Evaluator-optimizer is inferred from agent naming and handoff structure, not explicit loop instrumentation.",
+        )
+    return None, None
+
+
+def analyze_workflow_patterns(trace: ExecutionTrace) -> WorkflowPatternAnalysis:
+    """Classify the orchestration shape of a trace using conservative heuristics."""
+    flow = analyze_flow(trace)
+    decisions = analyze_decisions(trace)
+    patterns = []
+    caveats = []
+
+    for pattern in (
+        _pattern_prompt_chaining(flow, decisions),
+        _pattern_parallelization(flow),
+        _pattern_routing(decisions),
+        _pattern_orchestrator_workers(trace),
+    ):
+        if pattern:
+            patterns.append(pattern)
+
+    eval_pattern, caveat = _pattern_evaluator_optimizer(trace, flow)
+    if eval_pattern:
+        patterns.append(eval_pattern)
+    if caveat:
+        caveats.append(caveat)
+
+    primary = max(patterns, key=lambda item: item.confidence).name if patterns else "unknown"
+    if not patterns:
+        caveats.append("No strong workflow pattern matched; the trace may be too small or only partially instrumented.")
+    return WorkflowPatternAnalysis(patterns=patterns, primary_pattern=primary, caveats=caveats)
 
 
 @dataclass
@@ -704,6 +861,47 @@ class ContextFlowPoint:
     truncation_detail: str = ""  # description if truncation detected
     retention_ratio: float | None = None  # bytes_received / bytes_sent (1.0 = perfect)
     transformations: list[dict] = field(default_factory=list)  # semantic changes detected
+    info_units_sent: int = 0
+    info_units_received: int = 0
+    critical_keys_sent: list[str] = field(default_factory=list)
+    critical_keys_lost: list[str] = field(default_factory=list)
+    reference_ids_sent: list[str] = field(default_factory=list)
+    reference_ids_lost: list[str] = field(default_factory=list)
+    semantic_retention_score: float | None = None  # 0-1: higher = more semantics preserved
+    semantic_loss_reason: str = ""
+    downstream_impact_score: float | None = None  # 0-1: higher = stronger downstream degradation evidence
+    downstream_impact_reason: str = ""
+
+    @property
+    def risk_score(self) -> float:
+        """Conservative composite risk for prioritizing suspicious handoffs."""
+        anomaly_base = {
+            "ok": 0.0,
+            "bloat": 0.18,
+            "compression": 0.22,
+            "loss": 0.45,
+            "truncation": 0.5,
+        }.get(self.anomaly, 0.15)
+        critical_boost = min(0.12 * len(self.critical_keys_lost), 0.3)
+        semantic_boost = 0.0
+        if self.semantic_retention_score is not None:
+            semantic_boost = (1.0 - self.semantic_retention_score) * 0.35
+        impact_boost = (self.downstream_impact_score or 0.0) * 0.45
+        return min(anomaly_base + critical_boost + semantic_boost + impact_boost, 1.0)
+
+    @property
+    def risk_label(self) -> str:
+        """Bucketized label for user-facing handoff prioritization."""
+        score = self.risk_score
+        if score >= 0.75:
+            return "severe"
+        if score >= 0.55:
+            return "high"
+        if score >= 0.3:
+            return "medium"
+        if score > 0:
+            return "low"
+        return "ok"
 
     def to_dict(self) -> dict:
         """Serialize to dictionary."""
@@ -715,6 +913,18 @@ class ContextFlowPoint:
             "truncation_detail": self.truncation_detail,
             "retention_ratio": round(self.retention_ratio, 3) if self.retention_ratio is not None else None,
             "transformations": self.transformations,
+            "info_units_sent": self.info_units_sent,
+            "info_units_received": self.info_units_received,
+            "critical_keys_sent": self.critical_keys_sent,
+            "critical_keys_lost": self.critical_keys_lost,
+            "reference_ids_sent": self.reference_ids_sent,
+            "reference_ids_lost": self.reference_ids_lost,
+            "semantic_retention_score": round(self.semantic_retention_score, 3) if self.semantic_retention_score is not None else None,
+            "semantic_loss_reason": self.semantic_loss_reason,
+            "downstream_impact_score": round(self.downstream_impact_score, 3) if self.downstream_impact_score is not None else None,
+            "downstream_impact_reason": self.downstream_impact_reason,
+            "risk_score": round(self.risk_score, 3),
+            "risk_label": self.risk_label,
         }
 
 
@@ -731,6 +941,14 @@ class ContextFlowReport:
         """Average information retention across all handoffs with data."""
         ratios = [p.retention_ratio for p in self.points if p.retention_ratio is not None]
         return sum(ratios) / len(ratios) if ratios else None
+
+    @property
+    def ranked_points(self) -> list[ContextFlowPoint]:
+        """Return handoffs ordered from highest to lowest diagnostic risk."""
+        return sorted(
+            self.points,
+            key=lambda point: (-point.risk_score, point.from_agent, point.to_agent),
+        )
 
     def to_dict(self) -> dict:
         """Serialize to dictionary."""
@@ -752,11 +970,15 @@ class ContextFlowReport:
             f"- **Anomalies:** {len(self.anomalies)}",
             "",
         ]
-        for p in self.points:
+        for p in self.ranked_points:
             icon = "🟢" if p.anomaly == "ok" else "🔴" if p.anomaly == "loss" else "🟡"
-            lines.append(f"{icon} {p.from_agent} → {p.to_agent}: {p.size_bytes:,}B")
+            lines.append(f"{icon} {p.from_agent} → {p.to_agent}: {p.size_bytes:,}B [{p.risk_label}]")
             if p.keys_lost:
                 lines.append(f"   ⚠ Lost keys: {p.keys_lost}")
+            if p.critical_keys_lost:
+                lines.append(f"   🔴 Critical loss: {p.critical_keys_lost}")
+            if p.reference_ids_lost:
+                lines.append(f"   📚 Evidence refs lost: {p.reference_ids_lost}")
             if p.anomaly == "bloat":
                 lines.append(f"   ⚠ Context grew by {p.size_delta_bytes:,}B")
             if p.anomaly == "truncation" and p.truncation_detail:
@@ -765,7 +987,308 @@ class ContextFlowReport:
                 pct = p.retention_ratio * 100
                 icon = "\u2705" if pct >= 90 else "\u26a0" if pct >= 50 else "\u274c"
                 lines.append(f"   {icon} Retention: {pct:.0f}%")
+            if p.semantic_retention_score is not None:
+                semantic_pct = p.semantic_retention_score * 100
+                semantic_icon = "\u2705" if semantic_pct >= 80 else "\u26a0" if semantic_pct >= 55 else "\u274c"
+                lines.append(f"   {semantic_icon} Semantic retention: {semantic_pct:.0f}%")
+            if p.semantic_loss_reason:
+                lines.append(f"   🧠 {p.semantic_loss_reason}")
+            if p.downstream_impact_score is not None:
+                lines.append(f"   📉 Downstream impact: {p.downstream_impact_score * 100:.0f}%")
+            if p.downstream_impact_reason:
+                lines.append(f"   ↳ {p.downstream_impact_reason}")
         return "\n".join(lines)
+
+
+def _info_unit_count(data: Any) -> int:
+    """Count unique scalar values as a lightweight semantic-richness proxy."""
+    leaves: set[str] = set()
+
+    def _walk(value: Any) -> None:
+        if isinstance(value, dict):
+            for item in value.values():
+                _walk(item)
+        elif isinstance(value, (list, tuple)):
+            for item in value:
+                _walk(item)
+        elif value is not None:
+            leaves.add(str(value))
+
+    _walk(data)
+    return len(leaves)
+
+
+def _tokenize_key_name(key: str) -> set[str]:
+    """Break a context key into lowercase tokens for heuristic matching."""
+    parts = re.split(r"[^a-zA-Z0-9]+", key.replace("-", "_").lower())
+    return {part for part in parts if part}
+
+
+def _infer_critical_keys(data: Any, explicit_keys: list[str] | None = None) -> list[str]:
+    """Infer likely critical context keys conservatively.
+
+    Explicit keys always win. Heuristics focus on intent, constraints,
+    routing criteria, and evidence-related fields.
+    """
+    if explicit_keys:
+        return sorted({str(key) for key in explicit_keys if key})
+    if not isinstance(data, dict):
+        return []
+    keywords = {
+        "query", "question", "task", "goal", "request", "requirement",
+        "requirements", "constraint", "constraints", "policy", "plan",
+        "decision", "rationale", "reason", "evidence", "citation",
+        "citations", "fact", "facts", "budget", "priority", "error",
+        "issue", "problem", "selected", "choice", "criteria", "source",
+        "sources", "document", "documents", "claim", "claims", "passage",
+        "passages", "quote", "quotes",
+    }
+    critical: list[str] = []
+    for key in data:
+        tokens = _tokenize_key_name(str(key))
+        if tokens & keywords:
+            critical.append(str(key))
+    return sorted(critical)
+
+
+def _critical_key_loss(
+    sender_data: Any,
+    keys_lost: list[str],
+    explicit_critical_keys: list[str] | None = None,
+) -> tuple[list[str], list[str]]:
+    """Return critical keys in the payload and which of them were lost."""
+    critical_sent = _infer_critical_keys(sender_data, explicit_critical_keys)
+    critical_lost = sorted(key for key in critical_sent if key in set(keys_lost))
+    return critical_sent, critical_lost
+
+
+def _collect_reference_ids(data: Any) -> set[str]:
+    """Collect citation and document ids that anchor evidence across a handoff."""
+    references: set[str] = set()
+
+    def _add(value: Any) -> None:
+        if isinstance(value, (str, int, float)) and str(value).strip():
+            references.add(str(value))
+
+    def _walk(value: Any) -> None:
+        if isinstance(value, dict):
+            doc_id = value.get("doc_id")
+            if doc_id is not None:
+                _add(doc_id)
+            for key, item in value.items():
+                if key in {"source_map", "retrieval_scores"} and isinstance(item, dict):
+                    for ref_key in item:
+                        _add(ref_key)
+                elif key in {"citations", "missing_citation_ids", "rejected_doc_ids"} and isinstance(item, list):
+                    for ref in item:
+                        _add(ref)
+                _walk(item)
+        elif isinstance(value, (list, tuple)):
+            for item in value:
+                _walk(item)
+
+    _walk(data)
+    return references
+
+
+def _reference_retention(sender_data: Any, receiver_data: Any) -> tuple[list[str], list[str], float | None, str]:
+    """Estimate how much citation and document coverage survived a handoff."""
+    sender_refs = _collect_reference_ids(sender_data)
+    if not sender_refs:
+        return [], [], None, ""
+    receiver_refs = _collect_reference_ids(receiver_data)
+    retained = sender_refs & receiver_refs
+    lost = sorted(sender_refs - receiver_refs)
+    ratio = len(retained) / max(len(sender_refs), 1)
+    if not lost:
+        return sorted(sender_refs), [], ratio, ""
+    sample = ", ".join(lost[:3])
+    return sorted(sender_refs), lost, ratio, f"lost evidence references: {sample}"
+
+
+def _semantic_penalty(
+    transformations: list[dict],
+    anomaly: str,
+    keys_lost: list[str],
+    critical_keys_lost: list[str],
+    reference_ratio: float | None,
+    reference_reason: str,
+) -> tuple[float, str]:
+    """Convert context-flow signals into a conservative semantic-loss penalty."""
+    penalty = 0.0
+    reasons: list[str] = []
+    transform_types = {t.get("type", "") for t in transformations}
+    if keys_lost:
+        penalty += min(0.15 * len(keys_lost), 0.45)
+        reasons.append(f"lost {len(keys_lost)} key(s)")
+    if critical_keys_lost:
+        penalty += min(0.22 * len(critical_keys_lost), 0.55)
+        reasons.append(f"critical keys lost: {', '.join(critical_keys_lost[:3])}")
+    if reference_ratio is not None and reference_ratio < 1.0:
+        penalty += (1.0 - reference_ratio) * 0.5
+        reasons.append(reference_reason or "evidence references were lost")
+    if anomaly == "truncation":
+        penalty += 0.2
+        reasons.append("payload was truncated")
+    elif anomaly == "compression":
+        penalty += 0.08
+    if "filtering" in transform_types:
+        penalty += 0.12
+        reasons.append("content was filtered")
+    if "type_change" in transform_types:
+        penalty += 0.08
+        reasons.append("value types changed")
+    if "summarization" in transform_types:
+        penalty += 0.03
+    return min(penalty, 0.7), "; ".join(reasons)
+
+
+def _semantic_retention(
+    keys_sent: list[str],
+    keys_received: list[str],
+    size_bytes: int,
+    size_received_bytes: int,
+    anomaly: str,
+    keys_lost: list[str],
+    transformations: list[dict],
+    sender_data: Any,
+    receiver_data: Any,
+    explicit_critical_keys: list[str] | None = None,
+) -> tuple[int, int, list[str], list[str], list[str], list[str], float | None, str]:
+    """Estimate how much meaning survived a handoff.
+
+    This intentionally stays conservative. Summarization can lower byte
+    retention without implying severe semantic loss, while dropped keys and
+    truncation are stronger signals.
+    """
+    sent_units = _info_unit_count(sender_data)
+    recv_units = _info_unit_count(receiver_data)
+    if not keys_sent and sent_units == 0 and size_bytes <= 0:
+        return sent_units, recv_units, [], [], [], [], None, ""
+
+    key_ratio = 1.0 if not keys_sent else len(set(keys_sent) & set(keys_received)) / max(len(set(keys_sent)), 1)
+    byte_ratio = 1.0 if size_bytes <= 0 else min(size_received_bytes / max(size_bytes, 1), 1.0)
+    info_ratio = 1.0 if sent_units <= 0 else min(recv_units / max(sent_units, 1), 1.0)
+    critical_sent, critical_lost = _critical_key_loss(sender_data, keys_lost, explicit_critical_keys)
+    reference_sent, reference_lost, reference_ratio, reference_reason = _reference_retention(sender_data, receiver_data)
+    critical_ratio = 1.0
+    if critical_sent:
+        retained_critical = len(set(critical_sent) - set(critical_lost))
+        critical_ratio = retained_critical / max(len(critical_sent), 1)
+    base_score = (critical_ratio * 0.35) + (key_ratio * 0.3) + (info_ratio * 0.25) + (byte_ratio * 0.1)
+    penalty, reason = _semantic_penalty(
+        transformations,
+        anomaly,
+        keys_lost,
+        critical_lost,
+        reference_ratio,
+        reference_reason,
+    )
+    return (
+        sent_units,
+        recv_units,
+        critical_sent,
+        critical_lost,
+        reference_sent,
+        reference_lost,
+        max(0.0, min(base_score - penalty, 1.0)),
+        reason,
+    )
+
+
+def _build_children_span_map(trace: ExecutionTrace) -> dict[str, list[Span]]:
+    """Build a parent -> child span map for subtree reasoning."""
+    children_map: dict[str, list[Span]] = {}
+    for span in trace.spans:
+        if span.parent_span_id:
+            children_map.setdefault(span.parent_span_id, []).append(span)
+    return children_map
+
+
+def _should_measure_downstream_impact(
+    anomaly: str,
+    critical_lost: list[str],
+    semantic_score: float | None,
+) -> bool:
+    """Only attribute downstream impact when the handoff itself looks suspicious."""
+    if anomaly in {"loss", "truncation"}:
+        return True
+    if critical_lost:
+        return True
+    return semantic_score is not None and semantic_score < 0.75
+
+
+def _subtree_spans(
+    root_span: Span,
+    trace: ExecutionTrace,
+    children_map: dict[str, list[Span]],
+) -> list[Span]:
+    """Collect subtree spans in stable order."""
+    subtree_ids = _collect_subtree_ids(root_span.span_id, children_map)
+    return sorted(
+        [span for span in trace.spans if span.span_id in subtree_ids],
+        key=_span_sort_key,
+    )
+
+
+def _quality_degradation_in_subtree(spans: list[Span]) -> tuple[float | None, str]:
+    """Return the strongest low-quality signal within a receiver subtree."""
+    worst_signal: tuple[float, str, str] | None = None
+    for span in spans:
+        if not isinstance(span.output_data, dict):
+            continue
+        signal, evidence = _extract_quality_signal(span.output_data, span.metadata)
+        if signal is None:
+            continue
+        candidate = (signal, evidence, span.name)
+        if worst_signal is None or signal < worst_signal[0]:
+            worst_signal = candidate
+    if worst_signal is None or worst_signal[0] >= 0.55:
+        return None, ""
+    return 1.0 - worst_signal[0], f"downstream quality degraded at {worst_signal[2]} ({worst_signal[1]})"
+
+
+def _resolve_handoff_receiver_span(
+    handoff_span: Span,
+    trace: ExecutionTrace,
+    children_map: dict[str, list[Span]],
+) -> Span | None:
+    """Resolve the receiving agent span for an explicit handoff."""
+    to_agent = handoff_span.handoff_to or handoff_span.metadata.get("handoff.to", "")
+    if not to_agent:
+        return None
+    candidates = [span for span in trace.agent_spans if span.name == to_agent]
+    if not candidates:
+        return None
+    if handoff_span.parent_span_id:
+        local_ids = _collect_subtree_ids(handoff_span.parent_span_id, children_map)
+        local = [span for span in candidates if span.span_id in local_ids]
+        if local:
+            candidates = local
+    candidates.sort(key=_span_sort_key)
+    return candidates[0] if candidates else None
+
+
+def _downstream_impact(
+    receiver_span: Span,
+    trace: ExecutionTrace,
+    children_map: dict[str, list[Span]],
+) -> tuple[float | None, str]:
+    """Estimate whether handoff degradation manifested inside the receiver subtree."""
+    spans = _subtree_spans(receiver_span, trace, children_map)
+    failed = next((span for span in spans if span.status == SpanStatus.FAILED), None)
+    quality_impact, quality_reason = _quality_degradation_in_subtree(spans)
+    reasons: list[str] = []
+    impact = 0.0
+    if failed is not None:
+        impact = max(impact, 1.0)
+        reasons.append(f"downstream failure at {failed.name}")
+    if quality_impact is not None:
+        impact = max(impact, quality_impact)
+        reasons.append(quality_reason)
+    if impact <= 0:
+        return None, ""
+    return min(impact, 1.0), "; ".join(reasons[:2])
 
 
 def _detect_truncation(
@@ -919,6 +1442,8 @@ def _is_likely_handoff(
 
 def _trace_explicit_handoffs(
     handoff_spans: list[Span],
+    trace: ExecutionTrace,
+    children_map: dict[str, list[Span]],
 ) -> list[ContextFlowPoint]:
     """Build context flow points from explicit HANDOFF spans.
 
@@ -931,16 +1456,57 @@ def _trace_explicit_handoffs(
         to = hs.handoff_to or hs.metadata.get("handoff.to", "")
         ctx_keys = hs.metadata.get("handoff.context_keys", [])
         ctx_size = hs.context_size_bytes or hs.metadata.get("handoff.context_size_bytes", 0)
+        critical_keys = hs.metadata.get("handoff.critical_keys", [])
+        dropped = hs.context_dropped_keys or hs.metadata.get("handoff.dropped_keys", [])
+        used = hs.context_used_keys or hs.metadata.get("handoff.used_keys", [])
         recv_size = 0
         recv_info = hs.context_received
+        recv_keys: list[str] = []
         if isinstance(recv_info, dict):
             recv_size = recv_info.get("size_bytes", 0)
+            recv_keys = recv_info.get("keys", []) or []
         retention = recv_size / ctx_size if ctx_size > 0 and recv_size > 0 else None
+        anomaly = "loss" if dropped else "ok"
+        sent_units = len(set(ctx_keys))
+        recv_units = len(set(used or recv_keys))
+        critical_sent = sorted({str(key) for key in critical_keys if key})
+        critical_lost = sorted(key for key in critical_sent if key in set(dropped))
+        semantic_score = None
+        reason = ""
+        if sent_units > 0:
+            base = ((len(set(critical_sent) - set(critical_lost)) / max(len(critical_sent), 1)) * 0.45 if critical_sent else 0.45)
+            base += (recv_units / max(sent_units, 1)) * 0.55
+            penalty = min(0.15 * len(dropped), 0.45) + min(0.22 * len(critical_lost), 0.55)
+            semantic_score = max(0.0, min(base - penalty, 1.0))
+            if critical_lost:
+                reason = f"critical keys lost during explicit handoff: {', '.join(critical_lost[:3])}"
+            elif dropped:
+                reason = f"lost {len(dropped)} key(s) during explicit handoff"
+        impact_score = None
+        impact_reason = ""
+        if _should_measure_downstream_impact(anomaly, critical_lost, semantic_score):
+            receiver_span = _resolve_handoff_receiver_span(hs, trace, children_map)
+            if receiver_span is not None:
+                impact_score, impact_reason = _downstream_impact(receiver_span, trace, children_map)
+        if impact_reason:
+            reason = f"{reason}; downstream impact: {impact_reason}" if reason else f"downstream impact: {impact_reason}"
         points.append(ContextFlowPoint(
             from_agent=fr, to_agent=to,
             keys_sent=ctx_keys, size_bytes=ctx_size,
+            keys_received=used or recv_keys,
             size_received_bytes=recv_size,
-            anomaly="ok", retention_ratio=retention,
+            keys_lost=dropped,
+            size_delta_bytes=recv_size - ctx_size,
+            anomaly=anomaly,
+            retention_ratio=retention,
+            info_units_sent=sent_units,
+            info_units_received=recv_units,
+            critical_keys_sent=critical_sent,
+            critical_keys_lost=critical_lost,
+            semantic_retention_score=semantic_score,
+            semantic_loss_reason=reason,
+            downstream_impact_score=impact_score,
+            downstream_impact_reason=impact_reason,
         ))
     return points
 
@@ -973,6 +1539,7 @@ def _classify_handoff_anomaly(
 
 def _trace_inferred_handoffs(
     trace: ExecutionTrace,
+    children_map: dict[str, list[Span]],
 ) -> list[ContextFlowPoint]:
     """Infer context flow from sequential agent spans under the same parent.
 
@@ -980,11 +1547,6 @@ def _trace_inferred_handoffs(
     to receiver input to detect loss, bloat, compression, truncation.
     """
     import json as _json
-
-    children_map: dict[str, list[Span]] = {}
-    for s in trace.spans:
-        if s.parent_span_id:
-            children_map.setdefault(s.parent_span_id, []).append(s)
 
     points = []
     for _pid, children in children_map.items():
@@ -1006,6 +1568,23 @@ def _trace_inferred_handoffs(
                 s_keys, r_keys, s_size, r_size, s_out, r_in,
             )
             transforms = _detect_transformations(s_out, r_in, s_keys, r_keys)
+            sent_units, recv_units, critical_sent, critical_lost, reference_sent, reference_lost, semantic_score, semantic_reason = _semantic_retention(
+                s_keys,
+                r_keys,
+                s_size,
+                r_size,
+                anomaly,
+                lost,
+                transforms,
+                s_out,
+                r_in,
+            )
+            impact_score = None
+            impact_reason = ""
+            if _should_measure_downstream_impact(anomaly, critical_lost, semantic_score):
+                impact_score, impact_reason = _downstream_impact(receiver, trace, children_map)
+            if impact_reason:
+                semantic_reason = f"{semantic_reason}; downstream impact: {impact_reason}" if semantic_reason else f"downstream impact: {impact_reason}"
             points.append(ContextFlowPoint(
                 from_agent=sender.name, to_agent=receiver.name,
                 keys_sent=s_keys, size_bytes=s_size,
@@ -1015,6 +1594,16 @@ def _trace_inferred_handoffs(
                 truncation_detail=trunc_desc if anomaly == "truncation" else "",
                 retention_ratio=r_size / s_size if s_size > 0 else None,
                 transformations=transforms,
+                info_units_sent=sent_units,
+                info_units_received=recv_units,
+                critical_keys_sent=critical_sent,
+                critical_keys_lost=critical_lost,
+                reference_ids_sent=reference_sent,
+                reference_ids_lost=reference_lost,
+                semantic_retention_score=semantic_score,
+                semantic_loss_reason=semantic_reason,
+                downstream_impact_score=impact_score,
+                downstream_impact_reason=impact_reason,
             ))
     return points
 
@@ -1032,7 +1621,11 @@ def analyze_context_flow(trace: ExecutionTrace) -> ContextFlowReport:
         ContextFlowResult with anomalies (loss, bloat, mutation) at handoff points.
     """
     handoff_spans = [s for s in trace.spans if s.span_type == SpanType.HANDOFF]
-    points = _trace_explicit_handoffs(handoff_spans) if handoff_spans else _trace_inferred_handoffs(trace)
+    children_map = _build_children_span_map(trace)
+    points = (
+        _trace_explicit_handoffs(handoff_spans, trace, children_map)
+        if handoff_spans else _trace_inferred_handoffs(trace, children_map)
+    )
 
     return ContextFlowReport(
         handoff_count=len(points),
@@ -1144,6 +1737,61 @@ class CostYieldEntry:
     cost_per_success: float  # cost_usd / 1 if succeeded, else inf
     tokens_per_ms: float  # efficiency: tokens consumed per ms of work
     yield_score: float  # 0-100: composite quality signal
+    quality_signal: float | None = None  # 0-1 explicit quality if available
+    quality_evidence: str = ""
+    span_id: str = ""
+    grounding_issue_count: int = 0
+    claim_count: int = 0
+    citation_count: int = 0
+    unsupported_claim_count: int = 0
+    missing_citation_count: int = 0
+    unverified_claim_count: int = 0
+    removed_claim_count: int = 0
+    citation_coverage: float | None = None
+
+
+@dataclass
+class CostYieldPathSummary:
+    """Aggregated cost-yield summary for a path through the orchestration."""
+    path_kind: str  # critical_path or handoff_chain
+    agents: list[str]
+    total_cost_usd: float
+    total_tokens: int
+    avg_yield_score: float
+    min_yield_score: float
+    aggregate_quality_signal: float | None = None
+    contains_failure: bool = False
+    waste_score: float = 0.0
+    grounding_issue_count: int = 0
+    claim_count: int = 0
+    citation_count: int = 0
+    unsupported_claim_count: int = 0
+    missing_citation_count: int = 0
+    unverified_claim_count: int = 0
+    removed_claim_count: int = 0
+    citation_coverage: float | None = None
+
+    def to_dict(self) -> dict[str, Any]:
+        return {
+            "path_kind": self.path_kind,
+            "agents": self.agents,
+            "label": " → ".join(self.agents),
+            "total_cost_usd": round(self.total_cost_usd, 4),
+            "total_tokens": self.total_tokens,
+            "avg_yield_score": round(self.avg_yield_score, 1),
+            "min_yield_score": round(self.min_yield_score, 1),
+            "aggregate_quality_signal": round(self.aggregate_quality_signal, 3) if self.aggregate_quality_signal is not None else None,
+            "contains_failure": self.contains_failure,
+            "waste_score": round(self.waste_score, 1),
+            "grounding_issue_count": self.grounding_issue_count,
+            "claim_count": self.claim_count,
+            "citation_count": self.citation_count,
+            "unsupported_claim_count": self.unsupported_claim_count,
+            "missing_citation_count": self.missing_citation_count,
+            "unverified_claim_count": self.unverified_claim_count,
+            "removed_claim_count": self.removed_claim_count,
+            "citation_coverage": round(self.citation_coverage, 3) if self.citation_coverage is not None else None,
+        }
 
 
 @dataclass
@@ -1158,6 +1806,9 @@ class CostYieldReport:
     most_wasteful_agent: str = ""
     waste_score: float = 0.0  # 0-100: higher = more wasteful
     recommendations: list[str] = field(default_factory=list)
+    path_summaries: list[CostYieldPathSummary] = field(default_factory=list)
+    critical_path_summary: CostYieldPathSummary | None = None
+    worst_path: str = ""
 
     def to_dict(self) -> dict:
         """Serialize to dictionary."""
@@ -1170,6 +1821,9 @@ class CostYieldReport:
             "most_wasteful_agent": self.most_wasteful_agent,
             "waste_score": round(self.waste_score, 1),
             "recommendations": self.recommendations,
+            "worst_path": self.worst_path,
+            "critical_path_summary": self.critical_path_summary.to_dict() if self.critical_path_summary else None,
+            "path_summaries": [p.to_dict() for p in self.path_summaries],
             "agents": [
                 {
                     "agent": e.agent, "tokens": e.tokens,
@@ -1180,6 +1834,16 @@ class CostYieldReport:
                     "cost_per_success": round(e.cost_per_success, 4) if e.cost_per_success != float("inf") else "N/A",
                     "tokens_per_ms": round(e.tokens_per_ms, 2),
                     "yield_score": round(e.yield_score, 1),
+                    "quality_signal": round(e.quality_signal, 3) if e.quality_signal is not None else None,
+                    "quality_evidence": e.quality_evidence,
+                    "grounding_issue_count": e.grounding_issue_count,
+                    "claim_count": e.claim_count,
+                    "citation_count": e.citation_count,
+                    "unsupported_claim_count": e.unsupported_claim_count,
+                    "missing_citation_count": e.missing_citation_count,
+                    "unverified_claim_count": e.unverified_claim_count,
+                    "removed_claim_count": e.removed_claim_count,
+                    "citation_coverage": round(e.citation_coverage, 3) if e.citation_coverage is not None else None,
                 } for e in self.entries
             ],
         }
@@ -1193,13 +1857,34 @@ class CostYieldReport:
             f"- Lowest yield: {self.lowest_yield_agent}",
             f"- Best ratio:   {self.best_ratio_agent}",
             f"- **Most wasteful: {self.most_wasteful_agent}** (waste score: {self.waste_score:.0f}/100)" if self.most_wasteful_agent else "",
+            f"- Worst path:   {self.worst_path}" if self.worst_path else "",
             "",
         ]
+        if self.critical_path_summary:
+            cp = self.critical_path_summary
+            lines.append(
+                f"Critical path cost-yield: {' → '.join(cp.agents)} · ${cp.total_cost_usd:.4f} · yield {cp.avg_yield_score:.0f}/100"
+            )
+            lines.append("")
         if self.recommendations:
             lines.append("## Recommendations")
             lines.append("")
             for rec in self.recommendations:
                 lines.append(f"  💡 {rec}")
+            lines.append("")
+        if self.path_summaries:
+            lines.append("## Path Summaries")
+            lines.append("")
+            for path in sorted(self.path_summaries, key=lambda item: -item.waste_score)[:3]:
+                quality = f" · quality {path.aggregate_quality_signal:.0%}" if path.aggregate_quality_signal is not None else ""
+                fail = " · failure" if path.contains_failure else ""
+                grounding = (
+                    f" · grounding issues {path.grounding_issue_count} · citations {path.citation_coverage:.0%}"
+                    if path.claim_count and path.citation_coverage is not None else ""
+                )
+                lines.append(
+                    f"- {' → '.join(path.agents)} [{path.path_kind}] — ${path.total_cost_usd:.4f}, yield {path.avg_yield_score:.0f}/100, waste {path.waste_score:.0f}/100{quality}{fail}{grounding}"
+                )
             lines.append("")
         lines.extend([
             "## Per-Agent Breakdown", "",
@@ -1208,6 +1893,8 @@ class CostYieldReport:
             cps = f"${e.cost_per_success:.4f}" if e.cost_per_success != float("inf") else "N/A (failed)"
             lines.append(f"**{e.agent}** — {e.tokens:,} tokens, ${e.cost_usd:.4f}")
             lines.append(f"  yield: {e.yield_score:.0f}/100, cost/success: {cps}, {e.duration_ms:.0f}ms")
+            if e.quality_signal is not None:
+                lines.append(f"  quality signal: {e.quality_signal:.0%} ({e.quality_evidence})")
             lines.append("")
         return "\n".join(lines)
 
@@ -1238,6 +1925,145 @@ def _find_most_wasteful(
     return scored[0][0].agent, scored[0][1]
 
 
+def _entry_weight(entry: CostYieldEntry) -> float:
+    """Weight an entry by real spend when available, then by token volume."""
+    if entry.cost_usd > 0:
+        return entry.cost_usd
+    if entry.tokens > 0:
+        return entry.tokens / 1000
+    return 1.0
+
+
+def _build_handoff_paths(handoffs: list[HandoffInfo]) -> list[list[str]]:
+    """Build agent chains from inferred or explicit handoffs."""
+    if not handoffs:
+        return []
+    adjacency: dict[str, list[str]] = {}
+    indegree: dict[str, int] = {}
+    nodes: set[str] = set()
+    for handoff in handoffs:
+        adjacency.setdefault(handoff.from_agent, [])
+        if handoff.to_agent not in adjacency[handoff.from_agent]:
+            adjacency[handoff.from_agent].append(handoff.to_agent)
+        indegree[handoff.to_agent] = indegree.get(handoff.to_agent, 0) + 1
+        indegree.setdefault(handoff.from_agent, indegree.get(handoff.from_agent, 0))
+        nodes.update({handoff.from_agent, handoff.to_agent})
+    roots = sorted(node for node in nodes if indegree.get(node, 0) == 0)
+    if not roots:
+        roots = sorted(nodes)
+    paths: list[list[str]] = []
+
+    def _walk(node: str, path: list[str]) -> None:
+        next_nodes = adjacency.get(node, [])
+        if not next_nodes:
+            paths.append(path)
+            return
+        for child in next_nodes:
+            if child in path:
+                paths.append(path)
+                continue
+            _walk(child, path + [child])
+
+    for root in roots:
+        _walk(root, [root])
+    unique: list[list[str]] = []
+    seen: set[tuple[str, ...]] = set()
+    for path in paths:
+        key = tuple(path)
+        if len(path) >= 2 and key not in seen:
+            unique.append(path)
+            seen.add(key)
+    return unique
+
+
+def _summarize_path_entries(
+    agent_names: list[str],
+    path_kind: str,
+    entries_by_agent: dict[str, list[CostYieldEntry]],
+) -> CostYieldPathSummary | None:
+    """Aggregate agent-level cost-yield entries into a path-level summary."""
+    path_entries: list[CostYieldEntry] = []
+    filtered_agents: list[str] = []
+    for agent in agent_names:
+        matches = entries_by_agent.get(agent, [])
+        if not matches:
+            continue
+        filtered_agents.append(agent)
+        path_entries.extend(matches)
+    if not path_entries or not filtered_agents:
+        return None
+    weights = [_entry_weight(entry) for entry in path_entries]
+    total_weight = sum(weights) or float(len(path_entries))
+    avg_yield = sum(entry.yield_score * weight for entry, weight in zip(path_entries, weights, strict=False)) / total_weight
+    quality_entries = [(entry.quality_signal, weight) for entry, weight in zip(path_entries, weights, strict=False) if entry.quality_signal is not None]
+    aggregate_quality = None
+    if quality_entries:
+        quality_weight = sum(weight for _signal, weight in quality_entries) or float(len(quality_entries))
+        aggregate_quality = sum(signal * weight for signal, weight in quality_entries if signal is not None) / quality_weight
+    claim_count = sum(entry.claim_count for entry in path_entries)
+    citation_count = sum(entry.citation_count for entry in path_entries)
+    return CostYieldPathSummary(
+        path_kind=path_kind,
+        agents=filtered_agents,
+        total_cost_usd=sum(entry.cost_usd for entry in path_entries),
+        total_tokens=sum(entry.tokens for entry in path_entries),
+        avg_yield_score=avg_yield,
+        min_yield_score=min(entry.yield_score for entry in path_entries),
+        aggregate_quality_signal=aggregate_quality,
+        contains_failure=any(entry.status == "failed" for entry in path_entries),
+        grounding_issue_count=sum(entry.grounding_issue_count for entry in path_entries),
+        claim_count=claim_count,
+        citation_count=citation_count,
+        unsupported_claim_count=sum(entry.unsupported_claim_count for entry in path_entries),
+        missing_citation_count=sum(entry.missing_citation_count for entry in path_entries),
+        unverified_claim_count=sum(entry.unverified_claim_count for entry in path_entries),
+        removed_claim_count=sum(entry.removed_claim_count for entry in path_entries),
+        citation_coverage=min(citation_count / claim_count, 1.0) if claim_count > 0 else None,
+    )
+
+
+def _compute_path_summaries(
+    trace: ExecutionTrace,
+    entries: list[CostYieldEntry],
+) -> tuple[list[CostYieldPathSummary], CostYieldPathSummary | None, str]:
+    """Summarize cost-yield across critical and handoff-derived paths."""
+    if not entries:
+        return [], None, ""
+    flow = analyze_flow(trace)
+    entries_by_agent: dict[str, list[CostYieldEntry]] = {}
+    for entry in entries:
+        entries_by_agent.setdefault(entry.agent, []).append(entry)
+
+    summaries: list[CostYieldPathSummary] = []
+    seen: set[tuple[str, ...]] = set()
+    critical_summary = _summarize_path_entries(flow.critical_path, "critical_path", entries_by_agent)
+    if critical_summary:
+        summaries.append(critical_summary)
+        seen.add(tuple(critical_summary.agents))
+    for path in _build_handoff_paths(flow.handoffs):
+        summary = _summarize_path_entries(path, "handoff_chain", entries_by_agent)
+        if not summary:
+            continue
+        key = tuple(summary.agents)
+        if key in seen:
+            continue
+        summaries.append(summary)
+        seen.add(key)
+    max_cost = max((summary.total_cost_usd for summary in summaries if summary.total_cost_usd > 0), default=0.0)
+    max_tokens = max((summary.total_tokens for summary in summaries if summary.total_tokens > 0), default=0)
+    for summary in summaries:
+        if max_cost > 0:
+            cost_factor = summary.total_cost_usd / max_cost
+        else:
+            cost_factor = summary.total_tokens / max(max_tokens, 1)
+        summary.waste_score = round(cost_factor * ((100 - summary.avg_yield_score) / 100) * 100, 1)
+    worst_path = ""
+    if summaries:
+        worst = max(summaries, key=lambda item: item.waste_score)
+        worst_path = " → ".join(worst.agents)
+    return summaries, critical_summary, worst_path
+
+
 def _generate_cost_recommendations(
     entries: list[CostYieldEntry],
 ) -> list[str]:
@@ -1254,6 +2080,11 @@ def _generate_cost_recommendations(
             recs.append(
                 f"'{e.agent}' consumed {e.tokens:,} tokens but failed. "
                 f"Add retry budget limits or fail-fast checks."
+            )
+        elif e.quality_signal is not None and e.quality_signal < 0.5 and e.cost_usd > 0:
+            recs.append(
+                f"'{e.agent}' reports weak quality signals ({e.quality_signal:.0%}: {e.quality_evidence}). "
+                f"Tighten prompts, routing, or validation before spending more budget."
             )
         elif waste > 50 and e.yield_score < 50:
             recs.append(
@@ -1273,8 +2104,254 @@ def _generate_cost_recommendations(
     return recs[:5]  # Cap at 5 recommendations
 
 
-def _default_yield_score(succeeded: bool, has_output: bool, output_size: int) -> float:
-    """Default yield scoring: completion + output quality."""
+def _normalize_quality_value(value: Any) -> float | None:
+    """Normalize common quality-style numeric values to 0-1."""
+    if isinstance(value, bool):
+        return 1.0 if value else 0.0
+    if not isinstance(value, (int, float)):
+        return None
+    numeric = float(value)
+    if numeric < 0:
+        return 0.0
+    if numeric <= 1.0:
+        return numeric
+    if numeric <= 100.0:
+        return numeric / 100.0
+    return 1.0
+
+
+def _quality_label_signal(value: Any) -> float | None:
+    """Map common qualitative labels to a normalized quality score."""
+    if not isinstance(value, str):
+        return None
+    label = value.strip().lower()
+    strong = {"pass": 0.95, "passed": 0.95, "success": 0.95, "ok": 0.9,
+              "good": 0.85, "high": 0.85, "complete": 0.9, "completed": 0.9,
+              "improved": 0.9}
+    medium = {"medium": 0.6, "partial": 0.5, "warning": 0.45,
+              "degraded": 0.35, "mixed": 0.5}
+    weak = {"fail": 0.05, "failed": 0.05, "error": 0.0, "bad": 0.1,
+            "poor": 0.1, "low": 0.2, "regressed": 0.1}
+    if label in strong:
+        return strong[label]
+    if label in medium:
+        return medium[label]
+    return weak.get(label)
+
+
+def _quality_candidates(data: dict[str, Any]) -> list[tuple[float, float, str]]:
+    """Collect weighted explicit quality signals from a structured payload."""
+    numeric_weights = {
+        "quality": 1.0,
+        "score": 0.9,
+        "accuracy": 1.0,
+        "completeness": 0.85,
+        "confidence": 0.6,
+        "relevance": 0.75,
+        "coverage": 0.7,
+        "pass_rate": 1.0,
+        "rating": 0.7,
+    }
+    label_weights = {
+        "verdict": 1.0,
+        "status": 0.9,
+        "quality": 1.0,
+        "confidence": 0.5,
+    }
+    candidates: list[tuple[float, float, str]] = []
+    for key, weight in numeric_weights.items():
+        value = _normalize_quality_value(data.get(key))
+        if value is not None:
+            candidates.append((value, weight, key))
+    for key, weight in label_weights.items():
+        value = _quality_label_signal(data.get(key))
+        if value is not None:
+            candidates.append((value, weight, key))
+    if "success" in data and isinstance(data["success"], bool):
+        candidates.append((1.0 if data["success"] else 0.0, 1.0, "success"))
+    return candidates
+
+
+def _rule_pass_signal(data: dict[str, Any]) -> tuple[float, str] | None:
+    """Extract a quality signal from EvaluationResult-like pass/fail counts."""
+    passed = data.get("passed")
+    total = data.get("total")
+    if not isinstance(passed, (int, float)) or not isinstance(total, (int, float)):
+        return None
+    total_value = max(float(total), 1.0)
+    pass_rate = max(0.0, min(float(passed) / total_value, 1.0))
+    overall = _quality_label_signal(data.get("overall"))
+    if overall is None:
+        overall = _quality_label_signal(data.get("overall_verdict"))
+    if overall is None:
+        overall = pass_rate
+    signal = (pass_rate * 0.75) + (overall * 0.25)
+    return signal, "evaluation_rules"
+
+
+def _rules_list_signal(data: dict[str, Any]) -> tuple[float, str] | None:
+    """Extract a quality signal from a list of rule verdicts."""
+    rules = data.get("rules")
+    if not isinstance(rules, list) or not rules:
+        return None
+    passed = 0
+    considered = 0
+    for rule in rules:
+        if not isinstance(rule, dict):
+            continue
+        verdict = str(rule.get("verdict", "")).lower()
+        if verdict in {"pass", "fail"}:
+            considered += 1
+            if verdict == "pass":
+                passed += 1
+    if considered == 0:
+        return None
+    return passed / considered, "rule_verdicts"
+
+
+def _comparison_signal(data: dict[str, Any]) -> tuple[float, str] | None:
+    """Extract a quality signal from replay/comparison-style outputs."""
+    verdict = _quality_label_signal(data.get("verdict"))
+    regressed = data.get("regressed")
+    improved = data.get("improved")
+    recommendation = _quality_label_signal(data.get("recommendation"))
+    candidates: list[float] = []
+    if verdict is not None:
+        candidates.append(verdict)
+    if isinstance(regressed, (int, float)) and isinstance(improved, (int, float)):
+        total = max(float(regressed) + float(improved), 1.0)
+        balance = max(0.0, min((float(improved) + 1.0) / (total + 1.0), 1.0))
+        candidates.append(balance)
+    if recommendation is not None:
+        candidates.append(recommendation)
+    if not candidates:
+        return None
+    return sum(candidates) / len(candidates), "comparison_result"
+
+
+def _count_items(value: Any) -> int:
+    """Count list-like or numeric quantities used in grounding heuristics."""
+    if isinstance(value, (list, tuple, set, dict)):
+        return len(value)
+    if isinstance(value, (int, float)):
+        return max(int(value), 0)
+    return 0
+
+
+def _grounding_breakdown(data: dict[str, Any]) -> dict[str, int | float | None]:
+    """Collect grounding and citation integrity counts from a structured payload."""
+    claims = _count_items(data.get("claims"))
+    verified = _count_items(data.get("verified_claims"))
+    unsupported = _count_items(data.get("unsupported_claims"))
+    unverified = _count_items(data.get("unverified_claims"))
+    missing_citations = _count_items(data.get("missing_citation_ids"))
+    removed_claims = _count_items(data.get("removed_claim_count"))
+    citations = _count_items(data.get("citations"))
+    claim_count = max(claims, verified + unsupported + unverified + removed_claims)
+    citation_coverage = None
+    if claim_count > 0:
+        citation_coverage = min(citations / claim_count, 1.0)
+    return {
+        "claim_count": claim_count,
+        "citation_count": citations,
+        "unsupported_claim_count": unsupported,
+        "missing_citation_count": missing_citations,
+        "unverified_claim_count": unverified,
+        "removed_claim_count": removed_claims,
+        "grounding_issue_count": unsupported + missing_citations + unverified + removed_claims,
+        "citation_coverage": citation_coverage,
+    }
+
+
+def _grounding_signal(data: dict[str, Any]) -> tuple[float, str] | None:
+    """Extract a quality signal from evidence grounding and citation integrity."""
+    breakdown = _grounding_breakdown(data)
+    claims = int(breakdown["claim_count"] or 0)
+    verified = _count_items(data.get("verified_claims"))
+    unsupported = int(breakdown["unsupported_claim_count"] or 0) + int(breakdown["unverified_claim_count"] or 0)
+    missing_citations = int(breakdown["missing_citation_count"] or 0)
+    removed_claims = int(breakdown["removed_claim_count"] or 0)
+    citations = int(breakdown["citation_count"] or 0)
+    if not any([claims, verified, unsupported, missing_citations, removed_claims, citations]):
+        return None
+    total_claims = max(claims, verified + unsupported + removed_claims, 1)
+    support_ratio = min(citations / max(claims, 1), 1.0) if claims else 1.0
+    verified_ratio = min(verified / total_claims, 1.0) if verified else max(0.0, 1.0 - (unsupported / total_claims))
+    citation_ratio = 1.0 - min(missing_citations / total_claims, 1.0)
+    unsupported_ratio = min((unsupported + removed_claims) / total_claims, 1.0)
+    signal = (support_ratio * 0.35) + (verified_ratio * 0.45) + (citation_ratio * 0.2)
+    signal = max(0.0, min(signal - (unsupported_ratio * 0.25), 1.0))
+    return signal, "grounding_integrity"
+
+
+def _nested_quality_candidates(data: dict[str, Any]) -> list[tuple[float, float, str]]:
+    """Collect quality signals from nested evaluation/replay structures."""
+    nested_keys = ["evaluation", "eval", "comparison", "replay", "baseline", "candidate"]
+    candidates: list[tuple[float, float, str]] = []
+    sources: list[tuple[tuple[float, str] | None, float]] = [
+        (_rule_pass_signal(data), 1.0),
+        (_rules_list_signal(data), 0.9),
+        (_comparison_signal(data), 1.0),
+        (_grounding_signal(data), 1.0),
+    ]
+    for result, weight in sources:
+        if result is not None:
+            value, source = result
+            candidates.append((value, weight, source))
+    for key in nested_keys:
+        nested = data.get(key)
+        if not isinstance(nested, dict):
+            continue
+        for result, weight in [
+            (_rule_pass_signal(nested), 1.0),
+            (_rules_list_signal(nested), 0.9),
+            (_comparison_signal(nested), 1.0),
+            (_grounding_signal(nested), 1.0),
+        ]:
+            if result is None:
+                continue
+            value, source = result
+            candidates.append((value, weight, f"{key}.{source}"))
+    return candidates
+
+
+def _extract_quality_signal(output_data: Any, metadata: dict[str, Any]) -> tuple[float | None, str]:
+    """Extract an explicit quality signal from output or metadata when available."""
+    candidates: list[tuple[float, float, str]] = []
+    if isinstance(output_data, dict):
+        candidates.extend(_quality_candidates(output_data))
+        candidates.extend(_nested_quality_candidates(output_data))
+    if metadata:
+        prefixed = {str(k).split(".")[-1]: v for k, v in metadata.items() if isinstance(k, str)}
+        candidates.extend(_quality_candidates(prefixed))
+        candidates.extend(_nested_quality_candidates(prefixed))
+    if not candidates:
+        return None, ""
+    weighted_sum = sum(value * weight for value, weight, _source in candidates)
+    total_weight = sum(weight for _value, weight, _source in candidates)
+    sources = ", ".join(sorted({source for _value, _weight, source in candidates}))
+    return weighted_sum / max(total_weight, 1e-9), sources
+
+
+def _default_yield_score(
+    succeeded: bool,
+    has_output: bool,
+    output_size: int,
+    output_data: Any,
+    metadata: dict[str, Any],
+) -> tuple[float, float | None, str]:
+    """Default yield scoring: explicit quality first, size heuristics second."""
+    if not succeeded:
+        return 0.0, None, ""
+    quality_signal, evidence = _extract_quality_signal(output_data, metadata)
+    if quality_signal is not None:
+        score = 15.0
+        if has_output:
+            score += 10.0
+        score += quality_signal * 70.0
+        if output_size > 1000:
+            score += 5.0
+        return min(score, 100.0), quality_signal, evidence
     score = 0.0
     if succeeded:
         score += 50
@@ -1284,7 +2361,7 @@ def _default_yield_score(succeeded: bool, has_output: bool, output_size: int) ->
         score += 10
     if output_size > 1000:
         score += 10
-    return score
+    return score, None, ""
 
 
 def _compute_agent_costs(
@@ -1307,7 +2384,19 @@ def _compute_agent_costs(
         succeeded = s.status == SpanStatus.COMPLETED
         has_output = s.output_data is not None
         output_size = _measure_output_size(s.output_data, _json)
-        yield_score = yield_fn(s) if yield_fn else _default_yield_score(succeeded, has_output, output_size)
+        grounding = _grounding_breakdown(s.output_data) if isinstance(s.output_data, dict) else _grounding_breakdown({})
+        quality_signal = None
+        quality_evidence = ""
+        if yield_fn:
+            yield_score = yield_fn(s)
+        else:
+            yield_score, quality_signal, quality_evidence = _default_yield_score(
+                succeeded,
+                has_output,
+                output_size,
+                s.output_data,
+                s.metadata,
+            )
         cost_per_success = cost if succeeded and cost > 0 else (float("inf") if not succeeded else 0.0)
         entries.append(CostYieldEntry(
             agent=s.name, tokens=tokens, cost_usd=cost,
@@ -1316,6 +2405,17 @@ def _compute_agent_costs(
             cost_per_success=cost_per_success,
             tokens_per_ms=tokens / max(dur, 1),
             yield_score=yield_score,
+            quality_signal=quality_signal,
+            quality_evidence=quality_evidence,
+            span_id=s.span_id,
+            grounding_issue_count=int(grounding["grounding_issue_count"] or 0),
+            claim_count=int(grounding["claim_count"] or 0),
+            citation_count=int(grounding["citation_count"] or 0),
+            unsupported_claim_count=int(grounding["unsupported_claim_count"] or 0),
+            missing_citation_count=int(grounding["missing_citation_count"] or 0),
+            unverified_claim_count=int(grounding["unverified_claim_count"] or 0),
+            removed_claim_count=int(grounding["removed_claim_count"] or 0),
+            citation_coverage=grounding["citation_coverage"],
         ))
     return entries
 
@@ -1365,6 +2465,7 @@ def analyze_cost_yield(
     scores = _compute_yield_scores(entries)
     wasteful, waste_score = _find_most_wasteful(entries)
     recommendations = _generate_cost_recommendations(entries)
+    path_summaries, critical_path_summary, worst_path = _compute_path_summaries(trace, entries)
 
     return CostYieldReport(
         entries=entries,
@@ -1376,6 +2477,9 @@ def analyze_cost_yield(
         most_wasteful_agent=wasteful,
         waste_score=waste_score,
         recommendations=recommendations,
+        path_summaries=path_summaries,
+        critical_path_summary=critical_path_summary,
+        worst_path=worst_path,
     )
 
 
@@ -1392,6 +2496,11 @@ class DecisionRecord:
     downstream_status: str  # "completed", "failed", etc.
     downstream_duration_ms: float | None
     led_to_failure: bool  # True if chosen agent (or its children) failed
+    led_to_degradation: bool = False
+    failure_source: str = ""
+    bottleneck_span: str = ""
+    context_loss_handoffs: list[str] = field(default_factory=list)
+    degradation_signals: list[str] = field(default_factory=list)
 
     def to_dict(self) -> dict[str, Any]:
         """Serialize to dictionary."""
@@ -1405,6 +2514,11 @@ class DecisionRecord:
             "downstream_status": self.downstream_status,
             "downstream_duration_ms": self.downstream_duration_ms,
             "led_to_failure": self.led_to_failure,
+            "led_to_degradation": self.led_to_degradation,
+            "failure_source": self.failure_source,
+            "bottleneck_span": self.bottleneck_span,
+            "context_loss_handoffs": self.context_loss_handoffs,
+            "degradation_signals": self.degradation_signals,
         }
 
 
@@ -1414,6 +2528,7 @@ class DecisionAnalysis:
     decisions: list[DecisionRecord]
     total_decisions: int
     decisions_leading_to_failure: int
+    decisions_with_degradation: int
     decision_quality_score: float  # 0-1: fraction of decisions with good outcomes
     suggestions: list[dict] = field(default_factory=list)  # optimal agent recommendations
 
@@ -1422,6 +2537,7 @@ class DecisionAnalysis:
         return {
             "total_decisions": self.total_decisions,
             "decisions_leading_to_failure": self.decisions_leading_to_failure,
+            "decisions_with_degradation": self.decisions_with_degradation,
             "decision_quality_score": round(self.decision_quality_score, 2),
             "decisions": [d.to_dict() for d in self.decisions],
             "suggestions": self.suggestions,
@@ -1433,16 +2549,19 @@ class DecisionAnalysis:
             "# Orchestration Decision Analysis", "",
             f"Total decisions: {self.total_decisions}",
             f"Led to failure: {self.decisions_leading_to_failure}",
+            f"Showed degradation: {self.decisions_with_degradation}",
             f"Decision quality: {self.decision_quality_score:.0%}", "",
         ]
         for d in self.decisions:
-            icon = "\u2717" if d.led_to_failure else "\u2713"
+            icon = "\u2717" if d.led_to_degradation else "\u2713"
             alts = ", ".join(d.alternatives) if d.alternatives else "none"
             lines.append(f"{icon} **{d.coordinator}** chose **{d.chosen_agent}** over [{alts}]")
             if d.rationale:
                 lines.append(f"  Rationale: {d.rationale}")
             lines.append(f"  Outcome: {d.downstream_status}"
                          f"{f' ({d.downstream_duration_ms:.0f}ms)' if d.downstream_duration_ms else ''}")
+            for signal in d.degradation_signals:
+                lines.append(f"  Signal: {signal}")
             lines.append("")
         return "\n".join(lines)
 
@@ -1546,23 +2665,136 @@ def _has_descendant_failure(
     return False
 
 
+def _collect_subtree_ids(
+    root_span_id: str,
+    children_map: dict[str, list[Span]],
+) -> set[str]:
+    """Collect a span subtree, including the root span id."""
+    subtree_ids = {root_span_id}
+    stack = [root_span_id]
+    while stack:
+        current = stack.pop()
+        for child in children_map.get(current, []):
+            if child.span_id not in subtree_ids:
+                subtree_ids.add(child.span_id)
+                stack.append(child.span_id)
+    return subtree_ids
+
+
+def _span_sort_key(span: Span) -> tuple[str, str, str]:
+    """Provide a stable ordering key for spans."""
+    return (span.started_at or "", span.ended_at or "", span.span_id)
+
+
+def _resolve_chosen_agent_span(
+    ds: Span,
+    trace: ExecutionTrace,
+    children_map: dict[str, list[Span]],
+) -> Span | None:
+    """Resolve the agent span selected by a decision within the local subtree."""
+    chosen = ds.metadata.get("decision.chosen", "")
+    if not chosen:
+        return None
+    candidates = [
+        span for span in trace.agent_spans
+        if span.name == chosen
+    ]
+    if ds.parent_span_id:
+        local_ids = _collect_subtree_ids(ds.parent_span_id, children_map)
+        local = [span for span in candidates if span.span_id in local_ids]
+        if local:
+            candidates = local
+    candidates.sort(key=_span_sort_key)
+    return candidates[0] if candidates else None
+
+
+def _find_failed_descendant(
+    root_span: Span,
+    trace: ExecutionTrace,
+    children_map: dict[str, list[Span]],
+) -> Span | None:
+    """Return the earliest failed span inside a chosen agent subtree."""
+    subtree_ids = _collect_subtree_ids(root_span.span_id, children_map)
+    failures = [
+        span for span in trace.spans
+        if span.span_id in subtree_ids and span.status == SpanStatus.FAILED
+    ]
+    failures.sort(key=_span_sort_key)
+    return failures[0] if failures else None
+
+
+def _subtree_agent_names(
+    root_span: Span,
+    trace: ExecutionTrace,
+    children_map: dict[str, list[Span]],
+) -> set[str]:
+    """Collect agent names within a chosen agent subtree."""
+    subtree_ids = _collect_subtree_ids(root_span.span_id, children_map)
+    return {
+        span.name for span in trace.agent_spans
+        if span.span_id in subtree_ids
+    }
+
+
+def _context_losses_for_agents(
+    agent_names: set[str],
+    context_report: ContextFlowReport,
+) -> list[str]:
+    """Return handoffs with context degradation inside a chosen subtree."""
+    handoffs = []
+    for point in context_report.anomalies:
+        if point.anomaly not in {"loss", "truncation"}:
+            continue
+        if point.from_agent in agent_names or point.to_agent in agent_names:
+            handoffs.append(f"{point.from_agent} → {point.to_agent}")
+    return handoffs
+
+
+def _decision_degradation_signals(
+    failure_source: str,
+    bottleneck_span: str,
+    context_losses: list[str],
+) -> list[str]:
+    """Summarize concrete degradation evidence for a decision."""
+    signals = []
+    if failure_source:
+        signals.append(f"Failure propagated to {failure_source}")
+    if context_losses:
+        signals.append(f"Context loss on {context_losses[0]}")
+    if bottleneck_span and signals:
+        signals.append(f"Critical path bottleneck at {bottleneck_span}")
+    return signals
+
+
 def _decision_span_to_record(
     ds: Span,
     trace: ExecutionTrace,
     children_map: dict[str, list[Span]],
+    bottleneck: BottleneckReport,
+    context_report: ContextFlowReport,
 ) -> DecisionRecord:
     """Convert a decision span into a DecisionRecord with downstream outcome."""
     chosen = ds.metadata.get("decision.chosen", "")
-    chosen_spans = [
-        s for s in trace.spans
-        if s.span_type == SpanType.AGENT and s.name == chosen
-    ]
+    agent = _resolve_chosen_agent_span(ds, trace, children_map)
 
-    if chosen_spans:
-        agent = chosen_spans[0]
+    if agent is not None:
         led_to_failure = (
             agent.status == SpanStatus.FAILED
             or _has_descendant_failure(agent.span_id, children_map)
+        )
+        failure_source = ""
+        failed_span = _find_failed_descendant(agent, trace, children_map)
+        if failed_span is not None:
+            failure_source = failed_span.name
+        agent_names = _subtree_agent_names(agent, trace, children_map)
+        bottleneck_span = ""
+        if bottleneck.bottleneck_span in agent_names or bottleneck.bottleneck_agent in agent_names:
+            bottleneck_span = bottleneck.bottleneck_span
+        context_losses = _context_losses_for_agents(agent_names, context_report)
+        degradation_signals = _decision_degradation_signals(
+            failure_source,
+            bottleneck_span,
+            context_losses,
         )
         downstream_status = agent.status.value
         downstream_dur = agent.duration_ms
@@ -1570,6 +2802,10 @@ def _decision_span_to_record(
         downstream_status = "unknown"
         downstream_dur = None
         led_to_failure = False
+        failure_source = ""
+        bottleneck_span = ""
+        context_losses = []
+        degradation_signals = []
 
     return DecisionRecord(
         coordinator=ds.metadata.get("decision.coordinator", ""),
@@ -1581,6 +2817,11 @@ def _decision_span_to_record(
         downstream_status=downstream_status,
         downstream_duration_ms=downstream_dur,
         led_to_failure=led_to_failure,
+        led_to_degradation=bool(degradation_signals),
+        failure_source=failure_source,
+        bottleneck_span=bottleneck_span,
+        context_loss_handoffs=context_losses,
+        degradation_signals=degradation_signals,
     )
 
 
@@ -1683,22 +2924,27 @@ def analyze_decisions(trace: ExecutionTrace) -> DecisionAnalysis:
         and s.metadata.get("decision.type") == "orchestration"
     ]
 
+    bottleneck = analyze_bottleneck(trace)
+    context_report = analyze_context_flow(trace)
+
     records = [
-        _decision_span_to_record(ds, trace, children_map)
+        _decision_span_to_record(ds, trace, children_map, bottleneck, context_report)
         for ds in decision_spans
     ]
 
     total = len(records)
     failures = sum(1 for r in records if r.led_to_failure)
-    quality = 1.0 if total == 0 else (total - failures) / total
-
-    _suggest_optimal_agents(records, trace)
+    degradations = sum(1 for r in records if r.led_to_degradation)
+    quality = 1.0 if total == 0 else (total - degradations) / total
+    suggestions = _suggest_optimal_agents(records, trace)
 
     return DecisionAnalysis(
         decisions=records,
         total_decisions=total,
         decisions_leading_to_failure=failures,
+        decisions_with_degradation=degradations,
         decision_quality_score=quality,
+        suggestions=suggestions,
     )
 
 
@@ -1933,6 +3179,11 @@ class CounterfactualResult:
     chosen_failed: bool
     best_alt_failed: bool
     verdict: str  # "optimal", "suboptimal", "catastrophic", "no_alternatives"
+    chosen_degraded: bool = False
+    best_alt_success_rate: float | None = None
+    evidence_source: str = "none"
+    evidence_runs: int = 0
+    rationale: str = ""
 
     def to_dict(self) -> dict[str, Any]:
         """Serialize to dictionary."""
@@ -1947,6 +3198,11 @@ class CounterfactualResult:
             "regret_ms": round(self.regret_ms, 1) if self.regret_ms is not None else None,
             "chosen_failed": self.chosen_failed,
             "best_alt_failed": self.best_alt_failed,
+            "chosen_degraded": self.chosen_degraded,
+            "best_alt_success_rate": round(self.best_alt_success_rate, 2) if self.best_alt_success_rate is not None else None,
+            "evidence_source": self.evidence_source,
+            "evidence_runs": self.evidence_runs,
+            "rationale": self.rationale,
             "verdict": self.verdict,
         }
 
@@ -1990,8 +3246,12 @@ class CounterfactualAnalysis:
             if r.best_alternative:
                 alt_dur = f" ({r.best_alt_duration_ms:.0f}ms)" if r.best_alt_duration_ms else ""
                 lines.append(f"  Best alt: {r.best_alternative} → {r.best_alt_status}{alt_dur}")
+            if r.evidence_runs:
+                lines.append(f"  Evidence: {r.evidence_source}, {r.evidence_runs} observed run(s)")
             if r.regret_ms and r.regret_ms > 0:
                 lines.append(f"  Regret: +{r.regret_ms:.0f}ms")
+            if r.rationale:
+                lines.append(f"  Why: {r.rationale}")
             lines.append("")
         return "\n".join(lines)
 
@@ -2002,27 +3262,125 @@ def _verdict_icon(verdict: str) -> str:
             "catastrophic": "\u274c", "no_alternatives": "\u2796"}.get(verdict, "?")
 
 
-def _find_agent_performance(
-    agent_name: str, trace: ExecutionTrace
-) -> tuple[str | None, float | None]:
-    """Find an agent's best performance in the trace.
+def _build_agent_outcome_profiles(trace: ExecutionTrace) -> dict[str, dict[str, float | int | str]]:
+    """Build representative agent profiles from observed runs.
 
-    Searches all spans matching the agent name to get status and duration.
-    Returns (status, duration_ms) or (None, None) if not found.
+    Counterfactual analysis should compare against representative performance,
+    not a single lucky fastest run. Profiles aggregate observed success and
+    duration across agent runs in the trace.
     """
-    best_status = None
-    best_duration = None
-    for s in trace.spans:
-        if s.name != agent_name or s.span_type != SpanType.AGENT:
-            continue
-        dur = s.duration_ms
-        status = s.status.value if s.status else "unknown"
-        # Prefer completed over failed, then shortest duration
-        if best_status is None or status == "completed" and best_status != "completed":
-            best_status, best_duration = status, dur
-        elif status == best_status and dur is not None and (best_duration is None or dur < best_duration):
-            best_duration = dur
-    return best_status, best_duration
+    profiles: dict[str, dict[str, float | int | str]] = {}
+    for span in trace.agent_spans:
+        profile = profiles.setdefault(
+            span.name,
+            {
+                "runs": 0,
+                "completed_runs": 0,
+                "failed_runs": 0,
+                "total_duration_ms": 0.0,
+                "completed_duration_ms": 0.0,
+                "success_rate": 0.0,
+                "avg_duration_ms": 0.0,
+                "avg_completed_duration_ms": 0.0,
+            },
+        )
+        profile["runs"] += 1
+        profile["total_duration_ms"] += span.duration_ms or 0.0
+        if span.status == SpanStatus.COMPLETED:
+            profile["completed_runs"] += 1
+            profile["completed_duration_ms"] += span.duration_ms or 0.0
+        elif span.status == SpanStatus.FAILED:
+            profile["failed_runs"] += 1
+
+    for profile in profiles.values():
+        runs = int(profile["runs"])
+        completed_runs = int(profile["completed_runs"])
+        profile["success_rate"] = completed_runs / max(runs, 1)
+        profile["avg_duration_ms"] = float(profile["total_duration_ms"]) / max(runs, 1)
+        if completed_runs:
+            profile["avg_completed_duration_ms"] = (
+                float(profile["completed_duration_ms"]) / completed_runs
+            )
+    return profiles
+
+
+def _profile_to_candidate(
+    agent_name: str,
+    profiles: dict[str, dict[str, float | int | str]],
+    historical_stats: dict[str, dict] | None = None,
+) -> dict[str, Any] | None:
+    """Resolve an alternative agent into a comparable candidate profile."""
+    if agent_name in profiles:
+        profile = profiles[agent_name]
+        duration = profile.get("avg_completed_duration_ms") or profile.get("avg_duration_ms")
+        return {
+            "agent": agent_name,
+            "status": "completed" if profile.get("completed_runs", 0) else "failed",
+            "duration_ms": duration,
+            "failed": profile.get("completed_runs", 0) == 0,
+            "success_rate": float(profile.get("success_rate", 0.0)),
+            "runs": int(profile.get("runs", 0)),
+            "source": "in_trace",
+        }
+    if historical_stats and agent_name in historical_stats:
+        profile = historical_stats[agent_name]
+        duration = profile.get("avg_completed_duration_ms") or profile.get("avg_duration_ms")
+        success_rate = float(profile.get("success_rate", 0.0))
+        return {
+            "agent": agent_name,
+            "status": "completed" if success_rate >= 0.5 else "failed",
+            "duration_ms": duration,
+            "failed": success_rate < 0.5,
+            "success_rate": success_rate,
+            "runs": int(profile.get("runs", 0)),
+            "source": "historical",
+        }
+    return None
+
+
+def _candidate_key(candidate: dict[str, Any]) -> tuple[int, float, float, int]:
+    """Rank alternatives by reliability first, then latency, then evidence depth."""
+    duration = float(candidate["duration_ms"]) if candidate["duration_ms"] is not None else float("inf")
+    return (
+        0 if candidate["failed"] else 1,
+        float(candidate["success_rate"]),
+        -duration,
+        int(candidate["runs"]),
+    )
+
+
+def _meaningful_regret(
+    chosen_dur: float | None,
+    best_alt_dur: float | None,
+) -> bool:
+    """Ignore tiny latency differences to avoid noisy suboptimal verdicts."""
+    if chosen_dur is None or best_alt_dur is None:
+        return False
+    delta = chosen_dur - best_alt_dur
+    if delta <= 0:
+        return False
+    return delta >= 50 and delta / max(chosen_dur, 1) >= 0.1
+
+
+def _counterfactual_rationale(
+    chosen_agent: str,
+    chosen_degraded: bool,
+    best_candidate: dict[str, Any] | None,
+    regret: float | None,
+) -> str:
+    """Generate a concise explanation for the counterfactual verdict."""
+    if best_candidate is None:
+        return "No alternative agent executed, so no counterfactual comparison is possible."
+    parts = [
+        f"{best_candidate['agent']} showed {best_candidate['success_rate']:.0%} success over {best_candidate['runs']} run(s)"
+    ]
+    if best_candidate["duration_ms"] is not None:
+        parts.append(f"with {best_candidate['duration_ms']:.0f}ms representative latency")
+    if chosen_degraded:
+        parts.append(f"while {chosen_agent} showed downstream degradation")
+    elif regret is not None and regret > 0:
+        parts.append(f"saving about {regret:.0f}ms")
+    return "; ".join(parts) + "."
 
 
 def _evaluate_single_decision(
@@ -2038,32 +3396,32 @@ def _evaluate_single_decision(
     chosen_dur = decision.downstream_duration_ms
     chosen_failed = decision.led_to_failure
     chosen_status = decision.downstream_status
+    chosen_degraded = decision.led_to_degradation
+    profiles = _build_agent_outcome_profiles(trace)
 
-    best_alt = None
-    best_alt_status = None
-    best_alt_dur = None
-    best_alt_failed = True
+    best_candidate: dict[str, Any] | None = None
 
     for alt_name in decision.alternatives:
-        alt_status, alt_dur = _find_agent_performance(alt_name, trace)
-        if alt_status is None and historical_stats and alt_name in historical_stats:
-            # Fall back to historical stats for alternatives that never ran
-            hist = historical_stats[alt_name]
-            sr = hist.get("success_rate", 0)
-            alt_status = "completed" if sr >= 0.5 else "failed"
-            alt_dur = hist.get("avg_duration_ms")
-        if alt_status is None:
+        candidate = _profile_to_candidate(alt_name, profiles, historical_stats)
+        if candidate is None:
             continue
-        alt_is_failed = alt_status == "failed"
-        if _is_better(alt_is_failed, alt_dur, best_alt_failed, best_alt_dur):
-            best_alt = alt_name
-            best_alt_status = alt_status
-            best_alt_dur = alt_dur
-            best_alt_failed = alt_is_failed
+        if best_candidate is None or _candidate_key(candidate) > _candidate_key(best_candidate):
+            best_candidate = candidate
 
+    best_alt = best_candidate["agent"] if best_candidate else None
+    best_alt_status = best_candidate["status"] if best_candidate else None
+    best_alt_dur = best_candidate["duration_ms"] if best_candidate else None
+    best_alt_failed = bool(best_candidate["failed"]) if best_candidate else True
     regret = _compute_regret(chosen_dur, best_alt_dur)
+    meaningful_regret = _meaningful_regret(chosen_dur, best_alt_dur)
     verdict = _determine_verdict(
-        chosen_failed, best_alt, best_alt_failed, regret
+        chosen_failed, chosen_degraded, best_alt, best_alt_failed, meaningful_regret
+    )
+    rationale = _counterfactual_rationale(
+        decision.chosen_agent,
+        chosen_degraded,
+        best_candidate,
+        regret,
     )
 
     return CounterfactualResult(
@@ -2077,18 +3435,13 @@ def _evaluate_single_decision(
         regret_ms=regret,
         chosen_failed=chosen_failed,
         best_alt_failed=best_alt_failed if best_alt else True,
+        chosen_degraded=chosen_degraded,
+        best_alt_success_rate=(best_candidate["success_rate"] if best_candidate else None),
+        evidence_source=(best_candidate["source"] if best_candidate else "none"),
+        evidence_runs=(best_candidate["runs"] if best_candidate else 0),
+        rationale=rationale,
         verdict=verdict,
     )
-
-
-def _is_better(
-    alt_failed: bool, alt_dur: float | None,
-    best_failed: bool, best_dur: float | None,
-) -> bool:
-    """Is this alternative better than current best?"""
-    if not alt_failed and best_failed:
-        return True
-    return bool(alt_failed == best_failed and alt_dur is not None and (best_dur is None or alt_dur < best_dur))
 
 
 def _compute_regret(
@@ -2102,16 +3455,19 @@ def _compute_regret(
 
 def _determine_verdict(
     chosen_failed: bool,
+    chosen_degraded: bool,
     best_alt: str | None,
     best_alt_failed: bool,
-    regret: float | None,
+    meaningful_regret: bool,
 ) -> str:
     """Classify decision quality."""
     if best_alt is None:
         return "no_alternatives"
     if chosen_failed and not best_alt_failed:
         return "catastrophic"
-    if regret is not None and regret > 0:
+    if chosen_degraded and not best_alt_failed:
+        return "suboptimal"
+    if meaningful_regret:
         return "suboptimal"
     return "optimal"
 
@@ -2133,7 +3489,8 @@ def analyze_counterfactual(trace: ExecutionTrace) -> CounterfactualAnalysis:
         CounterfactualAnalysis with what-if scenarios and estimated impact.
     """
     da = analyze_decisions(trace)
-    results = [_evaluate_single_decision(d, trace) for d in da.decisions]
+    historical_stats = _build_agent_outcome_profiles(trace)
+    results = [_evaluate_single_decision(d, trace, historical_stats) for d in da.decisions]
 
     optimal = sum(1 for r in results if r.verdict == "optimal")
     suboptimal = sum(1 for r in results if r.verdict == "suboptimal")

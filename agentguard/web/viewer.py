@@ -25,6 +25,7 @@ from agentguard.analysis import (
     analyze_failures,
     analyze_flow,
     analyze_retries,
+    analyze_workflow_patterns,
 )
 from agentguard.core.trace import ExecutionTrace, Span, SpanStatus, SpanType
 from agentguard.errors import analyze_errors
@@ -68,89 +69,88 @@ def generate_timeline_html(
 
 # --- HTML template constants ---
 _VIEWER_CSS = """<style>
-:root{{--bg:#0d1117;--sf:#161b22;--bd:#30363d;--tx:#c9d1d9;--dim:#8b949e;--br:#f0f6fc;
+:root{--bg:#0d1117;--sf:#161b22;--bd:#30363d;--tx:#c9d1d9;--dim:#8b949e;--br:#f0f6fc;
 --gn:#3fb950;--rd:#f85149;--bl:#58a6ff;--yl:#e3b341;--pp:#bc8cff;
---gn-bg:#1b3a2a;--rd-bg:#3d1f1f;--yl-bg:#3d321e;--bl-bg:#1e2d3d;--pp-bg:#2d1e3d;}}
-*{{margin:0;padding:0;box-sizing:border-box;}}
-body{{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',system-ui,monospace;background:var(--bg);color:var(--tx);}}
-.top-bar{{background:var(--sf);border-bottom:1px solid var(--bd);padding:10px 20px;display:flex;align-items:center;justify-content:space-between;}}
-.top-bar h1{{font-size:14px;color:var(--br);}} .top-bar .meta{{font-size:11px;color:var(--dim);}}
-.badge{{padding:2px 7px;border-radius:8px;font-size:10px;font-weight:600;}}
-.b-pass{{background:var(--gn-bg);color:var(--gn);}} .b-fail{{background:var(--rd-bg);color:var(--rd);}}
-.b-warn{{background:var(--yl-bg);color:var(--yl);}} .b-info{{background:var(--bl-bg);color:var(--bl);}}
-.b-pp{{background:var(--pp-bg);color:var(--pp);}}
-.layout{{display:grid;grid-template-columns:240px 1fr;min-height:calc(100vh - 42px);}}
-.sidebar{{background:var(--sf);border-right:1px solid var(--bd);padding:12px;overflow-y:auto;}}
-.sidebar h2{{font-size:10px;text-transform:uppercase;letter-spacing:1px;color:var(--dim);margin-bottom:10px;}}
-.ag-card{{background:var(--bg);border:1px solid var(--bd);border-radius:6px;padding:8px 10px;margin-bottom:6px;}}
-.ag-name{{font-weight:600;font-size:12px;color:var(--br);display:flex;align-items:center;gap:5px;}}
-.ag-stats{{font-size:10px;color:var(--dim);margin-top:3px;display:flex;gap:8px;}}
-.ag-bar{{height:3px;border-radius:2px;margin-top:4px;background:var(--bd);}}
-.ag-bar-fill{{height:100%;border-radius:2px;}}
-.dot{{width:7px;height:7px;border-radius:50%;display:inline-block;flex-shrink:0;}}
-.dot-ok{{background:var(--gn);}} .dot-err{{background:var(--rd);}} .dot-warn{{background:var(--yl);}}
-.main{{padding:14px 16px;overflow-x:auto;}}
-.main h2{{font-size:10px;text-transform:uppercase;letter-spacing:1px;color:var(--dim);margin-bottom:8px;}}
-.tl-header{{display:flex;padding:0 0 6px 180px;border-bottom:1px solid var(--bd);margin-bottom:2px;}}
-.tl-header .tick{{font-size:9px;color:var(--dim);flex:1;text-align:center;}}
-.g-row{{display:flex;align-items:center;padding:2px 0;min-height:24px;border-bottom:1px solid rgba(48,54,61,0.4);}}
-.g-row:hover{{background:rgba(56,139,253,0.06);}}
-.g-lbl{{width:180px;flex-shrink:0;display:flex;align-items:center;gap:5px;font-size:11px;padding-right:6px;overflow:hidden;}}
-.g-lbl .icon{{font-size:12px;}} .g-lbl .nm{{font-weight:500;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;}}
-.g-lbl .vr{{font-size:8px;color:var(--bl);background:var(--bl-bg);padding:1px 5px;border-radius:3px;white-space:nowrap;}}
-.g-bar-area{{flex:1;position:relative;height:18px;}}
-.g-bar{{position:absolute;height:12px;top:3px;border-radius:3px;min-width:3px;display:flex;align-items:center;justify-content:flex-end;padding:0 3px;font-size:8px;color:rgba(255,255,255,0.7);}}
-.g-bar.ok{{background:linear-gradient(90deg,#238636,#2ea043);}}
-.g-bar.err{{background:linear-gradient(90deg,#da3633,#f85149);}}
-.g-bar.slow{{background:linear-gradient(90deg,#9e6a03,#d29922);}}
-.g-bar.ho{{background:var(--pp);height:2px;top:8px;}}
-.g-err{{position:absolute;top:-1px;font-size:8px;color:var(--rd);white-space:nowrap;}}
-.g-ann{{position:absolute;top:-1px;font-size:8px;white-space:nowrap;}}
-.ho-row{{display:flex;align-items:center;min-height:16px;}}
-.ho-line{{margin-left:180px;flex:1;display:flex;align-items:center;gap:3px;font-size:9px;color:var(--pp);}}
-.ho-arrow{{height:1px;width:40px;background:var(--pp);}}
-.ctx-badge{{background:var(--pp-bg);color:var(--pp);padding:1px 5px;border-radius:3px;font-size:8px;}}
-.diag{{background:var(--sf);border:1px solid var(--bd);border-radius:8px;padding:14px;margin-top:14px;}}
-.diag h3{{font-size:11px;color:var(--br);margin-bottom:10px;}}
-.diag-grid{{display:grid;grid-template-columns:repeat(auto-fit, minmax(280px, 1fr));gap:10px;}}
-.d-box{{background:var(--bg);border:1px solid var(--bd);border-radius:6px;padding:0;}}
-.d-box summary{{font-size:9px;text-transform:uppercase;letter-spacing:.5px;color:var(--dim);padding:10px 10px 5px;cursor:pointer;list-style:none;display:flex;align-items:center;gap:4px;}}
-.d-box summary::-webkit-details-marker{{display:none;}}
-.d-box summary::before{{content:'▶';font-size:8px;transition:transform .2s;}}
-.d-box[open] summary::before{{transform:rotate(90deg);}}
-.d-box .d-body{{padding:0 10px 10px;}}
-.d-box h4{{font-size:9px;text-transform:uppercase;letter-spacing:.5px;color:var(--dim);margin:0;display:inline;}}
-.d-box .val{{font-size:16px;font-weight:700;color:var(--br);}}
-.d-box .det{{font-size:10px;color:var(--dim);margin-top:3px;}}
-.d-box .items{{font-size:10px;margin-top:5px;}}
-.d-box .item{{padding:1px 0;display:flex;align-items:center;gap:3px;}}
-.ff-node{{padding:1px 6px;border-radius:3px;font-size:9px;}}
-.ff-h{{background:var(--yl-bg);color:var(--yl);}} .ff-u{{background:var(--rd-bg);color:var(--rd);}}
-.empty{{text-align:center;padding:60px;color:var(--dim);}}
-.ft{{text-align:center;padding:12px;color:var(--dim);font-size:10px;border-top:1px solid var(--bd);margin-top:14px;}}
-.zoom-bar{{display:flex;align-items:center;gap:6px;margin-bottom:8px;}}
-.zoom-btn{{background:var(--sf);border:1px solid var(--bd);color:var(--tx);border-radius:4px;padding:2px 8px;font-size:12px;cursor:pointer;font-family:monospace;}}
-.zoom-btn:hover{{background:var(--bd);color:var(--br);}}
-.zoom-level{{font-size:10px;color:var(--dim);min-width:40px;text-align:center;}}
-.tl-wrap{{overflow-x:auto;position:relative;}}
-.tl-inner{{min-width:100%;transition:min-width 0.2s ease;}}
-.tl-axis{{display:flex;padding:0 0 4px 180px;position:relative;height:18px;}}
-.tl-axis .tick-mark{{position:absolute;top:0;font-size:9px;color:var(--dim);transform:translateX(-50%);}}
-.tl-axis .tick-line{{position:absolute;top:14px;width:1px;height:4px;background:var(--bd);transform:translateX(-50%);}}
-@media print
-@media print{{body{{background:#fff;color:#000;}}.top-bar,.sidebar{{background:#f5f5f5;}}.main{{background:#fff;}}
-.ag-card,.d-box{{border-color:#ddd;background:#fafafa;}}.g-bar.ok{{background:#28a745;}}.g-bar.err{{background:#dc3545;}}
-.badge,.score-badge{{print-color-adjust:exact;-webkit-print-color-adjust:exact;}}}}
-@media(max-width:768px){{.layout{{grid-template-columns:1fr;}}.sidebar{{border-right:none;border-bottom:1px solid var(--bd);max-height:200px;}}}}
+--gn-bg:#1b3a2a;--rd-bg:#3d1f1f;--yl-bg:#3d321e;--bl-bg:#1e2d3d;--pp-bg:#2d1e3d;}
+*{margin:0;padding:0;box-sizing:border-box;}
+body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',system-ui,monospace;background:var(--bg);color:var(--tx);}
+.top-bar{background:var(--sf);border-bottom:1px solid var(--bd);padding:10px 20px;display:flex;align-items:center;justify-content:space-between;}
+.top-bar h1{font-size:14px;color:var(--br);} .top-bar .meta{font-size:11px;color:var(--dim);}
+.badge{padding:2px 7px;border-radius:8px;font-size:10px;font-weight:600;}
+.b-pass{background:var(--gn-bg);color:var(--gn);} .b-fail{background:var(--rd-bg);color:var(--rd);}
+.b-warn{background:var(--yl-bg);color:var(--yl);} .b-info{background:var(--bl-bg);color:var(--bl);}
+.b-pp{background:var(--pp-bg);color:var(--pp);}
+.layout{display:grid;grid-template-columns:240px 1fr;min-height:calc(100vh - 42px);}
+.sidebar{background:var(--sf);border-right:1px solid var(--bd);padding:12px;overflow-y:auto;}
+.sidebar h2{font-size:10px;text-transform:uppercase;letter-spacing:1px;color:var(--dim);margin-bottom:10px;}
+.ag-card{background:var(--bg);border:1px solid var(--bd);border-radius:6px;padding:8px 10px;margin-bottom:6px;}
+.ag-name{font-weight:600;font-size:12px;color:var(--br);display:flex;align-items:center;gap:5px;}
+.ag-stats{font-size:10px;color:var(--dim);margin-top:3px;display:flex;gap:8px;}
+.ag-bar{height:3px;border-radius:2px;margin-top:4px;background:var(--bd);}
+.ag-bar-fill{height:100%;border-radius:2px;}
+.dot{width:7px;height:7px;border-radius:50%;display:inline-block;flex-shrink:0;}
+.dot-ok{background:var(--gn);} .dot-err{background:var(--rd);} .dot-warn{background:var(--yl);}
+.main{padding:14px 16px;overflow-x:auto;}
+.main h2{font-size:10px;text-transform:uppercase;letter-spacing:1px;color:var(--dim);margin-bottom:8px;}
+.tl-header{display:flex;padding:0 0 6px 180px;border-bottom:1px solid var(--bd);margin-bottom:2px;}
+.tl-header .tick{font-size:9px;color:var(--dim);flex:1;text-align:center;}
+.g-row{display:flex;align-items:center;padding:2px 0;min-height:24px;border-bottom:1px solid rgba(48,54,61,0.4);}
+.g-row:hover{background:rgba(56,139,253,0.06);}
+.g-lbl{width:180px;flex-shrink:0;display:flex;align-items:center;gap:5px;font-size:11px;padding-right:6px;overflow:hidden;}
+.g-lbl .icon{font-size:12px;} .g-lbl .nm{font-weight:500;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;}
+.g-lbl .vr{font-size:8px;color:var(--bl);background:var(--bl-bg);padding:1px 5px;border-radius:3px;white-space:nowrap;}
+.g-bar-area{flex:1;position:relative;height:18px;}
+.g-bar{position:absolute;height:12px;top:3px;border-radius:3px;min-width:3px;display:flex;align-items:center;justify-content:flex-end;padding:0 3px;font-size:8px;color:rgba(255,255,255,0.7);}
+.g-bar.ok{background:linear-gradient(90deg,#238636,#2ea043);}
+.g-bar.err{background:linear-gradient(90deg,#da3633,#f85149);}
+.g-bar.slow{background:linear-gradient(90deg,#9e6a03,#d29922);}
+.g-bar.ho{background:var(--pp);height:2px;top:8px;}
+.g-err{position:absolute;top:-1px;font-size:8px;color:var(--rd);white-space:nowrap;}
+.g-ann{position:absolute;top:-1px;font-size:8px;white-space:nowrap;}
+.ho-row{display:flex;align-items:center;min-height:16px;}
+.ho-line{margin-left:180px;flex:1;display:flex;align-items:center;gap:3px;font-size:9px;color:var(--pp);}
+.ho-arrow{height:1px;width:40px;background:var(--pp);}
+.ctx-badge{background:var(--pp-bg);color:var(--pp);padding:1px 5px;border-radius:3px;font-size:8px;}
+.diag{background:var(--sf);border:1px solid var(--bd);border-radius:8px;padding:14px;margin-top:14px;}
+.diag h3{font-size:11px;color:var(--br);margin-bottom:10px;}
+.diag-grid{display:grid;grid-template-columns:repeat(auto-fit, minmax(280px, 1fr));gap:10px;}
+.d-box{background:var(--bg);border:1px solid var(--bd);border-radius:6px;padding:0;}
+.d-box summary{font-size:9px;text-transform:uppercase;letter-spacing:.5px;color:var(--dim);padding:10px 10px 5px;cursor:pointer;list-style:none;display:flex;align-items:center;gap:4px;}
+.d-box summary::-webkit-details-marker{display:none;}
+.d-box summary::before{content:'▶';font-size:8px;transition:transform .2s;}
+.d-box[open] summary::before{transform:rotate(90deg);}
+.d-box .d-body{padding:0 10px 10px;}
+.d-box h4{font-size:9px;text-transform:uppercase;letter-spacing:.5px;color:var(--dim);margin:0;display:inline;}
+.d-box .val{font-size:16px;font-weight:700;color:var(--br);}
+.d-box .det{font-size:10px;color:var(--dim);margin-top:3px;}
+.d-box .items{font-size:10px;margin-top:5px;}
+.d-box .item{padding:1px 0;display:flex;align-items:center;gap:3px;}
+.ff-node{padding:1px 6px;border-radius:3px;font-size:9px;}
+.ff-h{background:var(--yl-bg);color:var(--yl);} .ff-u{background:var(--rd-bg);color:var(--rd);}
+.empty{text-align:center;padding:60px;color:var(--dim);}
+.ft{text-align:center;padding:12px;color:var(--dim);font-size:10px;border-top:1px solid var(--bd);margin-top:14px;}
+.zoom-bar{display:flex;align-items:center;gap:6px;margin-bottom:8px;}
+.zoom-btn{background:var(--sf);border:1px solid var(--bd);color:var(--tx);border-radius:4px;padding:2px 8px;font-size:12px;cursor:pointer;font-family:monospace;}
+.zoom-btn:hover{background:var(--bd);color:var(--br);}
+.zoom-level{font-size:10px;color:var(--dim);min-width:40px;text-align:center;}
+.tl-wrap{overflow-x:auto;position:relative;}
+.tl-inner{min-width:100%;transition:min-width 0.2s ease;}
+.tl-axis{display:flex;padding:0 0 4px 180px;position:relative;height:18px;}
+.tl-axis .tick-mark{position:absolute;top:0;font-size:9px;color:var(--dim);transform:translateX(-50%);}
+.tl-axis .tick-line{position:absolute;top:14px;width:1px;height:4px;background:var(--bd);transform:translateX(-50%);}
+@media print{body{background:#fff;color:#000;}.top-bar,.sidebar{background:#f5f5f5;}.main{background:#fff;}
+.ag-card,.d-box{border-color:#ddd;background:#fafafa;}.g-bar.ok{background:#28a745;}.g-bar.err{background:#dc3545;}
+.badge,.score-badge{print-color-adjust:exact;-webkit-print-color-adjust:exact;}}
+@media(max-width:768px){.layout{grid-template-columns:1fr;}.sidebar{border-right:none;border-bottom:1px solid var(--bd);max-height:200px;}}
 </style>"""
 
 _VIEWER_JS = """<script>
-document.querySelectorAll(".g-row").forEach(function(row){{
+document.querySelectorAll(".g-row").forEach(function(row){
   row.style.cursor="pointer";
-  row.addEventListener("click",function(){{
+    row.addEventListener("click",function(){
     var ex=this.nextElementSibling;
-    if(ex&&ex.classList.contains("g-detail")){{ex.remove();return;}}
-    document.querySelectorAll(".g-detail").forEach(function(d){{d.remove();}});
+        if(ex&&ex.classList.contains("g-detail")){ex.remove();return;}
+        document.querySelectorAll(".g-detail").forEach(function(d){d.remove();});
     var bar=this.querySelector(".g-bar");
     if(!bar)return;
     var nm=this.querySelector(".nm");
@@ -165,19 +165,19 @@ document.querySelectorAll(".g-row").forEach(function(row){{
     detail.style.cssText="padding:8px 12px 8px 196px;background:#161b22;border-bottom:1px solid #21262d;font-size:10px;color:#6e7681;animation:fadeIn 0.15s;";
     detail.innerHTML="<b style=color:#f0f6fc>"+type+" "+name+"</b> · "+dur+" · "+cls+par;
     this.after(detail);
-  }});
-}});
-document.addEventListener("keydown",function(e){{
-  if(e.key==="Escape")document.querySelectorAll(".g-detail").forEach(function(d){{d.remove();}});
-}});
-function filterSpans(){{
+    });
+});
+document.addEventListener("keydown",function(e){
+    if(e.key==="Escape")document.querySelectorAll(".g-detail").forEach(function(d){d.remove();});
+});
+function filterSpans(){
   var q=(document.getElementById("span-search").value||"").toLowerCase();
   var st=document.getElementById("status-filter").value;
   var minD=parseFloat(document.getElementById("min-dur").value)||0;
   var maxD=parseFloat(document.getElementById("max-dur").value)||Infinity;
   var rows=document.querySelectorAll(".g-row");
   var shown=0;
-  rows.forEach(function(row){{
+    rows.forEach(function(row){
     var nm=row.querySelector(".nm");
     var name=nm?(nm.textContent||"").toLowerCase():"";
     var bar=row.querySelector(".g-bar");
@@ -191,34 +191,149 @@ function filterSpans(){{
     var show=nameOk&&statusOk&&durOk;
     row.style.display=show?"":"none";
     if(show)shown++;
-  }});
+    });
   var ct=document.getElementById("filter-count");
   if(ct)ct.textContent=shown+"/"+rows.length+" spans";
-}}
-["span-search","status-filter","min-dur","max-dur"].forEach(function(id){{
+}
+["span-search","status-filter","min-dur","max-dur"].forEach(function(id){
   var el=document.getElementById(id);
-  if(el)el.addEventListener("input",filterSpans);
-}});
+    if(el)el.addEventListener("input",filterSpans);
+});
 filterSpans();
 var _zoomLevel=100;
-function zoomGantt(dir){{
-  if(dir===0){{_zoomLevel=100;}}
-  else{{_zoomLevel=Math.max(50,Math.min(400,_zoomLevel+(dir*50)));}}
+function zoomGantt(dir){
+    if(dir===0){_zoomLevel=100;}
+    else{_zoomLevel=Math.max(50,Math.min(400,_zoomLevel+(dir*50)));}
   var el=document.getElementById("gantt-inner");
-  if(el){{el.style.minWidth=_zoomLevel+"%";}}
+    if(el){el.style.minWidth=_zoomLevel+"%";}
   var lbl=document.getElementById("zoom-pct");
-  if(lbl){{lbl.textContent=_zoomLevel+"%";}}
-}}
+    if(lbl){lbl.textContent=_zoomLevel+"%";}
+}
+function sortGantt(){
+  var mode=(document.getElementById("sort-mode")||{}).value||"tree";
+  var inner=document.getElementById("gantt-inner");
+  if(!inner)return;
+  var rows=Array.prototype.slice.call(inner.querySelectorAll(".g-row"));
+  if(!rows.length)return;
+  if(!rows[0].hasAttribute("data-tree-idx")){
+    rows.forEach(function(r,i){r.setAttribute("data-tree-idx",i);});
+  }
+  var hoRows=Array.prototype.slice.call(inner.querySelectorAll(".ho-row"));
+  if(mode==="tree"){
+    rows.sort(function(a,b){return (+a.dataset.treeIdx)-(+b.dataset.treeIdx);});
+    hoRows.forEach(function(r){r.style.display="";});
+  }else{
+    var sign=mode==="dur-desc"?-1:1;
+    rows.sort(function(a,b){return sign*((+a.dataset.duration||0)-(+b.dataset.duration||0));});
+    hoRows.forEach(function(r){r.style.display="none";});
+    rows.forEach(function(r){
+      var lbl=r.querySelector(".g-lbl");
+      if(lbl)lbl.style.paddingLeft="16px";
+    });
+  }
+  rows.forEach(function(r){inner.appendChild(r);});
+  filterSpans();
+}
+function jumpToSpan(id){
+  var el=document.getElementById("g-row-"+id);
+  if(!el)return;
+  var sel=document.getElementById("sort-mode");
+  if(sel){sel.value="tree";sortGantt();}
+  el.scrollIntoView({behavior:"smooth",block:"center"});
+  el.style.transition="background 0.2s";
+  el.style.background="#1f4023";
+  setTimeout(function(){el.style.background="";},1500);
+}
 </script>"""
+
+
+def _build_hotspots(trace: ExecutionTrace, dur_total: float) -> str:
+    """Prominent, above-the-fold summary of the slowest spans.
+
+    Users were complaining they had to scroll to see the top offenders and
+    that nothing in the header told them *where* the time went. This card
+    sits right under the title bar and lets them click straight into the
+    relevant Gantt row.
+    """
+    ranked = [
+        s for s in trace.spans
+        if s.span_type != SpanType.HANDOFF and (s.duration_ms or 0) > 0
+    ]
+    ranked.sort(key=lambda s: -(s.duration_ms or 0))
+    top = ranked[:5]
+    if not top:
+        return ""
+
+    # Token totals from JSONL-enriched LLM spans.
+    total_tokens = sum((s.token_count or 0) for s in trace.spans)
+    total_cost = sum((s.estimated_cost_usd or 0) for s in trace.spans)
+
+    icons = {"agent": "🤖", "tool": "🔧", "llm_call": "🧠", "handoff": "🔀"}
+    rows = []
+    for rank, s in enumerate(top, start=1):
+        dur = s.duration_ms or 0
+        pct = (dur / max(dur_total, 1)) * 100
+        dur_str = f"{dur:.0f}ms" if dur < 1000 else (
+            f"{dur/1000:.1f}s" if dur < 60000 else f"{dur/60000:.1f}m")
+        bar_w = max(2.0, min(100.0, pct))
+        icon = icons.get(s.span_type.value, "●")
+        rows.append(
+            f'<div class="hot-row" onclick="jumpToSpan(\'{_esc(s.span_id)}\')" '
+            f'style="cursor:pointer;display:grid;'
+            f'grid-template-columns:28px 1fr auto auto;gap:8px;align-items:center;'
+            f'padding:4px 8px;border-radius:4px">'
+            f'<span style="color:var(--dim);font-variant-numeric:tabular-nums">#{rank}</span>'
+            f'<span><span class="icon">{icon}</span> '
+            f'<span style="color:var(--fg)">{_esc(s.name)}</span> '
+            f'<span style="color:var(--dim);font-size:10px">[{s.span_type.value}]</span></span>'
+            f'<span style="font-variant-numeric:tabular-nums;color:var(--yl)">{dur_str}</span>'
+            f'<div style="width:90px;height:6px;background:#0d1117;border-radius:3px;'
+            f'overflow:hidden"><div style="width:{bar_w:.1f}%;height:100%;background:var(--yl)">'
+            f'</div></div>'
+            f'</div>'
+        )
+    cost_html = ""
+    if total_tokens:
+        cost_html = (
+            f'<span style="color:var(--dim);margin-left:12px">'
+            f'{total_tokens:,} tokens'
+            f'{f" · ${total_cost:.4f}" if total_cost else ""}'
+            f'</span>'
+        )
+    return (
+        '<div style="margin:10px 0;padding:10px 12px;border:1px solid var(--bd);'
+        'border-radius:6px;background:#161b22">'
+        '<div style="display:flex;align-items:center;gap:8px;margin-bottom:6px">'
+        '<h3 style="margin:0;font-size:12px;text-transform:uppercase;letter-spacing:1px;'
+        'color:var(--yl)">🔥 Top Hotspots</h3>'
+        '<span style="color:var(--dim);font-size:10px">click a row to jump to its span</span>'
+        f'{cost_html}'
+        '</div>'
+        f'{"".join(rows)}'
+        '</div>'
+    )
 
 
 def _build_head(primary: ExecutionTrace, score: Any, status_cls: str,
                 status_txt: str, dur_total: float, trace_count: int) -> str:
     """Build the HTML head + top bar with trace metadata."""
+    total_tokens = sum((s.token_count or 0) for s in primary.spans)
+    total_cost = sum((s.estimated_cost_usd or 0) for s in primary.spans)
+    if dur_total >= 60_000:
+        dur_str = f"{dur_total/60_000:.1f} min"
+    elif dur_total >= 1000:
+        dur_str = f"{dur_total/1000:.1f}s"
+    else:
+        dur_str = f"{dur_total:.0f}ms"
+    tokens_html = (
+        f"· 🧮 {total_tokens:,} tokens"
+        f"{f' (${total_cost:.4f})' if total_cost else ''}"
+        if total_tokens else ""
+    )
     return f"""<!DOCTYPE html>
 <html lang="en"><head>
 <meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1.0">
-<title>AgentGuard — Orchestration Panel</title>
+<title>AgentGuard — Observability for Multi-Agent Orchestration</title>
 {_VIEWER_CSS}</head><body>
 
 <div class="top-bar">
@@ -230,12 +345,15 @@ def _build_head(primary: ExecutionTrace, score: Any, status_cls: str,
 {f'<span style="margin-left:8px;color:var(--dim)">{trace_count} traces</span>' if trace_count > 1 else ''}
 </div>
 <div class="meta-detail" style="font-size:11px;color:var(--dim);padding:2px 16px 0">
-⏱ {dur_total/1000:.1f}s total
+Observability for multi-agent orchestration
+<span style="margin:0 6px;">·</span>
+⏱ {dur_str} total
 · 🤖 {len(primary.agent_spans)} agents
 · 📊 {len(primary.spans)} spans
 · 🔧 {sum(1 for s in primary.spans if s.span_type.value == 'tool')} tools
 · 🔀 {sum(1 for s in primary.spans if s.span_type.value == 'handoff')} handoffs
 · 🔴 {sum(1 for s in primary.spans if s.status and s.status.value == 'failed')} failed
+{tokens_html}
 · Trigger: {_esc(primary.trigger)}
 </div></div>"""
 
@@ -259,11 +377,13 @@ def _build_body_layout(
     primary: ExecutionTrace,
     agent_cards: str, trace_list_html: str,
     timeline: str, diagnostics: str,
+    hotspots: str = "",
 ) -> str:
     """Build the main body layout: sidebar + timeline + diagnostics + footer."""
     return f"""<div class="layout">
 <div class="sidebar">{agent_cards}{trace_list_html}</div>
 <div class="main">
+{hotspots}
 <h2>Execution Timeline</h2>
 {timeline}
 {diagnostics}
@@ -305,17 +425,19 @@ def _build_full_html(traces: list[ExecutionTrace]) -> str:
     error_report = analyze_errors(primary)
     cost_yield = analyze_cost_yield(primary)
     decisions = analyze_decisions(primary)
+    workflow = analyze_workflow_patterns(primary)
     from agentguard.propagation import analyze_propagation
     propagation = analyze_propagation(primary)
-    diagnostics = _build_diagnostics(failures, bn, flow, ctx, retries, cost, error_report,
-                                     cost_yield, decisions, propagation)
+    diagnostics = _build_diagnostics(primary, failures, bn, flow, ctx, retries, cost, error_report,
+                                     cost_yield, decisions, workflow, propagation)
 
     status_txt = "PASS" if primary.status == SpanStatus.COMPLETED else "FAIL"
     status_cls = "b-pass" if primary.status == SpanStatus.COMPLETED else "b-fail"
     trace_list_html = _build_trace_list(traces)
 
     head = _build_head(primary, _score, status_cls, status_txt, dur_total, len(traces))
-    body = _build_body_layout(primary, agent_cards, trace_list_html, timeline, diagnostics)
+    hotspots = _build_hotspots(primary, dur_total)
+    body = _build_body_layout(primary, agent_cards, trace_list_html, timeline, diagnostics, hotspots)
     return head + "\n" + body
 
 
@@ -516,6 +638,14 @@ _GANTT_SEARCH_BAR = (
     'style="background:#0d1117;border:1px solid var(--bd);color:var(--fg);padding:4px;'
     'border-radius:4px;width:60px;font-size:11px"></label>'
     '<span id="filter-count" style="color:var(--dim);margin-left:auto"></span>'
+    '<label style="color:var(--dim);margin-left:8px">Sort: '
+    '<select id="sort-mode" onchange="sortGantt()" '
+    'style="background:#0d1117;border:1px solid var(--bd);color:var(--fg);padding:4px;'
+    'border-radius:4px;font-size:11px">'
+    '<option value="tree">Timeline</option>'
+    '<option value="dur-desc">Longest first</option>'
+    '<option value="dur-asc">Shortest first</option>'
+    '</select></label>'
     '</div>'
 )
 
@@ -581,7 +711,7 @@ def _render_span_bar(span: Span, depth: int, trace_start: str, dur_total: float,
         retry_left = min(left_pct + width_pct + 1, 95)
         retry_html = f'<div class="g-ann" style="left:{retry_left}%;color:var(--yl)">🔄×{span.retry_count}</div>'
     par_cls = " parallel" if (parallel_ids and span.span_id in parallel_ids) else ""
-    return f'''<div class="g-row{par_cls}" style="{opacity}">
+    return f'''<div class="g-row{par_cls}" id="g-row-{_esc(span.span_id)}" data-duration="{dur:.0f}" data-span-id="{_esc(span.span_id)}" style="{opacity}">
 <div class="g-lbl" style="padding-left:{depth*16}px"><span class="icon">{icon}</span><span class="nm">{_esc(span.name)}</span>{ver_html}</div>
 <div class="g-bar-area"><div class="g-bar {bar_cls}" style="left:{left_pct:.1f}%;width:{max(width_pct,0.5):.1f}%">{dur_s}</div>{err_html}{retry_html}</div>
 </div>'''
@@ -621,6 +751,125 @@ def _build_suggestions_panel(trace) -> str:
         icon = {'failure': '🔴', 'bottleneck': '🐢', 'handoff': '🔀'}.get(s.category, '•')
         items.append(f'<div class="item">{icon} <b>{_esc(s.agent)}</b> ({s.confidence:.0%}): {_esc(s.suggestion[:60])}</div>')
     return f'<div class="d-box" style="grid-column:1/-1"><h4>🧠 Learned Suggestions</h4><div class="items">{chr(10).join(items)}</div></div>'
+
+
+def _load_evolution_insights(trace) -> dict | None:
+    """Load read-only evolution insights for the current trace."""
+    try:
+        from agentguard.evolve import EvolutionEngine
+        from agentguard.scoring import score_trace
+
+        engine = EvolutionEngine()
+        _ = engine.kb
+        if engine.load_warning:
+            return {"error": engine.load_warning}
+        if engine.kb.trace_count <= 0:
+            return None
+
+        task_key = trace.task or "__default__"
+        best = engine.kb.best_scores.get(task_key)
+        current_score = score_trace(trace)
+        score_delta = None
+        if best and best.get("score") is not None:
+            score_delta = current_score.overall - best["score"]
+
+        return {
+            "trace_count": engine.kb.trace_count,
+            "lesson_count": len(engine.kb.lessons),
+            "suggestions": engine.suggest(min_confidence=0.6)[:3],
+            "trends": engine.detect_trends()[:3],
+            "best": best,
+            "current_score": current_score,
+            "score_delta": score_delta,
+        }
+    except Exception as exc:
+        return {"error": str(exc)}
+
+
+def _panel_evolution(trace) -> str:
+    """Build evolution insights panel HTML."""
+    insights = _load_evolution_insights(trace)
+    if not insights:
+        return ""
+    if insights.get("error"):
+        return f"""<details class="d-box" open>
+<summary><h4>🧠 Evolution Insights</h4></summary>
+<div class="d-body">
+<div class="val">Unavailable</div>
+<div class="det">{_esc(insights['error'])}</div>
+</div></details>"""
+
+    suggestion_items = []
+    for lesson in insights["suggestions"]:
+        evidence = ""
+        if lesson.evidence:
+            latest = lesson.evidence[-1]
+            evidence = (
+                f' <span style="color:var(--dim)">from {_esc(latest.get("task") or "(unnamed)")} '
+                f'· {_esc(latest.get("trace_id"))}</span>'
+            )
+        icon = {"failure": "🔴", "bottleneck": "🐢", "handoff": "🔀"}.get(lesson.category, "•")
+        suggestion_items.append(
+            f'<div class="item">{icon} <b>{_esc(lesson.agent)}</b> '
+            f'({_esc(lesson.category)}, {lesson.confidence:.0%}, seen {lesson.occurrences}x): '
+            f'{_esc(lesson.suggestion[:90])}{evidence}</div>'
+        )
+
+    trend_items = []
+    for trend in insights["trends"]:
+        trend_items.append(
+            f'<div class="item">{_esc(trend["type"])} · <b>{_esc(trend["agent"])}</b>: '
+            f'{_esc(trend["message"][:90])}</div>'
+        )
+
+    if not suggestion_items:
+        suggestion_items.append('<div class="item" style="color:var(--dim)">No learned suggestions yet</div>')
+    if not trend_items:
+        trend_items.append('<div class="item" style="color:var(--dim)">No recurring trends yet</div>')
+
+    best = insights["best"]
+    best_detail = "No historical best recorded for this task yet"
+    if best:
+        delta = insights["score_delta"] or 0.0
+        sign = "+" if delta >= 0 else ""
+        best_detail = (
+            f'Best: {best["score"]}/100 ({_esc(best["grade"])}) · '
+            f'Current: {insights["current_score"].overall:.1f}/100 · '
+            f'Delta: {sign}{delta:.1f}'
+        )
+
+    items_html = "\n".join(suggestion_items + trend_items)
+    return f"""<details class="d-box" open>
+<summary><h4>🧠 Evolution Insights</h4></summary>
+<div class="d-body">
+<div class="val">{insights['trace_count']} traces learned · {insights['lesson_count']} lessons</div>
+<div class="det">{_esc(best_detail)}</div>
+<div class="items">{items_html}</div>
+</div></details>"""
+
+
+def _panel_workflow_patterns(workflow) -> str:
+    """Build workflow taxonomy panel HTML."""
+    items = []
+    for pattern in workflow.patterns:
+        heur = " · heuristic" if pattern.heuristic else ""
+        items.append(
+            f'<div class="item"><b>{_esc(pattern.name)}</b> '
+            f'({pattern.confidence:.0%}{_esc(heur)}): {_esc(pattern.evidence)}</div>'
+        )
+    if workflow.caveats:
+        items.extend(
+            f'<div class="item" style="color:var(--yl)">⚠ {_esc(caveat)}</div>'
+            for caveat in workflow.caveats
+        )
+    items_html = "\n".join(items) if items else '<div class="item" style="color:var(--dim)">No strong pattern detected</div>'
+    return f"""<details class="d-box" open>
+<summary><h4>🧭 Workflow Patterns</h4></summary>
+<div class="d-body">
+<div class="val">{_esc(workflow.primary_pattern)}</div>
+<div class="det">Heuristic taxonomy for the orchestration shape of this trace</div>
+<div class="items">{items_html}</div>
+</div></details>"""
 
 def _build_context_waterfall(ctx) -> str:
     """Build a context flow waterfall chart showing size at each handoff.
@@ -719,11 +968,20 @@ def _panel_handoffs(flow, ctx) -> str:
     ho_html = "\n".join(ho_items) if ho_items else '<div class="item" style="color:var(--dim)">No handoffs detected</div>'
     cp = " → ".join(flow.critical_path[:6]) if flow.critical_path else "N/A"
     ctx_items = []
-    for a in ctx.anomalies:
-        if a.anomaly == "loss":
-            ctx_items.append(f'<div class="item" style="color:var(--rd)">⚠ {_esc(a.from_agent)} → {_esc(a.to_agent)}: lost {a.keys_lost}</div>')
-        elif a.anomaly == "bloat":
-            ctx_items.append(f'<div class="item" style="color:var(--yl)">⚠ {_esc(a.from_agent)} → {_esc(a.to_agent)}: +{a.size_delta_bytes:,}B</div>')
+    for point in [p for p in ctx.ranked_points if p.risk_label != "ok"][:3]:
+        color = "var(--rd)" if point.risk_label in {"severe", "high"} else "var(--yl)"
+        detail = f"risk {point.risk_score:.0%} · {point.risk_label}"
+        if point.critical_keys_lost:
+            detail += f" · critical {', '.join(point.critical_keys_lost[:2])}"
+        elif point.reference_ids_lost:
+            detail += f" · evidence refs {', '.join(point.reference_ids_lost[:2])}"
+        elif point.keys_lost:
+            detail += f" · lost {', '.join(point.keys_lost[:2])}"
+        if point.downstream_impact_score is not None:
+            detail += f" · downstream {point.downstream_impact_score:.0%}"
+        ctx_items.append(
+            f'<div class="item" style="color:{color}">⚠ {_esc(point.from_agent)} → {_esc(point.to_agent)}: {_esc(detail)}</div>'
+        )
     ctx_note = "\n".join(ctx_items) if ctx_items else '<div class="item" style="color:var(--gn)">No anomalies</div>'
     return f"""<details class="d-box" open>
 <summary><h4>🔀 Handoff Flow</h4></summary>
@@ -779,25 +1037,57 @@ def _panel_cost_yield(cost_yield) -> str:
     wasteful = f"Most wasteful: {_esc(cost_yield.most_wasteful_agent)}" if cost_yield and cost_yield.most_wasteful_agent else "No waste detected"
     detail = f"Waste score: {cost_yield.waste_score:.0f}/100" if cost_yield else ""
     recs = cost_yield.recommendations[:3] if cost_yield else []
-    items = "\n".join(f'<div class="item">💡 {_esc(r)}</div>' for r in recs) if recs else '<div class="item" style="color:var(--gn)">No recommendations</div>'
+    items = []
+    if cost_yield:
+        for path in cost_yield.path_summaries[:2]:
+            grounding = ""
+            if path.claim_count and path.citation_coverage is not None:
+                grounding = (
+                    f" · grounding {path.grounding_issue_count}"
+                    f" · citations {path.citation_coverage:.0%}"
+                    f" · unsupported {path.unsupported_claim_count}"
+                    f" · missing refs {path.missing_citation_count}"
+                )
+            items.append(
+                f'<div class="item"><b>{_esc(" → ".join(path.agents))}</b> '
+                f'<span style="color:var(--dim)">yield {path.avg_yield_score:.0f}/100 · waste {path.waste_score:.0f}/100{_esc(grounding)}</span></div>'
+            )
+    items.extend(f'<div class="item">💡 {_esc(r)}</div>' for r in recs)
+    items_html = "\n".join(items) if items else '<div class="item" style="color:var(--gn)">No recommendations</div>'
     return f"""<details class="d-box" open>
 <summary><h4>📈 Cost-Yield Analysis</h4></summary>
 <div class="d-body">
 <div class="val">{wasteful}</div>
 <div class="det">{detail}</div>
-<div class="items">{items}</div>
+<div class="items">{items_html}</div>
 </div></details>"""
 
 
 def _panel_decisions(decisions) -> str:
     """Build orchestration decisions panel HTML."""
     quality = f"{decisions.decision_quality_score:.0%} quality" if decisions else "N/A"
-    detail = f"{decisions.total_decisions} decisions · {decisions.decisions_leading_to_failure} led to failure" if decisions else ""
+    detail = (
+        f"{decisions.total_decisions} decisions · "
+        f"{decisions.decisions_with_degradation} showed degradation · "
+        f"{decisions.decisions_leading_to_failure} led to failure"
+    ) if decisions else ""
     items = []
     if decisions:
         for d in decisions.decisions[:3]:
-            icon = "✗" if d.led_to_failure else "✓"
-            items.append(f'<div class="item">{icon} {_esc(d.coordinator)} chose {_esc(d.chosen_agent)}</div>')
+            icon = "✗" if d.led_to_degradation else "✓"
+            signals = "".join(
+                f'<div style="color:var(--dim);font-size:10px;margin-top:3px">→ {_esc(signal)}</div>'
+                for signal in d.degradation_signals[:3]
+            )
+            items.append(
+                f'<div class="item">{icon} {_esc(d.coordinator)} chose {_esc(d.chosen_agent)}{signals}</div>'
+            )
+        for suggestion in decisions.suggestions[:2]:
+            items.append(
+                f'<div class="item">💡 Try {_esc(suggestion["suggested_agent"])} '
+                f'instead of {_esc(suggestion["current_agent"])} '
+                f'<span style="color:var(--dim)">{_esc(suggestion["reason"])}</span></div>'
+            )
     items_html = "\n".join(items) if items else '<div class="item" style="color:var(--dim)">No decisions recorded</div>'
     return f"""<details class="d-box" open>
 <summary><h4>🎯 Orchestration Decisions</h4></summary>
@@ -827,13 +1117,15 @@ def _panel_propagation(propagation) -> str:
 </div></details>"""
 
 
-def _build_diagnostics(failures, bn, flow, ctx, retries=None, cost=None, error_report=None,
-                       cost_yield=None, decisions=None, propagation=None) -> str:
+def _build_diagnostics(trace, failures, bn, flow, ctx, retries=None, cost=None, error_report=None,
+                       cost_yield=None, decisions=None, workflow=None, propagation=None) -> str:
     """Assemble all diagnostic panels into a grid."""
     panels = [
         _panel_failures(failures),
         _panel_bottleneck(bn),
         _panel_handoffs(flow, ctx),
+        _panel_evolution(trace),
+        _panel_workflow_patterns(workflow) if workflow else "",
         _panel_cost(cost) if cost else "",
         _panel_retries(retries) if retries else "",
         _panel_errors(error_report),
