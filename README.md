@@ -39,15 +39,15 @@ Each card in the report carries a one-line verdict so you can read it top-to-bot
 
 ## Install
 
-```bash
-pip install "agentguard @ git+https://github.com/betaHi/AgentGuard.git"
-```
+Most people shouldn't need to install anything manually.
 
-Add `claude-agent-sdk` if you want to capture a live Claude run:
+| Your situation | What to do |
+|---|---|
+| Using the **Claude Code plugin** (entry point A below) | Run two slash-commands inside Claude Code — no local clone, no pip needed |
+| Using the **CLI** from a terminal | One-liner: `curl -sSL https://raw.githubusercontent.com/betaHi/AgentGuard/main/install.sh \| bash` |
+| Using the **Python API** in your own code | `pipx install "agentguard @ git+https://github.com/betaHi/AgentGuard.git"` (or pip equivalent) |
 
-```bash
-pip install claude-agent-sdk
-```
+The one-liner tries `pipx` first, falls back to `pip install --user`, and also pulls in `claude-agent-sdk`. Skip the SDK with `AGENTGUARD_NO_SDK=1`.
 
 ## Use it — three entry points
 
@@ -55,13 +55,18 @@ Pick the one that matches how you already work.
 
 ### A. Claude Code plugin (in-editor, recommended)
 
-The plugin adds slash-commands inside Claude Code and automatically diagnoses every session when it ends.
+Zero local setup — just two lines inside Claude Code:
 
-```bash
-claude --plugin-dir ./plugins/agentguard-claude-code
+```text
+/plugin marketplace add betaHi/AgentGuard
+/plugin install agentguard@agentguard
 ```
 
-Inside Claude Code, reload plugins (`/reload-plugins`), then use:
+That adds this repository as a plugin marketplace, installs the `agentguard` plugin, and runs a one-time bootstrap (`pipx install`, `pip --user` fallback) that puts `agentguard` + `claude-agent-sdk` on your system on first use.
+
+Already have the repo cloned? `claude --plugin-dir ./plugins/agentguard-claude-code` still works for local iteration.
+
+Once installed, the plugin exposes:
 
 | Slash command | What it does |
 |---|---|
@@ -78,7 +83,7 @@ Inside Claude Code, reload plugins (`/reload-plugins`), then use:
 .agentguard/reports/<session-id>.txt      # dense terminal diagnosis
 ```
 
-The hook never blocks the session and is a no-op if AgentGuard isn't installed in the environment.
+The hook never blocks the session. Auto-install can be disabled with `AGENTGUARD_AUTO_INSTALL=0`; install logs land in `~/.local/state/agentguard/bootstrap.log`.
 
 Plugin details: [plugins/agentguard-claude-code/README.md](plugins/agentguard-claude-code/README.md).
 

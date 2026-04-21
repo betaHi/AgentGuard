@@ -1,0 +1,25 @@
+{
+  "name": "agentguard",
+  "owner": {
+    "name": "AgentGuard"
+  },
+  "metadata": {
+    "description": "Orchestration diagnostics for Claude Code sessions and traces"
+  },
+  "plugins": [
+    {
+      "name": "agentguard",
+      "source": "./plugins/agentguard-claude-code",
+      "description": "Dense diagnostics for Claude Code sessions — auto-installs agentguard on first use",
+      "version": "0.1.0",
+      "author": {
+        "name": "AgentGuard"
+      },
+      "homepage": "https://github.com/betaHi/AgentGuard",
+      "repository": "https://github.com/betaHi/AgentGuard",
+      "license": "MIT",
+      "keywords": ["diagnostics", "observability", "orchestration", "agent", "claude-code"],
+      "category": "productivity"
+    }
+  ]
+}

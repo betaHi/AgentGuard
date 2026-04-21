@@ -59,15 +59,31 @@ for py in python3 python; do
   fi
 done
 
+# 6. Last resort: run the bootstrap and retry once.
+bootstrap="$(dirname "$0")/../scripts/ensure-agentguard.sh"
+if [ -x "$bootstrap" ] && [ "${AGENTGUARD_BOOTSTRAPPED:-0}" != "1" ]; then
+  if AGENTGUARD_BOOTSTRAPPED=1 "$bootstrap"; then
+    if command -v agentguard >/dev/null 2>&1; then
+      exec agentguard "$@"
+    fi
+    for py in python3 python; do
+      if command -v "$py" >/dev/null 2>&1 && "$py" -c "import agentguard" >/dev/null 2>&1; then
+        exec "$py" -m agentguard "$@"
+      fi
+    done
+  fi
+fi
+
 cat >&2 <<'EOF'
 agentguard not found.
 
-Install one of:
-  pipx install agentguard              # recommended, puts it on PATH globally
-  pip install agentguard               # inside an env you plan to activate
-  (or clone AgentGuard and create a venv at ~/AgentGuard/.venv)
+The plugin tried to install it automatically but did not succeed. You can:
+  pipx install "agentguard @ git+https://github.com/betaHi/AgentGuard.git"
+  pip install --user "agentguard @ git+https://github.com/betaHi/AgentGuard.git"
 
-Or set AGENTGUARD_BIN to point at an existing executable:
+Or set AGENTGUARD_BIN to an existing executable:
   export AGENTGUARD_BIN=/path/to/agentguard
+
+See ~/.local/state/agentguard/bootstrap.log for what went wrong.
 EOF
 exit 127
