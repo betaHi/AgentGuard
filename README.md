@@ -69,6 +69,7 @@ Two lines inside Claude Code:
 ```
 
 First session runs a one-time `uv tool install` to put `agentguard` + `claude-agent-sdk` on your system.
+
 Have the repo cloned? `claude --plugin-dir ./plugins/agentguard-claude-code` still works for local iteration.
 
 Once installed, the plugin exposes:
