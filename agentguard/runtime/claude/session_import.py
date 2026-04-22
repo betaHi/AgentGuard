@@ -1267,6 +1267,31 @@ def _flatten_payload_to_text(payload: Any) -> str:
     return str(payload)
 
 
+def _refine_tool_span_name(tool_name: str, raw_input: Any) -> str:
+    """Pick a human-readable span name for a Claude tool_use event.
+
+    Claude dispatches every subagent under the generic ``Task`` tool (which
+    the raw event also labels ``Agent`` in some older sessions), so without
+    refinement the diagnose output collapses 65 distinct subagent calls into
+    one opaque ``tool:Agent`` bucket. Surface the declared ``subagent_type``
+    (or falling back to ``description``) so the bottleneck / critical-path
+    output points at something actionable.
+    """
+    base = (tool_name or "tool").strip() or "tool"
+    if base in {"Task", "Agent"} and isinstance(raw_input, dict):
+        subagent_type = raw_input.get("subagent_type")
+        if isinstance(subagent_type, str) and subagent_type.strip():
+            return f"Task({subagent_type.strip()})"
+        description = raw_input.get("description")
+        if isinstance(description, str) and description.strip():
+            desc = description.strip()
+            if len(desc) > 40:
+                desc = desc[:37] + "..."
+            return f"Task({desc})"
+        return "Task"
+    return f"tool:{base}"
+
+
 def _tool_wait_spans(
     *,
     jsonl: _JsonlIndex,
@@ -1292,6 +1317,7 @@ def _tool_wait_spans(
         delta_ms = _timestamp_delta_ms(start, end)
         name_label = use.get("name") or "tool"
         summary = use.get("command") or ""
+        raw_input = use.get("raw_input") or {}
         metadata = {
             "claude.scope": "tool_wait",
             "claude.tool_name": name_label,
@@ -1301,15 +1327,18 @@ def _tool_wait_spans(
         }
         if summary:
             metadata["claude.tool_summary"] = summary
-        raw_input = use.get("raw_input") or {}
         if isinstance(raw_input, dict):
             for k in ("subagent_type", "description", "file_path", "pattern"):
                 v = raw_input.get(k)
                 if isinstance(v, str) and v:
                     metadata[f"claude.tool_input.{k}"] = v[:200]
+        # The raw Claude event surfaces Task-tool dispatches under a single
+        # opaque "Agent" name; refine to "Task(subagent_type)" so bottleneck
+        # / critical-path output gives users a name they can act on.
+        display_name = _refine_tool_span_name(name_label, raw_input)
         spans.append(
             _new_span(
-                name=f"tool:{name_label}",
+                name=display_name,
                 span_type=SpanType.TOOL,
                 trace_id=trace_id,
                 parent_span_id=parent_span_id,

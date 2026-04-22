@@ -86,6 +86,9 @@ def _failure_lines(trace: ExecutionTrace) -> list[str]:
         f"failed_spans={failures.total_failed_spans} | root_causes={len(failures.root_causes)} | "
         f"blast_radius={failures.blast_radius} | resilience={_fmt_percent(failures.resilience_score)}"
     ]
+    if failures.total_failed_spans == 0:
+        lines.append("- No failures in this session.")
+        return lines
     for root_cause in failures.root_causes[:3]:
         handling = "handled" if root_cause.was_handled else "unhandled"
         lines.append(
@@ -97,11 +100,18 @@ def _failure_lines(trace: ExecutionTrace) -> list[str]:
 def _context_lines(trace: ExecutionTrace) -> list[str]:
     """Build dense context-risk lines."""
     context_flow = analyze_context_flow(trace)
+    risky = [p for p in context_flow.ranked_points if p.risk_label != "ok"][:3]
     lines = [
         f"handoffs={context_flow.handoff_count} | anomalies={len(context_flow.anomalies)} | "
-        f"top_risks={len([point for point in context_flow.ranked_points if point.risk_label != 'ok'][:3])}"
+        f"top_risks={len(risky)}"
     ]
-    for point in [p for p in context_flow.ranked_points if p.risk_label != "ok"][:3]:
+    if context_flow.handoff_count == 0:
+        lines.append("- No handoffs between agents detected.")
+        return lines
+    if not risky and not context_flow.anomalies:
+        lines.append("- All handoffs look clean — no critical-key loss or semantic drift flagged.")
+        return lines
+    for point in risky:
         detail = f"risk={_fmt_percent(point.risk_score)} semantic={_fmt_percent(point.semantic_retention_score)}"
         if point.critical_keys_lost:
             detail += f" critical={','.join(point.critical_keys_lost[:3])}"
@@ -138,6 +148,9 @@ def _decision_lines(trace: ExecutionTrace) -> list[str]:
         f"decisions={decisions.total_decisions} | degraded={decisions.decisions_with_degradation} | "
         f"suboptimal={counterfactual.suboptimal_count} | catastrophic={counterfactual.catastrophic_count}"
     ]
+    if decisions.total_decisions == 0:
+        lines.append("- No coordinator/subagent decision points detected — run is effectively linear.")
+        return lines
     for decision in decisions.decisions[:2]:
         signals = "; ".join(decision.degradation_signals[:2]) or "no degradation"
         lines.append(f"- {decision.coordinator} -> {decision.chosen_agent}: {signals}")

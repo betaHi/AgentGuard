@@ -2230,11 +2230,16 @@ def _compute_path_summaries(
 
 def _generate_cost_recommendations(
     entries: list[CostYieldEntry],
+    leaf_names: set[str] | None = None,
 ) -> list[str]:
     """Generate actionable recommendations from cost-yield data.
 
     Each recommendation targets a specific inefficiency pattern
-    with a concrete suggestion for improvement.
+    with a concrete suggestion for improvement. ``leaf_names`` restricts
+    generic "cost-per-success" advice to leaf agents; emitting that advice
+    for a whole-session container (where cost-per-success is just
+    total_cost/1) produces a tautological "this session cost $X/success"
+    line that is not actionable.
     """
     max_tok = max((e.tokens for e in entries if e.tokens > 0), default=1)
     recs = []
@@ -2261,6 +2266,11 @@ def _generate_cost_recommendations(
                 f"Check if this agent is needed in the pipeline."
             )
         elif e.cost_per_success > 0.01:
+            # Only emit generic "consider batching" advice for leaf agents.
+            # For a container/root that rolled up every subagent's cost,
+            # cost-per-success is tautological and there is nothing to batch.
+            if leaf_names is not None and e.agent not in leaf_names:
+                continue
             recs.append(
                 f"'{e.agent}' costs ${e.cost_per_success:.4f}/success. "
                 f"Consider batching or using a smaller model."
@@ -2692,7 +2702,7 @@ def analyze_cost_yield(
             leaf_names.add(s.name)
     scores = _compute_yield_scores(entries, leaf_names=leaf_names)
     wasteful, waste_score = _find_most_wasteful(entries, leaf_names=leaf_names)
-    recommendations = _generate_cost_recommendations(entries)
+    recommendations = _generate_cost_recommendations(entries, leaf_names=leaf_names)
     path_summaries, critical_path_summary, worst_path = _compute_path_summaries(trace, entries)
 
     # Total cost: when a custom cost_fn is supplied, its entries are the
