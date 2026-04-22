@@ -37,7 +37,15 @@ if command -v agentguard >/dev/null 2>&1; then
 fi
 
 # 3 & 4. Known venv locations.
+# IMPORTANT: ~/.local/bin/agentguard must be checked here because
+# `uv tool install` (the one installer the bootstrap script uses) places
+# the binary there, but many shells — including the environment Claude
+# Code inherits on a fresh machine — do not have ~/.local/bin on PATH.
+# Without this fallback, the plugin would silently fail to find a freshly
+# installed agentguard and report "not found" on every invocation until
+# the user manually adjusts PATH.
 candidates=(
+  "${HOME}/.local/bin/agentguard"
   "${HOME}/AgentGuard/.venv/bin/agentguard"
   "${HOME}/agentguard/.venv/bin/agentguard"
   "${HOME}/src/AgentGuard/.venv/bin/agentguard"
@@ -65,6 +73,11 @@ if [ -x "$bootstrap" ] && [ "${AGENTGUARD_BOOTSTRAPPED:-0}" != "1" ]; then
   if AGENTGUARD_BOOTSTRAPPED=1 "$bootstrap"; then
     if command -v agentguard >/dev/null 2>&1; then
       exec agentguard "$@"
+    fi
+    # uv tool install drops the bin into ~/.local/bin even when that dir
+    # is absent from PATH; try that path directly before falling through.
+    if _is_executable "${HOME}/.local/bin/agentguard"; then
+      exec "${HOME}/.local/bin/agentguard" "$@"
     fi
     for py in python3 python; do
       if command -v "$py" >/dev/null 2>&1 && "$py" -c "import agentguard" >/dev/null 2>&1; then
