@@ -23,6 +23,11 @@ from agentguard.core.trace import ExecutionTrace, Span, SpanStatus, SpanType
 # Vendor list prices ($ per 1M tokens). Matched by substring against the
 # ``model`` field in the raw Claude JSONL. First match wins; more specific
 # entries must precede less specific ones.
+#
+# ``_BUILTIN_PRICING_DATE`` is the ISO date the built-in table was last
+# reviewed against vendor list prices. Bump it whenever the rates below
+# change. The viewer surfaces it so users can judge staleness at a glance.
+_BUILTIN_PRICING_DATE = "2025-01-15"
 _BUILTIN_PRICING: list[tuple[str, dict[str, float]]] = [
     # Anthropic Claude family
     ("opus",   {"input": 15.0, "output": 75.0, "cache_read": 1.50, "cache_creation": 18.75}),
@@ -995,7 +1000,12 @@ def _load_raw_jsonl_for_subagent(session_id: str, agent_id: str) -> _JsonlIndex:
 
 
 def _parse_session_jsonl(path: Path) -> _JsonlIndex:
-    """Parse a Claude session JSONL file into a timestamp/tool index."""
+    """Parse a Claude session JSONL file into a timestamp/tool index.
+
+    Reads line-by-line rather than loading the full file into memory,
+    which matters for long-running sessions (multi-MB JSONL). A malformed
+    line is skipped so a single bad record never drops the whole import.
+    """
     uuid_to_timestamp: dict[str, str] = {}
     tool_use_by_id: dict[str, dict[str, Any]] = {}
     tool_result_by_id: dict[str, dict[str, Any]] = {}
@@ -1005,81 +1015,82 @@ def _parse_session_jsonl(path: Path) -> _JsonlIndex:
     last_stop_reason: str | None = None
 
     try:
-        raw = path.read_text(encoding="utf-8", errors="replace")
+        fp = path.open("r", encoding="utf-8", errors="replace")
     except OSError:
         return _EMPTY_JSONL_INDEX
 
-    for line in raw.splitlines():
-        line = line.strip()
-        if not line:
-            continue
-        try:
-            record = json.loads(line)
-        except json.JSONDecodeError:
-            continue
-        if not isinstance(record, dict):
-            continue
-
-        ts = record.get("timestamp")
-        uuid = record.get("uuid")
-        if isinstance(ts, str) and ts and isinstance(uuid, str) and uuid:
-            uuid_to_timestamp[uuid] = ts
-            if first_ts is None:
-                first_ts = ts
-            last_ts = ts
-
-        message = record.get("message") or {}
-        content = message.get("content") if isinstance(message, dict) else None
-
-        # Capture per-message token usage so LLM spans can report real counts.
-        if isinstance(message, dict) and isinstance(uuid, str) and uuid:
-            usage = message.get("usage")
-            if isinstance(usage, dict):
-                model = message.get("model")
-                record_usage: dict[str, Any] = {
-                    "input_tokens": _as_int(usage.get("input_tokens")),
-                    "output_tokens": _as_int(usage.get("output_tokens")),
-                    "cache_creation_input_tokens": _as_int(
-                        usage.get("cache_creation_input_tokens")
-                    ),
-                    "cache_read_input_tokens": _as_int(
-                        usage.get("cache_read_input_tokens")
-                    ),
-                }
-                if isinstance(model, str) and model:
-                    record_usage["model"] = model
-                uuid_to_usage[uuid] = record_usage
-            # Track the most recent assistant stop_reason — this is the raw
-            # Q4 completion signal (end_turn vs. max_tokens vs. error).
-            stop_reason = message.get("stop_reason")
-            if isinstance(stop_reason, str) and stop_reason:
-                last_stop_reason = stop_reason
-
-        if not isinstance(content, list):
-            continue
-
-        for block in content:
-            if not isinstance(block, dict):
+    with fp:
+        for raw_line in fp:
+            line = raw_line.strip()
+            if not line:
                 continue
-            block_type = block.get("type")
-            if block_type == "tool_use":
-                block_id = block.get("id")
-                if isinstance(block_id, str) and block_id and isinstance(ts, str):
-                    tool_input = block.get("input")
-                    tool_use_by_id[block_id] = {
-                        "timestamp": ts,
-                        "name": str(block.get("name") or ""),
-                        "command": _extract_tool_input_summary(tool_input),
-                        "raw_input": tool_input if isinstance(tool_input, dict) else {},
-                        "message_uuid": uuid or "",
+            try:
+                record = json.loads(line)
+            except json.JSONDecodeError:
+                continue
+            if not isinstance(record, dict):
+                continue
+
+            ts = record.get("timestamp")
+            uuid = record.get("uuid")
+            if isinstance(ts, str) and ts and isinstance(uuid, str) and uuid:
+                uuid_to_timestamp[uuid] = ts
+                if first_ts is None:
+                    first_ts = ts
+                last_ts = ts
+
+            message = record.get("message") or {}
+            content = message.get("content") if isinstance(message, dict) else None
+
+            # Capture per-message token usage so LLM spans can report real counts.
+            if isinstance(message, dict) and isinstance(uuid, str) and uuid:
+                usage = message.get("usage")
+                if isinstance(usage, dict):
+                    model = message.get("model")
+                    record_usage: dict[str, Any] = {
+                        "input_tokens": _as_int(usage.get("input_tokens")),
+                        "output_tokens": _as_int(usage.get("output_tokens")),
+                        "cache_creation_input_tokens": _as_int(
+                            usage.get("cache_creation_input_tokens")
+                        ),
+                        "cache_read_input_tokens": _as_int(
+                            usage.get("cache_read_input_tokens")
+                        ),
                     }
-            elif block_type == "tool_result":
-                block_id = block.get("tool_use_id")
-                if isinstance(block_id, str) and block_id and isinstance(ts, str):
-                    tool_result_by_id[block_id] = {
-                        "timestamp": ts,
-                        "message_uuid": uuid or "",
-                    }
+                    if isinstance(model, str) and model:
+                        record_usage["model"] = model
+                    uuid_to_usage[uuid] = record_usage
+                # Track the most recent assistant stop_reason — this is the raw
+                # Q4 completion signal (end_turn vs. max_tokens vs. error).
+                stop_reason = message.get("stop_reason")
+                if isinstance(stop_reason, str) and stop_reason:
+                    last_stop_reason = stop_reason
+
+            if not isinstance(content, list):
+                continue
+
+            for block in content:
+                if not isinstance(block, dict):
+                    continue
+                block_type = block.get("type")
+                if block_type == "tool_use":
+                    block_id = block.get("id")
+                    if isinstance(block_id, str) and block_id and isinstance(ts, str):
+                        tool_input = block.get("input")
+                        tool_use_by_id[block_id] = {
+                            "timestamp": ts,
+                            "name": str(block.get("name") or ""),
+                            "command": _extract_tool_input_summary(tool_input),
+                            "raw_input": tool_input if isinstance(tool_input, dict) else {},
+                            "message_uuid": uuid or "",
+                        }
+                elif block_type == "tool_result":
+                    block_id = block.get("tool_use_id")
+                    if isinstance(block_id, str) and block_id and isinstance(ts, str):
+                        tool_result_by_id[block_id] = {
+                            "timestamp": ts,
+                            "message_uuid": uuid or "",
+                        }
 
     return _JsonlIndex(
         uuid_to_timestamp=uuid_to_timestamp,

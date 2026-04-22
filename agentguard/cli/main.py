@@ -1124,6 +1124,79 @@ def cmd_init(args) -> None:
         print(f"\n  {C.DIM}Already initialized — nothing to do.{C.RESET}\n")
 
 
+def _doctor_check_claude_readiness(all_ok: bool) -> bool:
+    """Run the three checks that decide if `diagnose-claude-session` will work.
+
+    Returns the updated ``all_ok`` flag. Each check prints one line with a
+    green/yellow/red icon so the operator can see at a glance whether the
+    tool is ready on this machine. A red mark flips ``all_ok`` to False.
+    """
+    # (a) Claude Agent SDK installed and within supported range.
+    try:
+        from agentguard.runtime.claude.session_import import (
+            _SDK_MIN_VERSION,
+            _SDK_MAX_EXCLUSIVE,
+            _parse_sdk_version,
+        )
+        import claude_agent_sdk  # type: ignore[import-not-found]
+        sdk_ver_str = getattr(claude_agent_sdk, "__version__", "")
+        parsed = _parse_sdk_version(sdk_ver_str)
+        if parsed is None:
+            print(f"  {C.YELLOW}⚠{C.RESET} claude-agent-sdk installed but version unreadable")
+        elif _SDK_MIN_VERSION <= parsed < _SDK_MAX_EXCLUSIVE:
+            print(f"  {C.GREEN}✓{C.RESET} claude-agent-sdk {sdk_ver_str} (supported)")
+        else:
+            low = ".".join(str(n) for n in _SDK_MIN_VERSION)
+            high = ".".join(str(n) for n in _SDK_MAX_EXCLUSIVE)
+            print(
+                f"  {C.RED}✗{C.RESET} claude-agent-sdk {sdk_ver_str} "
+                f"outside supported range [{low}, {high})"
+            )
+            all_ok = False
+    except ImportError:
+        print(
+            f"  {C.YELLOW}⚠{C.RESET} claude-agent-sdk not installed "
+            f"(pip install 'agentguard[claude]' to diagnose Claude sessions)"
+        )
+
+    # (b) Claude projects directory readable.
+    projects_dir = Path.home() / ".claude" / "projects"
+    if projects_dir.is_dir():
+        try:
+            next(projects_dir.iterdir(), None)
+            print(f"  {C.GREEN}✓{C.RESET} Claude sessions at {projects_dir}")
+        except OSError as e:
+            print(f"  {C.RED}✗{C.RESET} {projects_dir} not readable: {e}")
+            all_ok = False
+    else:
+        print(
+            f"  {C.YELLOW}⚠{C.RESET} {projects_dir} not found "
+            f"(no Claude sessions to diagnose yet)"
+        )
+
+    # (c) Pricing table freshness.
+    try:
+        from agentguard.runtime.claude.session_import import _BUILTIN_PRICING_DATE
+        from datetime import date
+        parsed_date = date.fromisoformat(_BUILTIN_PRICING_DATE)
+        age_days = (date.today() - parsed_date).days
+        if age_days < 180:
+            print(
+                f"  {C.GREEN}✓{C.RESET} Pricing table reviewed "
+                f"{_BUILTIN_PRICING_DATE} ({age_days}d ago)"
+            )
+        else:
+            print(
+                f"  {C.YELLOW}⚠{C.RESET} Pricing table reviewed "
+                f"{_BUILTIN_PRICING_DATE} ({age_days}d ago) — consider "
+                f"overriding via AGENTGUARD_PRICING_FILE"
+            )
+    except (ImportError, ValueError) as e:
+        print(f"  {C.YELLOW}⚠{C.RESET} Pricing table date unreadable: {e}")
+
+    return all_ok
+
+
 def cmd_doctor(args) -> None:
     """Check AgentGuard installation health and environment."""
     import platform
@@ -1193,6 +1266,10 @@ def cmd_doctor(args) -> None:
             all_ok = False
     else:
         print(f"  {C.YELLOW}⚠{C.RESET} Config file not found (run: agentguard init)")
+
+    # 6. Claude session readiness — the three checks that determine whether
+    #    `diagnose-claude-session` will work on this machine right now.
+    all_ok = _doctor_check_claude_readiness(all_ok)
 
     # Summary
     if all_ok:

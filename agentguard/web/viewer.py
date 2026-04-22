@@ -682,6 +682,9 @@ def _render_cost_yield_panel(cy: Any, trace: ExecutionTrace) -> str:
     fallback_notice = _cost_fallback_notice(trace)
     if fallback_notice:
         parts.append(fallback_notice)
+    pricing_banner = _pricing_freshness_banner()
+    if pricing_banner:
+        parts.append(pricing_banner)
     if entries:
         parts.append('<div><b>Per-agent waste</b></div>')
         for e in entries[:6]:
@@ -731,6 +734,27 @@ def _cost_fallback_notice(trace: ExecutionTrace) -> str:
         f'<span class="bad">Estimated</span> — {fallback} calls priced with '
         f'fallback rates because model id is not in the shipped price table{tail}. '
         f'Set <code>AGENTGUARD_PRICING_FILE</code> to override.'
+        f'</div>'
+    )
+
+
+def _pricing_freshness_banner() -> str:
+    """Surface the date the built-in pricing table was last reviewed.
+
+    Vendor list prices change. If the shipped table drifts from reality,
+    every cost number the tool prints is off. Users need an at-a-glance
+    hint of how old the shipped rates are so they know whether to trust
+    the absolute numbers or treat them as relative signals.
+    """
+    try:
+        from agentguard.runtime.claude.session_import import _BUILTIN_PRICING_DATE
+    except ImportError:  # pragma: no cover — should never happen
+        return ""
+    date = _esc(str(_BUILTIN_PRICING_DATE))
+    return (
+        f'<div class="dim" style="margin-bottom:6px;font-size:12px">'
+        f'Built-in price table last reviewed {date}. '
+        f'Override via <code>AGENTGUARD_PRICING_FILE</code> if out of date.'
         f'</div>'
     )
 
