@@ -2068,12 +2068,23 @@ def _compute_waste_score(entry: CostYieldEntry, max_tokens: int = 1) -> float:
 
 def _find_most_wasteful(
     entries: list[CostYieldEntry],
+    leaf_names: set[str] | None = None,
 ) -> tuple[str, float]:
-    """Find the agent with highest waste score."""
+    """Find the agent with highest waste score.
+
+    When ``leaf_names`` is provided, containers (agents with agent
+    descendants) are excluded so the verdict points at a real offender
+    instead of the parent that simply aggregates everyone's cost.
+    """
     if not entries:
         return "", 0.0
-    max_tok = max((e.tokens for e in entries if e.tokens > 0), default=1)
-    scored = [(e, _compute_waste_score(e, max_tok)) for e in entries]
+    candidates = entries
+    if leaf_names:
+        leaf = [e for e in entries if e.agent in leaf_names]
+        if leaf:
+            candidates = leaf
+    max_tok = max((e.tokens for e in candidates if e.tokens > 0), default=1)
+    scored = [(e, _compute_waste_score(e, max_tok)) for e in candidates]
     scored.sort(key=lambda x: -x[1])
     return scored[0][0].agent, scored[0][1]
 
@@ -2526,13 +2537,46 @@ def _compute_agent_costs(
 
     For each agent computes cost (custom or estimated_cost_usd),
     yield score (custom or default), cost-per-success, and token efficiency.
+
+    Cost and tokens are rolled up across the agent's subtree when the agent
+    span itself carries none — real runtimes (Claude, LangGraph, …) tend to
+    charge cost on the leaf LLM calls, not on the orchestrating agent span.
+    Without the roll-up the cost-yield panel reports $0 for every agent and
+    destroys the credibility of Q3.
     """
     import json as _json
 
+    children_map = _build_children_span_map(trace)
+
+    def _subtree_cost_tokens(root: Span) -> tuple[float, int]:
+        """Sum estimated_cost_usd and token_count across ``root``'s subtree."""
+        stack = [root]
+        cost = 0.0
+        tokens = 0
+        visited: set[str] = set()
+        while stack:
+            span = stack.pop()
+            if span.span_id in visited:
+                continue
+            visited.add(span.span_id)
+            cost += float(span.estimated_cost_usd or 0.0)
+            tokens += int(span.token_count or 0)
+            for child in children_map.get(span.span_id, []):
+                if child.span_id not in visited:
+                    stack.append(child)
+        return cost, tokens
+
     entries = []
     for s in trace.agent_spans:
-        tokens = s.token_count or 0
-        cost = cost_fn(s) if cost_fn else (s.estimated_cost_usd or 0.0)
+        direct_cost = (cost_fn(s) if cost_fn else s.estimated_cost_usd) or 0.0
+        direct_tokens = s.token_count or 0
+        if direct_cost > 0 or direct_tokens > 0 or cost_fn:
+            cost = direct_cost
+            tokens = direct_tokens
+        else:
+            # Agent span carries no cost itself (the common Claude case).
+            # Roll up from descendants so Q3 numbers match reality.
+            cost, tokens = _subtree_cost_tokens(s)
         dur = s.duration_ms or 0.0
         succeeded = s.status == SpanStatus.COMPLETED
         has_output = s.output_data is not None
@@ -2583,17 +2627,31 @@ def _measure_output_size(output_data: Any, json_mod: Any) -> int:
         return 0
 
 
-def _compute_yield_scores(entries: list[CostYieldEntry]) -> dict[str, str]:
+def _compute_yield_scores(
+    entries: list[CostYieldEntry],
+    leaf_names: set[str] | None = None,
+) -> dict[str, str]:
     """Compute summary yield scores: highest cost, lowest yield, best ratio agents.
+
+    When ``leaf_names`` is provided, "highest cost" prefers agents that
+    are leaves (no child agents). The root container of a deeply-nested
+    trace naturally has the highest rolled-up cost, but reporting
+    "the whole session is the most expensive agent" is tautological —
+    the user wants the leaf that actually burned the tokens.
 
     Returns dict with keys: highest_cost, lowest_yield, best_ratio.
     """
     if not entries:
         return {"highest_cost": "N/A", "lowest_yield": "N/A", "best_ratio": "N/A"}
+    candidates = entries
+    if leaf_names:
+        leaf_entries = [e for e in entries if e.agent in leaf_names]
+        if leaf_entries:
+            candidates = leaf_entries
     return {
-        "highest_cost": max(entries, key=lambda e: e.cost_usd).agent,
-        "lowest_yield": min(entries, key=lambda e: e.yield_score).agent,
-        "best_ratio": max(entries, key=lambda e: e.yield_score / max(e.cost_usd, 0.0001)).agent,
+        "highest_cost": max(candidates, key=lambda e: e.cost_usd).agent,
+        "lowest_yield": min(candidates, key=lambda e: e.yield_score).agent,
+        "best_ratio": max(candidates, key=lambda e: e.yield_score / max(e.cost_usd, 0.0001)).agent,
     }
 
 
@@ -2615,15 +2673,50 @@ def analyze_cost_yield(
         CostYieldReport with per-agent breakdown and summary.
     """
     entries = _compute_agent_costs(trace, cost_fn, yield_fn)
-    scores = _compute_yield_scores(entries)
-    wasteful, waste_score = _find_most_wasteful(entries)
+    # Identify leaf agents (no agent descendants) so summary metrics
+    # don't just report "the root is most expensive" tautologies when
+    # cost rolls up.
+    agent_ids = {s.span_id for s in trace.agent_spans}
+    children_map = _build_children_span_map(trace)
+    leaf_names: set[str] = set()
+    for s in trace.agent_spans:
+        has_agent_descendant = False
+        stack = list(children_map.get(s.span_id, []))
+        while stack:
+            c = stack.pop()
+            if c.span_id in agent_ids:
+                has_agent_descendant = True
+                break
+            stack.extend(children_map.get(c.span_id, []))
+        if not has_agent_descendant:
+            leaf_names.add(s.name)
+    scores = _compute_yield_scores(entries, leaf_names=leaf_names)
+    wasteful, waste_score = _find_most_wasteful(entries, leaf_names=leaf_names)
     recommendations = _generate_cost_recommendations(entries)
     path_summaries, critical_path_summary, worst_path = _compute_path_summaries(trace, entries)
 
+    # Total cost: when a custom cost_fn is supplied, its entries are the
+    # authoritative values — sum the leaf entries (or all entries if no
+    # leaves) to avoid double-counting rolled-up costs. When no cost_fn
+    # is supplied, sum direct estimated_cost_usd over every span to get
+    # the real total without double-counting the roll-up.
+    if cost_fn is not None:
+        if leaf_names:
+            total_cost = sum(e.cost_usd for e in entries if e.agent in leaf_names)
+        else:
+            total_cost = sum(e.cost_usd for e in entries)
+        if leaf_names:
+            total_tokens = sum(e.tokens for e in entries if e.agent in leaf_names)
+        else:
+            total_tokens = sum(e.tokens for e in entries)
+    else:
+        total_cost = sum(float(s.estimated_cost_usd or 0.0) for s in trace.spans)
+        total_tokens = sum(int(s.token_count or 0) for s in trace.spans)
+
     return CostYieldReport(
         entries=entries,
-        total_cost_usd=sum(e.cost_usd for e in entries),
-        total_tokens=sum(e.tokens for e in entries),
+        total_cost_usd=total_cost,
+        total_tokens=total_tokens,
         highest_cost_agent=scores["highest_cost"],
         lowest_yield_agent=scores["lowest_yield"],
         best_ratio_agent=scores["best_ratio"],
