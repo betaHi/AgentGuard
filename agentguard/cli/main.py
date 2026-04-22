@@ -1386,8 +1386,32 @@ def cmd_diagnose_claude_session(args) -> None:
 
     output = _write_trace_file(trace, args.output)
     report_target = args.report_output or _default_html_report_path(output, trace.trace_id)
+    _apply_expected_artifacts(trace, getattr(args, "expected_artifact", []))
     report_output = _generate_html_report(trace, report_target)
     _print_dense_diagnostics(trace, trace_path=output, html_report=report_output)
+
+
+def _apply_expected_artifacts(trace, paths: list[str]) -> None:
+    """Downgrade the Q4 completion signal when user-declared outputs are missing.
+
+    When ``--expected-artifact`` is passed, every path must exist on disk
+    for the task to count as completed. Missing paths force the trace's
+    completion signal to 0 and mark the root span's quality to 0 so the
+    cost-yield analysis stops treating the run as a clean success.
+    """
+    if not paths:
+        return
+    from pathlib import Path
+
+    missing = [p for p in paths if not Path(p).exists()]
+    trace.metadata["expected_artifacts.checked"] = list(paths)
+    trace.metadata["expected_artifacts.missing"] = missing
+    if missing:
+        trace.metadata["claude.completion_signal"] = 0.0
+        trace.metadata["claude.stop_reason"] = "missing_expected_artifacts"
+        if trace.spans:
+            trace.spans[0].metadata["claude.quality"] = 0.0
+            trace.spans[0].metadata["claude.stop_reason"] = "missing_expected_artifacts"
 
 
 
@@ -1414,8 +1438,34 @@ def cmd_guard(args) -> None:
     guard.watch(interval=args.interval)
 
 
-# Command dispatch table: maps CLI subcommand name → handler function.
-_COMMAND_DISPATCH: dict[str, Any] = {}
+# Core product commands — the only ones shown in ``--help``. Everything else
+# is kept registered for backwards compatibility but hidden via
+# ``_hide_non_core_commands`` so the publishable surface is narrow.
+_CORE_COMMANDS: set[str] = {
+    "list-claude-sessions",
+    "diagnose-claude-session",
+    "diagnose",
+    "report",
+    "doctor",
+    "version",
+}
+
+
+def _hide_non_core_commands(sub: Any) -> None:
+    """Hide non-core subcommands from ``--help`` output.
+
+    The subcommand remains registered so existing scripts and tests keep
+    working, but it is removed from the rendered help listing so that new
+    users see a narrow, publishable surface.
+    """
+    try:
+        actions = sub._choices_actions  # type: ignore[attr-defined]
+    except AttributeError:  # pragma: no cover — argparse internals changed
+        return
+    sub._choices_actions = [  # type: ignore[attr-defined]
+        action for action in actions
+        if getattr(action, "dest", None) in _CORE_COMMANDS
+    ]
 
 
 def _register_subcommands(sub: Any) -> None:
@@ -1478,6 +1528,14 @@ def _register_analysis_commands(sub: Any) -> None:
     p.add_argument("--no-subagents", action="store_true", help="Skip subagent transcript import")
     p.add_argument("--output", help="Output trace JSON path")
     p.add_argument("--report-output", help="Optional HTML report output path")
+    p.add_argument(
+        "--expected-artifact",
+        action="append",
+        default=[],
+        help="Path that must exist for the task to count as completed. May be "
+             "repeated. When any expected artifact is missing the Q4 "
+             "completion signal is downgraded.",
+    )
 
     p = sub.add_parser("learn", help="Learn evolution lessons from a trace")
     p.add_argument("file", help="Path to trace JSON file")
@@ -1610,14 +1668,29 @@ def main() -> None:
     """CLI entry point. Parses args and dispatches to command handlers."""
     parser = argparse.ArgumentParser(
         prog="agentguard",
-        description="🛡️ AgentGuard — Record, Replay, Evaluate, and Guard your AI Agents.",
+        description=(
+            "AgentGuard — Diagnostics for multi-agent orchestration.\n\n"
+            "Primary workflow:\n"
+            "  agentguard list-claude-sessions        # 1. find a session\n"
+            "  agentguard diagnose-claude-session ID  # 2. import + diagnose + render HTML\n"
+            "  agentguard diagnose TRACE.json         # 3. diagnose an exported trace\n"
+            "  agentguard report TRACE.json           # 4. render interactive HTML\n\n"
+            "All other subcommands remain available for advanced/compatibility use."
+        ),
+        formatter_class=argparse.RawDescriptionHelpFormatter,
     )
-    sub = parser.add_subparsers(dest="command")
+    sub = parser.add_subparsers(
+        dest="command",
+        metavar="<command>",
+        title="commands",
+    )
 
     _register_subcommands(sub)
     _register_analysis_commands(sub)
     _register_comparison_commands(sub)
     _register_ops_commands(sub)
+
+    _hide_non_core_commands(sub)
 
     args = parser.parse_args()
 

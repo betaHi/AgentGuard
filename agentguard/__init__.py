@@ -1,40 +1,30 @@
 """AgentGuard — diagnostics for multi-agent orchestration.
 
-Primary SDK surfaces:
+**Publishable API — start here.**
 
-    # Claude live runtime capture
-    from agentguard.runtime.claude import wrap_claude_client
+One question, one import::
 
-    # Claude session import
-    from agentguard.runtime.claude import import_claude_session
+    from agentguard import diagnose_claude_session
 
-    # Diagnostics surface
-    from agentguard.diagnostics import analyze_bottleneck, analyze_context_flow
+    report, html = diagnose_claude_session("<session-id>", html_out="report.html")
 
-Compatibility trace-capture styles retained for existing Python agent systems:
+For the full programmatic surface::
 
-    # Style 1: Decorators (sync)
-    @record_agent(name="my-agent", version="v1")
-    def my_agent(task): ...
+    from agentguard.diagnostics import (
+        import_claude_session,
+        diagnose,
+        render_html_report,
+        analyze_context_flow,
+        analyze_cost_yield,
+        analyze_bottleneck,
+        analyze_decisions,
+        score_trace,
+    )
 
-    # Style 2: Decorators (async)
-    @record_agent_async(name="my-agent", version="v1")
-    async def my_agent(task): ...
-
-    # Style 3: Context managers (sync)
-    with AgentTrace(name="my-agent", version="v1") as agent:
-        ...
-
-    # Style 4: Context managers (async)
-    async with AsyncAgentTrace(name="my-agent", version="v1") as agent:
-        ...
-
-    # Style 6: Explicit handoff recording
-    from agentguard import record_handoff
-    record_handoff(from_agent="a", to_agent="b", context={...})
-
-    # Style 7: Spawned processes
-    from agentguard.sdk.distributed import inject_trace_context, init_recorder_from_env
+Legacy capture styles (decorators, context managers, threading, distributed,
+evolution, alerts, ...) remain importable from their original submodules for
+backwards compatibility, but are **not** part of the recommended product
+surface and are not re-exported here.
 """
 
 try:
@@ -85,29 +75,85 @@ from agentguard.templates import create_from_template
 from agentguard.timeline import build_timeline
 from agentguard.tree import compute_tree_stats, tree_to_text
 
+# ---------------------------------------------------------------------------
+# Curated public surface (the only names documented for publishable use).
+# Everything else imported above is kept for backwards compatibility only.
+# ---------------------------------------------------------------------------
+from agentguard.core.trace import ExecutionTrace, Span, SpanStatus, SpanType
+from agentguard.diagnostics import (
+    DiagnosticReport,
+    analyze_bottleneck,
+    analyze_context_flow,
+    analyze_cost_yield,
+    analyze_counterfactual,
+    analyze_decisions,
+    analyze_failures,
+    diagnose,
+    render_html_report,
+)
+from agentguard.runtime.claude import import_claude_session, list_claude_sessions
+
+
+def diagnose_claude_session(
+    session_id: str,
+    *,
+    directory: str | None = None,
+    include_subagents: bool = True,
+    html_out: str | None = None,
+) -> tuple[DiagnosticReport, str | None]:
+    """Import and diagnose a Claude session in a single call.
+
+    This is the single recommended entry point for new users:
+
+        >>> from agentguard import diagnose_claude_session
+        >>> report, html_path = diagnose_claude_session(
+        ...     "abc-123", html_out="report.html",
+        ... )
+
+    Parameters
+    ----------
+    session_id:
+        The Claude session id (see :func:`list_claude_sessions`).
+    directory:
+        Optional Claude session working directory.
+    include_subagents:
+        When True (default), imports subagent transcripts too.
+    html_out:
+        If given, writes an interactive HTML report to this path and
+        returns the path as the second element of the tuple.
+
+    Returns
+    -------
+    (report, html_path)
+        ``report`` is a :class:`~agentguard.diagnostics.DiagnosticReport`.
+        ``html_path`` is the written HTML path (or ``None`` if
+        ``html_out`` was not provided).
+    """
+    trace = import_claude_session(
+        session_id,
+        directory=directory,
+        include_subagents=include_subagents,
+    )
+    report = diagnose(trace)
+    html_path: str | None = None
+    if html_out is not None:
+        html_path = render_html_report(trace, output_path=html_out)
+    return report, html_path
+
+
 __all__ = [
-    "record_agent", "record_tool",
-    "record_agent_async", "record_tool_async",
-    "AgentTrace", "ToolContext",
-    "AsyncAgentTrace", "AsyncToolContext",
-    "TraceThread", "enable_auto_trace_threading",
-    "disable_auto_trace_threading", "is_auto_trace_threading_enabled",
-    "record_handoff", "mark_context_used", "detect_context_loss", "record_decision",
-    "analyze_propagation", "hypothetical_failure",
-    "build_flow_graph",
-    "analyze_context_flow_deep",
-    "analyze_correlations", "fingerprint_span",
-    "analyze_handoff_chains", "compute_context_integrity",
-    "diff_flow_graphs", "diff_context_flow",
-    "score_trace", "aggregate_traces",
-    "auto_annotate", "AnnotationStore",
-    "filter_spans", "filter_traces", "sample_traces",
-    "TraceBuilder", "build_timeline", "tree_to_text", "compute_tree_stats",
-    "normalize_trace", "summarize_trace", "summarize_brief",
-    "compare_traces", "build_agent_profiles", "build_dependency_graph",
-    "SLAChecker", "AlertEngine", "rule_trace_failed", "rule_score_below",
-    "extract_metrics", "batch_analyze",
-    "generate_trace", "generate_batch", "create_from_template",
-    "register_analyzer", "register_exporter", "get_plugin_registry",
-    "configure", "get_settings", "reset_settings", "annotate", "set_correlation_id", "set_parent_trace",
+    # One-call entry point
+    "diagnose_claude_session",
+    # Claude session access
+    "import_claude_session", "list_claude_sessions",
+    # Core data model
+    "ExecutionTrace", "Span", "SpanStatus", "SpanType",
+    # The 5-question diagnostics
+    "diagnose", "DiagnosticReport",
+    "analyze_bottleneck", "analyze_context_flow", "analyze_cost_yield",
+    "analyze_counterfactual", "analyze_decisions", "analyze_failures",
+    # Rendering
+    "render_html_report",
+    # Settings
+    "configure", "get_settings", "reset_settings",
 ]

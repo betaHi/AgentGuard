@@ -111,44 +111,42 @@ agentguard list-claude-sessions --all --group-by-project
 agentguard diagnose-claude-session <session-id> --directory /path/to/project
 ```
 
-### C. Your own Python agents
+### C. Python one-liner
 
-Decorate agents and tools; the trace and report are produced the same way.
-
-```python
-import agentguard
-from agentguard import record_agent, record_tool
-from agentguard.sdk.recorder import init_recorder, finish_recording
-
-agentguard.configure(output_dir=".agentguard/traces", auto_thread_context=True)
-
-@record_tool(name="search")
-def search(q: str) -> list[dict]: ...
-
-@record_agent(name="researcher")
-def researcher(topic: str) -> dict:
-    return {"results": search(topic)}
-
-init_recorder(task="research")
-researcher("agent diagnostics")
-trace = finish_recording()
-```
-
-Or wrap a live Claude SDK client:
+Any Python ≥ 3.11 with `claude-agent-sdk` on the path:
 
 ```python
-from claude_agent_sdk import ClaudeSDKClient
-from agentguard.runtime.claude import wrap_claude_client
-from agentguard.web.viewer import generate_report_from_trace
+from agentguard import diagnose_claude_session
 
-async with wrap_claude_client(ClaudeSDKClient()) as client:
-    await client.query("Refactor the auth module")
-    async for _ in client.receive_response():
-        pass
-    trace = client.agentguard_trace()
+report, html_path = diagnose_claude_session(
+    "<session-id>",
+    html_out=".agentguard/report.html",
+)
 
-generate_report_from_trace(trace, output=".agentguard/report.html")
+print(f"Score: {report.score.total:.0f}/100")
+print(f"Worst handoff: {report.context_flow.points[0].from_agent} → "
+      f"{report.context_flow.points[0].to_agent}")
 ```
+
+For the individual analyzers, see [`agentguard.diagnostics`](agentguard/diagnostics/__init__.py):
+
+```python
+from agentguard.diagnostics import (
+    import_claude_session,
+    analyze_bottleneck,
+    analyze_context_flow,
+    analyze_cost_yield,
+    score_trace,
+)
+
+trace = import_claude_session("<session-id>")
+print(analyze_bottleneck(trace).to_dict())
+```
+
+> Legacy tracing styles (decorators, context managers, `TraceThread`, distributed
+> capture, evolution / alerts / search) remain importable from their submodules
+> for backwards compatibility but are not part of the publishable product API.
+> Start with the snippets above.
 
 Runnable example: [examples/minimal.py](examples/minimal.py).
 
@@ -169,9 +167,12 @@ Runnable example: [examples/minimal.py](examples/minimal.py).
 |---|---|
 | `agentguard diagnose <trace.json>` | Dense terminal diagnosis of a saved trace |
 | `agentguard report --dir .agentguard/traces` | Build an HTML report from multiple traces |
-| `agentguard analyze <trace.json>` | Failure propagation + flow analysis |
-| `agentguard learn <trace.json>` | Extract lessons from repeated runs |
+| `agentguard doctor` | Check installation health |
 | `agentguard --help` | Full command list |
+
+Legacy / advanced subcommands (`analyze`, `learn`, `suggest`, `benchmark`,
+`guard`, …) remain executable for backwards compatibility but are hidden
+from `--help` so the product surface stays focused.
 
 ## What a trace captures
 

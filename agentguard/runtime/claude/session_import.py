@@ -12,11 +12,121 @@ import datetime as _dt
 import inspect
 import json
 import os
+import re
 from pathlib import Path
 import unicodedata
 from typing import Any
 
 from agentguard.core.trace import ExecutionTrace, Span, SpanStatus, SpanType
+
+
+# Vendor list prices ($ per 1M tokens). Matched by substring against the
+# ``model`` field in the raw Claude JSONL. First match wins; more specific
+# entries must precede less specific ones.
+_BUILTIN_PRICING: list[tuple[str, dict[str, float]]] = [
+    # Anthropic Claude family
+    ("opus",   {"input": 15.0, "output": 75.0, "cache_read": 1.50, "cache_creation": 18.75}),
+    ("sonnet", {"input": 3.0,  "output": 15.0, "cache_read": 0.30, "cache_creation": 3.75}),
+    ("haiku",  {"input": 0.80, "output": 4.0,  "cache_read": 0.08, "cache_creation": 1.0}),
+    # OpenAI GPT-5 family (public list prices, flat cache_read = 50% of input).
+    ("gpt-5-mini", {"input": 0.25, "output": 2.0,  "cache_read": 0.125, "cache_creation": 0.25}),
+    ("gpt-5-nano", {"input": 0.05, "output": 0.40, "cache_read": 0.025, "cache_creation": 0.05}),
+    ("gpt-5",      {"input": 1.25, "output": 10.0, "cache_read": 0.625, "cache_creation": 1.25}),
+]
+
+# Fallback rates for unrecognized model ids. We still charge the call —
+# otherwise a brand-new model id silently zero-costs the trace. Sonnet rates
+# are a deliberate midrange so neither over- nor under-estimates dominate.
+_UNKNOWN_MODEL_RATES: dict[str, float] = {
+    "input": 3.0, "output": 15.0, "cache_read": 0.30, "cache_creation": 3.75,
+}
+
+_REQUIRED_RATE_KEYS = ("input", "output", "cache_read", "cache_creation")
+
+
+def _load_pricing_overrides() -> list[tuple[str, dict[str, float]]]:
+    """Load user-supplied pricing from ``AGENTGUARD_PRICING_FILE`` or default paths.
+
+    The file must be JSON mapping ``{"model-substring": {"input": ..., "output": ...,
+    "cache_read": ..., "cache_creation": ...}}``. Entries from the override file
+    are checked before the built-in table so users can correct any model id
+    we don't ship with (e.g. ``gpt-5.4``, an internal gateway, a distilled
+    model) without patching the importer.
+    """
+    candidates: list[Path] = []
+    env_path = os.environ.get("AGENTGUARD_PRICING_FILE")
+    if env_path:
+        candidates.append(Path(env_path))
+    candidates.append(Path.home() / ".agentguard" / "pricing.json")
+    candidates.append(Path.cwd() / ".agentguard" / "pricing.json")
+
+    for path in candidates:
+        try:
+            if not path.is_file():
+                continue
+            data = json.loads(path.read_text(encoding="utf-8"))
+        except (OSError, json.JSONDecodeError):
+            continue
+        if not isinstance(data, dict):
+            continue
+        result: list[tuple[str, dict[str, float]]] = []
+        for key, rates in data.items():
+            if not isinstance(key, str) or not isinstance(rates, dict):
+                continue
+            try:
+                result.append((
+                    key.lower(),
+                    {name: float(rates[name]) for name in _REQUIRED_RATE_KEYS},
+                ))
+            except (KeyError, TypeError, ValueError):
+                # Skip malformed entries but keep the rest.
+                continue
+        if result:
+            return result
+    return []
+
+
+def _model_pricing_table() -> list[tuple[str, dict[str, float]]]:
+    """Return the active pricing table (user overrides + built-in defaults)."""
+    return _load_pricing_overrides() + _BUILTIN_PRICING
+
+
+def _pricing_for(model: str | None) -> tuple[dict[str, float], bool]:
+    """Return ``(rates, is_known)`` for a model id.
+
+    ``is_known=False`` means we fell back to unknown-model rates and the
+    caller may want to flag the span so downstream consumers can tell.
+    """
+    if isinstance(model, str):
+        m = model.lower()
+        for key, table in _model_pricing_table():
+            if key in m:
+                return table, True
+    return _UNKNOWN_MODEL_RATES, False
+
+
+def _estimate_cost_usd(
+    *,
+    model: str | None,
+    input_tokens: int,
+    output_tokens: int,
+    cache_read: int,
+    cache_creation: int,
+) -> tuple[float | None, bool]:
+    """Estimate per-call USD cost, returning ``(cost_usd, used_fallback)``.
+
+    Returns ``(None, False)`` when there were no tokens to price.
+    """
+    if not any((input_tokens, output_tokens, cache_read, cache_creation)):
+        return None, False
+    rates, is_known = _pricing_for(model)
+    cost = (
+        input_tokens / 1_000_000 * rates["input"]
+        + output_tokens / 1_000_000 * rates["output"]
+        + cache_read / 1_000_000 * rates["cache_read"]
+        + cache_creation / 1_000_000 * rates["cache_creation"]
+    )
+    return cost, not is_known
 
 
 class ClaudeSessionImportError(RuntimeError):
@@ -107,7 +217,7 @@ def import_claude_session(
     session_info = _maybe_get_session_info(sdk, session_id, directory)
     session_messages = _load_session_messages(sdk, session_id, directory)
     if not session_messages:
-        raise ClaudeSessionImportError(f"No Claude session messages found for session '{session_id}'")
+        raise ClaudeSessionImportError(_session_not_found_message(session_id, directory))
 
     # The SDK strips timestamps from SessionMessage objects, so read them
     # directly from the raw ~/.claude/projects/<slug>/<session_id>.jsonl
@@ -135,6 +245,7 @@ def import_claude_session(
         output_data=_last_assistant_payload(session_messages),
     )
     _apply_trace_bounds(root_span, jsonl)
+    _annotate_completion_signal(root_span, trace, jsonl)
     trace.add_span(root_span)
 
     for span in _assistant_spans(
@@ -167,14 +278,68 @@ def import_claude_session(
 
 
 def _load_sdk_module() -> Any:
-    """Import the Claude SDK package lazily."""
+    """Import the Claude SDK package lazily.
+
+    Also asserts that the installed version falls in the range we have
+    verified against. The importer relies on ``get_session_messages`` and
+    the JSONL layout, both of which have been known to shift between minor
+    SDK releases — failing loudly here is far better than silently
+    producing wrong numbers.
+    """
     try:
         import claude_agent_sdk as sdk
     except ImportError as exc:
         raise ClaudeSessionImportError(
-            "Claude session import requires 'claude-agent-sdk' to be installed"
+            "Claude session import requires 'claude-agent-sdk'. "
+            "Install with: pip install 'agentguard[claude]'"
         ) from exc
+    _assert_sdk_version_supported(sdk)
     return sdk
+
+
+# Narrow range we have verified. Must stay in sync with pyproject.toml's
+# ``claude`` extra. When bumping this, update tests/test_claude_sdk_contract.py
+# so new SDK shape regressions are caught.
+_SDK_MIN_VERSION: tuple[int, int, int] = (0, 5, 0)
+_SDK_MAX_EXCLUSIVE: tuple[int, int, int] = (0, 8, 0)
+
+
+def _assert_sdk_version_supported(sdk: Any) -> None:
+    """Raise ``ClaudeSessionImportError`` if the installed SDK is out of range.
+
+    Unknown / unparseable versions are allowed through with a best-effort
+    check to avoid blocking development builds; mismatched known versions
+    fail loudly with an actionable upgrade command.
+    """
+    raw = getattr(sdk, "__version__", None)
+    if not isinstance(raw, str) or not raw:
+        return
+    parsed = _parse_sdk_version(raw)
+    if parsed is None:
+        return
+    if parsed < _SDK_MIN_VERSION or parsed >= _SDK_MAX_EXCLUSIVE:
+        min_s = ".".join(str(p) for p in _SDK_MIN_VERSION)
+        max_s = ".".join(str(p) for p in _SDK_MAX_EXCLUSIVE)
+        raise ClaudeSessionImportError(
+            f"claude-agent-sdk {raw} is outside the verified range "
+            f"[{min_s}, {max_s}). Install a supported version with: "
+            f"pip install 'claude-agent-sdk>={min_s},<{max_s}'"
+        )
+
+
+def _parse_sdk_version(raw: str) -> tuple[int, int, int] | None:
+    """Parse ``MAJOR.MINOR.PATCH`` prefixes into a comparable tuple."""
+    head = raw.split("+", 1)[0].split("-", 1)[0]
+    parts = head.split(".")
+    if len(parts) < 2:
+        return None
+    try:
+        major = int(parts[0])
+        minor = int(parts[1])
+        patch = int(parts[2]) if len(parts) >= 3 else 0
+    except ValueError:
+        return None
+    return (major, minor, patch)
 
 
 def _load_session_messages(sdk: Any, session_id: str, directory: str | None) -> list[Any]:
@@ -469,6 +634,7 @@ def _assistant_spans(
         ts = jsonl.uuid_to_timestamp.get(msg_uuid) if (jsonl and msg_uuid) else None
         usage = jsonl.uuid_to_usage.get(msg_uuid) if (jsonl and msg_uuid) else None
         token_count: int | None = None
+        estimated_cost: float | None = None
         if usage:
             input_tokens = usage.get("input_tokens", 0)
             output_tokens = usage.get("output_tokens", 0)
@@ -486,6 +652,17 @@ def _assistant_spans(
             model = usage.get("model")
             if model:
                 span_metadata["claude.model"] = model
+            estimated_cost, used_fallback_price = _estimate_cost_usd(
+                model=model,
+                input_tokens=input_tokens,
+                output_tokens=output_tokens,
+                cache_read=cache_read,
+                cache_creation=cache_creation,
+            )
+            if estimated_cost is not None:
+                span_metadata["claude.estimated_cost_usd"] = round(estimated_cost, 6)
+                if used_fallback_price:
+                    span_metadata["claude.cost_pricing"] = "fallback"
         span = _new_span(
             name=f"assistant-message-{index}",
             span_type=SpanType.LLM_CALL,
@@ -499,8 +676,97 @@ def _assistant_spans(
         )
         if token_count is not None:
             span.token_count = token_count
+        if estimated_cost is not None:
+            span.estimated_cost_usd = estimated_cost
         spans.append(span)
+    # The Claude SDK silently drops many assistant records the raw JSONL
+    # retains (thinking blocks, tool-result carriers, compaction stubs...).
+    # Re-emit those so token totals and cost-yield match ground truth.
+    spans.extend(
+        _reconcile_missing_usage_spans(
+            trace_id=trace_id,
+            parent_span_id=parent_span_id,
+            metadata=metadata,
+            jsonl=jsonl,
+            already_seen={
+                m
+                for m in (
+                    _message_uuid(msg)
+                    for msg in messages
+                    if _message_type(msg) == "assistant"
+                )
+                if m
+            },
+            index_offset=sum(1 for m in messages if _message_type(m) == "assistant"),
+        )
+    )
     return spans
+
+
+def _reconcile_missing_usage_spans(
+    *,
+    trace_id: str,
+    parent_span_id: str,
+    metadata: dict[str, Any],
+    jsonl: "_JsonlIndex | None",
+    already_seen: set[str],
+    index_offset: int,
+) -> list[Span]:
+    """Emit LLM spans for usage-bearing JSONL entries the SDK omitted."""
+    if not jsonl or not jsonl.uuid_to_usage:
+        return []
+    extras: list[Span] = []
+    counter = index_offset
+    for uuid, usage in jsonl.uuid_to_usage.items():
+        if uuid in already_seen:
+            continue
+        input_tokens = int(usage.get("input_tokens") or 0)
+        output_tokens = int(usage.get("output_tokens") or 0)
+        cache_read = int(usage.get("cache_read_input_tokens") or 0)
+        cache_creation = int(usage.get("cache_creation_input_tokens") or 0)
+        if not any((input_tokens, output_tokens, cache_read, cache_creation)):
+            continue
+        counter += 1
+        span_metadata = dict(metadata)
+        span_metadata["claude.message_uuid"] = uuid
+        span_metadata["claude.source"] = "jsonl_reconcile"
+        span_metadata["claude.usage.input_tokens"] = input_tokens
+        span_metadata["claude.usage.output_tokens"] = output_tokens
+        if cache_read:
+            span_metadata["claude.usage.cache_read_input_tokens"] = cache_read
+        if cache_creation:
+            span_metadata["claude.usage.cache_creation_input_tokens"] = cache_creation
+        model = usage.get("model")
+        if isinstance(model, str) and model:
+            span_metadata["claude.model"] = model
+        estimated_cost, used_fallback = _estimate_cost_usd(
+            model=model if isinstance(model, str) else None,
+            input_tokens=input_tokens,
+            output_tokens=output_tokens,
+            cache_read=cache_read,
+            cache_creation=cache_creation,
+        )
+        if estimated_cost is not None:
+            span_metadata["claude.estimated_cost_usd"] = round(estimated_cost, 6)
+            if used_fallback:
+                span_metadata["claude.cost_pricing"] = "fallback"
+        ts = jsonl.uuid_to_timestamp.get(uuid)
+        span = _new_span(
+            name=f"assistant-message-{counter}",
+            span_type=SpanType.LLM_CALL,
+            trace_id=trace_id,
+            parent_span_id=parent_span_id,
+            metadata=span_metadata,
+            started_at=ts,
+            ended_at=ts,
+        )
+        total = input_tokens + output_tokens + cache_read + cache_creation
+        if total > 0:
+            span.token_count = total
+        if estimated_cost is not None:
+            span.estimated_cost_usd = estimated_cost
+        extras.append(span)
+    return extras
 
 
 def _add_subagent_spans(
@@ -578,11 +844,23 @@ def _add_subagent_spans(
         )
         trace.add_span(agent_span)
         imported_count += 1
+        subagent_jsonl = _load_raw_jsonl_for_subagent(session_id, agent_name)
         for span in _assistant_spans(
             messages=agent_messages,
             trace_id=session_id,
             parent_span_id=agent_span.span_id,
             metadata={"runtime": "claude_sdk", "claude.scope": "subagent", "claude.agent_id": agent_name},
+            jsonl=subagent_jsonl,
+        ):
+            trace.add_span(span)
+        # Subagent transcripts carry their own tool_use/tool_result pairs.
+        # Without emitting tool_wait spans here the bottleneck/critical-path
+        # analyses only see main-session tool waits (typically <50% of the
+        # total) and misattribute the true slow tools.
+        for span in _tool_wait_spans(
+            jsonl=subagent_jsonl,
+            trace_id=session_id,
+            parent_span_id=agent_span.span_id,
         ):
             trace.add_span(span)
     trace.metadata["claude.subagent_imported_count"] = imported_count
@@ -611,6 +889,7 @@ class _JsonlIndex:
     first_timestamp: str | None
     last_timestamp: str | None
     uuid_to_usage: dict[str, dict[str, Any]]
+    last_stop_reason: str | None = None
 
 
 _EMPTY_JSONL_INDEX = _JsonlIndex(
@@ -620,6 +899,7 @@ _EMPTY_JSONL_INDEX = _JsonlIndex(
     first_timestamp=None,
     last_timestamp=None,
     uuid_to_usage={},
+    last_stop_reason=None,
 )
 
 
@@ -631,6 +911,33 @@ def _claude_projects_dir() -> Path:
     else:
         base = Path(unicodedata.normalize("NFC", str(Path.home() / ".claude")))
     return base / "projects"
+
+
+def _session_not_found_message(session_id: str, directory: str | None) -> str:
+    """Build an actionable error listing every path we actually checked.
+
+    Users consistently hit this error when Claude stores sessions in a
+    non-default directory (WSL, containerised dev, shared workstations).
+    Listing the real search paths turns a mystery into a one-line fix.
+    """
+    projects_dir = _claude_projects_dir()
+    lines = [
+        f"No Claude session messages found for session '{session_id}'.",
+        "Checked:",
+        f"  - SDK default lookup (directory={directory!r})",
+        f"  - {projects_dir}/*/{session_id}.jsonl",
+    ]
+    env_override = os.environ.get("CLAUDE_CONFIG_DIR")
+    if env_override:
+        lines.append(f"  - CLAUDE_CONFIG_DIR={env_override}")
+    lines.extend([
+        "",
+        "Fixes to try:",
+        "  1. agentguard list-claude-sessions --all --group-by-project",
+        "  2. Pass --directory <project-dir> that was the cwd when Claude ran",
+        "  3. Set CLAUDE_CONFIG_DIR=<path> if sessions live outside ~/.claude",
+    ])
+    return "\n".join(lines)
 
 
 def _load_raw_jsonl_for_session(session_id: str, directory: str | None) -> _JsonlIndex:
@@ -664,6 +971,29 @@ def _load_raw_jsonl_for_session(session_id: str, directory: str | None) -> _Json
     return _parse_session_jsonl(candidate)
 
 
+def _load_raw_jsonl_for_subagent(session_id: str, agent_id: str) -> _JsonlIndex:
+    """Parse ``<session>/subagents/agent-<id>.jsonl`` when present.
+
+    Subagent transcripts live in a sibling folder to the main session JSONL.
+    Without parsing them, every subagent LLM span is imported without usage
+    or model metadata and the cost-yield analysis silently under-counts.
+    """
+    projects_dir = _claude_projects_dir()
+    if not projects_dir.is_dir():
+        return _EMPTY_JSONL_INDEX
+    target = f"agent-{agent_id}.jsonl"
+    try:
+        for project_dir in projects_dir.iterdir():
+            if not project_dir.is_dir():
+                continue
+            candidate = project_dir / session_id / "subagents" / target
+            if candidate.is_file():
+                return _parse_session_jsonl(candidate)
+    except OSError:
+        return _EMPTY_JSONL_INDEX
+    return _EMPTY_JSONL_INDEX
+
+
 def _parse_session_jsonl(path: Path) -> _JsonlIndex:
     """Parse a Claude session JSONL file into a timestamp/tool index."""
     uuid_to_timestamp: dict[str, str] = {}
@@ -672,6 +1002,7 @@ def _parse_session_jsonl(path: Path) -> _JsonlIndex:
     uuid_to_usage: dict[str, dict[str, Any]] = {}
     first_ts: str | None = None
     last_ts: str | None = None
+    last_stop_reason: str | None = None
 
     try:
         raw = path.read_text(encoding="utf-8", errors="replace")
@@ -718,6 +1049,11 @@ def _parse_session_jsonl(path: Path) -> _JsonlIndex:
                 if isinstance(model, str) and model:
                     record_usage["model"] = model
                 uuid_to_usage[uuid] = record_usage
+            # Track the most recent assistant stop_reason — this is the raw
+            # Q4 completion signal (end_turn vs. max_tokens vs. error).
+            stop_reason = message.get("stop_reason")
+            if isinstance(stop_reason, str) and stop_reason:
+                last_stop_reason = stop_reason
 
         if not isinstance(content, list):
             continue
@@ -752,6 +1088,7 @@ def _parse_session_jsonl(path: Path) -> _JsonlIndex:
         first_timestamp=first_ts,
         last_timestamp=last_ts,
         uuid_to_usage=uuid_to_usage,
+        last_stop_reason=last_stop_reason,
     )
 
 
@@ -761,6 +1098,132 @@ def _apply_trace_bounds(root_span: Span, jsonl: _JsonlIndex) -> None:
         return
     root_span.started_at = jsonl.first_timestamp
     root_span.ended_at = jsonl.last_timestamp or jsonl.first_timestamp
+
+
+# Map the assistant stop_reason to a 0–1 Q4 completion signal.
+# end_turn is a clean end; tool_use / stop_sequence also indicate the
+# model chose to stop on purpose. max_tokens means the reply was truncated
+# by the provider, which is the single most common "paid for nothing"
+# failure mode and must drag yield down. Error / refusal bottom the scale.
+_STOP_REASON_SIGNAL: dict[str, float] = {
+    "end_turn": 1.0,
+    "stop_sequence": 0.9,
+    "tool_use": 0.85,
+    "pause_turn": 0.6,
+    "max_tokens": 0.35,
+    "refusal": 0.2,
+    "error": 0.15,
+}
+
+
+def _annotate_completion_signal(
+    root_span: Span, trace: ExecutionTrace, jsonl: _JsonlIndex
+) -> None:
+    """Expose Q4 completion signals derived from the final assistant turn.
+
+    Two signals are produced:
+
+    1. ``claude.stop_reason`` — raw stop reason from the last assistant
+       message (``end_turn`` / ``max_tokens`` / ``error`` / …).
+    2. ``claude.deliverables`` — count of concrete artifact references
+       extracted from the final assistant payload (file paths, code
+       fences, URLs). A session that ended cleanly *and* produced
+       artifacts scores higher than one that ended cleanly with no
+       tangible output.
+
+    The numeric ``claude.completion_signal`` / ``claude.quality`` values
+    blend both inputs so the analyser's cost-yield calculation can no
+    longer treat a "nice reply with nothing shipped" as success.
+    """
+    reason = jsonl.last_stop_reason
+    if reason:
+        root_span.metadata["claude.stop_reason"] = reason
+        trace.metadata["claude.stop_reason"] = reason
+
+    deliverables = _extract_deliverable_refs(root_span.output_data)
+    if deliverables:
+        sample = sorted(deliverables)[:5]
+        root_span.metadata["claude.deliverables"] = sample
+        trace.metadata["claude.deliverables"] = sample
+        trace.metadata["claude.deliverables_count"] = len(deliverables)
+
+    if not reason:
+        return
+    base = _STOP_REASON_SIGNAL.get(reason)
+    if base is None:
+        return
+    # No deliverables → treat a "clean" stop as only partially successful.
+    # With ≥ 1 deliverable, scale up modestly; saturate at 1.0.
+    if deliverables:
+        signal = min(1.0, base + 0.05 * min(len(deliverables), 3))
+    else:
+        signal = base * 0.7
+    # Metadata key split on "." → "quality" is recognised by the analyzer
+    # as an explicit numeric quality signal with weight 1.0.
+    root_span.metadata["claude.quality"] = signal
+    trace.metadata["claude.completion_signal"] = signal
+
+
+# Regexes compiled once — the final assistant payload is scanned to
+# detect concrete artifact references, which is the strongest passive
+# signal that the agent actually produced something.
+_DELIVERABLE_CODE_FENCE = re.compile(r"```[\w+-]*\n", re.MULTILINE)
+_DELIVERABLE_FILE_PATH = re.compile(
+    r"(?:^|[\s(\[`'\"])"  # preceded by boundary
+    r"((?:\.{1,2}/|/)?[\w.-]+/[\w./-]+\.[A-Za-z0-9]{1,6})"  # a/b.ext or ./a.md
+    r"(?=$|[\s)\]`'\",:;])",  # followed by boundary
+    re.MULTILINE,
+)
+_DELIVERABLE_URL = re.compile(r"https?://[\w./\-%?#=&+]+")
+
+
+def _extract_deliverable_refs(payload: Any) -> set[str]:
+    """Return a set of artifact references found in ``payload``.
+
+    Looks for file paths, fenced code blocks, and URLs. Kept
+    intentionally conservative: short identifiers that happen to look
+    like paths are rejected because they dominate false positives in
+    real assistant chatter.
+    """
+    text = _flatten_payload_to_text(payload)
+    if not text:
+        return set()
+    refs: set[str] = set()
+    for match in _DELIVERABLE_FILE_PATH.finditer(text):
+        path = match.group(1)
+        if len(path) >= 4:
+            refs.add(path)
+    for match in _DELIVERABLE_URL.finditer(text):
+        refs.add(match.group(0))
+    fence_count = len(_DELIVERABLE_CODE_FENCE.findall(text))
+    for i in range(min(fence_count, 3)):
+        refs.add(f"<code-block-{i + 1}>")
+    return refs
+
+
+def _flatten_payload_to_text(payload: Any) -> str:
+    """Flatten a Claude assistant payload (usually a list of blocks) to text."""
+    if payload is None:
+        return ""
+    if isinstance(payload, str):
+        return payload
+    if isinstance(payload, list):
+        parts = []
+        for block in payload:
+            if isinstance(block, dict):
+                if block.get("type") == "text":
+                    value = block.get("text")
+                    if isinstance(value, str):
+                        parts.append(value)
+                elif block.get("type") == "tool_use":
+                    # tool_use inputs commonly include file paths.
+                    tool_input = block.get("input")
+                    if isinstance(tool_input, dict):
+                        parts.append(json.dumps(tool_input, default=str))
+        return "\n".join(parts)
+    if isinstance(payload, dict):
+        return json.dumps(payload, default=str)
+    return str(payload)
 
 
 def _tool_wait_spans(

@@ -13,7 +13,7 @@ Given a multi-agent execution trace, these functions answer:
 from __future__ import annotations
 
 import re
-from collections.abc import Callable
+from collections.abc import Callable, Iterable
 from dataclasses import dataclass, field
 from typing import Any
 
@@ -1027,13 +1027,18 @@ def _tokenize_key_name(key: str) -> set[str]:
 def _infer_critical_keys(data: Any, explicit_keys: list[str] | None = None) -> list[str]:
     """Infer likely critical context keys conservatively.
 
-    Explicit keys always win. Heuristics focus on intent, constraints,
-    routing criteria, and evidence-related fields.
+    Explicit keys always win; trace-learned keys (populated by
+    :func:`_learn_critical_keys_from_trace` and stored in the active
+    trace's metadata) are checked next; a small English-keyword
+    heuristic is the final fallback so tests that don't set learned
+    keys still get a reasonable answer.
     """
     if explicit_keys:
         return sorted({str(key) for key in explicit_keys if key})
     if not isinstance(data, dict):
         return []
+    payload_keys = {str(k) for k in data if isinstance(k, str)}
+    learned = _current_learned_critical_keys() & payload_keys
     keywords = {
         "query", "question", "task", "goal", "request", "requirement",
         "requirements", "constraint", "constraints", "policy", "plan",
@@ -1043,12 +1048,20 @@ def _infer_critical_keys(data: Any, explicit_keys: list[str] | None = None) -> l
         "sources", "document", "documents", "claim", "claims", "passage",
         "passages", "quote", "quotes",
     }
-    critical: list[str] = []
+    heuristic: set[str] = set()
     for key in data:
         tokens = _tokenize_key_name(str(key))
         if tokens & keywords:
-            critical.append(str(key))
-    return sorted(critical)
+            heuristic.add(str(key))
+    return sorted(learned | heuristic)
+
+
+_LEARNED_KEYS_STATE: dict[str, frozenset[str]] = {}
+
+
+def _current_learned_critical_keys() -> set[str]:
+    """Return the learned critical-key set for the trace being analysed."""
+    return set(_LEARNED_KEYS_STATE.get("keys", frozenset()))
 
 
 def _critical_key_loss(
@@ -1620,18 +1633,93 @@ def analyze_context_flow(trace: ExecutionTrace) -> ContextFlowReport:
     Returns:
         ContextFlowResult with anomalies (loss, bloat, mutation) at handoff points.
     """
+    # Learn which keys this particular trace actually relies on before we
+    # walk handoffs — otherwise every trace uses the same English-keyword
+    # heuristic and misses domain-specific criticals like ``file_list`` or
+    # ``navigation_tree`` entirely.
+    learned = _learn_critical_keys_from_trace(trace)
+    if learned:
+        trace.metadata.setdefault("context.learned_critical_keys", sorted(learned))
     handoff_spans = [s for s in trace.spans if s.span_type == SpanType.HANDOFF]
     children_map = _build_children_span_map(trace)
-    points = (
-        _trace_explicit_handoffs(handoff_spans, trace, children_map)
-        if handoff_spans else _trace_inferred_handoffs(trace, children_map)
-    )
+    _LEARNED_KEYS_STATE["keys"] = frozenset(learned)
+    try:
+        points = (
+            _trace_explicit_handoffs(handoff_spans, trace, children_map)
+            if handoff_spans else _trace_inferred_handoffs(trace, children_map)
+        )
+    finally:
+        _LEARNED_KEYS_STATE.pop("keys", None)
 
     return ContextFlowReport(
         handoff_count=len(points),
         total_context_bytes=sum(p.size_bytes for p in points),
         points=points,
         anomalies=[p for p in points if p.anomaly != "ok"],
+    )
+
+
+def _learn_critical_keys_from_trace(trace: ExecutionTrace) -> set[str]:
+    """Learn trace-specific critical keys from observed span I/O.
+
+    A key is promoted as critical when it is *both*:
+      1. produced (appears in span output_data), and
+      2. consumed by ≥ 2 downstream spans (appears in later span input_data
+         or referenced textually in the input payload).
+
+    This is conservative: trivial keys like ``id`` or ``result`` that
+    appear once in passing won't cross the threshold, while
+    domain-specific anchors like ``file_list`` in a docs-navigation
+    session do.
+    """
+    produced_at: dict[str, int] = {}
+    consumed_at: dict[str, int] = {}
+    for idx, span in enumerate(trace.spans):
+        for key in _iter_top_level_keys(span.output_data):
+            produced_at.setdefault(key, idx)
+        input_keys = set(_iter_top_level_keys(span.input_data))
+        input_text = _payload_text(span.input_data)
+        for key, first_idx in produced_at.items():
+            if idx <= first_idx:
+                continue
+            if key in input_keys or _looks_referenced(key, input_text):
+                consumed_at[key] = consumed_at.get(key, 0) + 1
+    # Require ≥ 2 downstream consumers so one-off echoes don't pass.
+    return {key for key, count in consumed_at.items() if count >= 2}
+
+
+def _iter_top_level_keys(payload: Any) -> Iterable[str]:
+    """Yield user-visible top-level key names from a trace payload."""
+    if isinstance(payload, dict):
+        for key in payload:
+            if isinstance(key, str) and key and not key.startswith("_"):
+                yield key
+
+
+def _payload_text(payload: Any) -> str:
+    """Flatten a payload to a searchable lowercase string (bounded)."""
+    if payload is None:
+        return ""
+    if isinstance(payload, str):
+        return payload[:4096].lower()
+    try:
+        import json as _json
+        return _json.dumps(payload, default=str)[:4096].lower()
+    except (TypeError, ValueError):
+        return str(payload)[:4096].lower()
+
+
+def _looks_referenced(key: str, text: str) -> bool:
+    """Return True if ``key`` appears as a word/identifier in ``text``."""
+    if not text or not key:
+        return False
+    lowered = key.lower()
+    # Require a word-boundary-ish match to avoid spurious substring hits.
+    return (
+        f'"{lowered}"' in text
+        or f"'{lowered}'" in text
+        or f" {lowered}" in text
+        or text.startswith(lowered)
     )
 
 
