@@ -1,12 +1,38 @@
 __pycache__/
 *.py[cod]
 *.egg-info/
+*.egg
 dist/
 build/
 .agentguard/
 .venv/
+venv/
 .env
-*.egg
+.env.local
+
+# Tooling caches (project-local; add explicitly so they don't rely on
+# each developer's global gitignore).
+.pytest_cache/
+.ruff_cache/
+.mypy_cache/
+.pyright/
+.tox/
+.nox/
+
+# Coverage
+.coverage
+.coverage.*
+htmlcov/
+coverage.xml
+
+# Editor / OS junk
+.DS_Store
+Thumbs.db
+*.swp
+*.swo
+.idea/
+.vscode/
+*.code-workspace
 
 # Test cache
 .hypothesis/
