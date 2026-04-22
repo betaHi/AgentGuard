@@ -165,12 +165,11 @@ def test_diagnose_flags_the_failed_tool_and_its_parent():
 
     assert report.failures is not None
     failed_names = {rc.span_name for rc in report.failures.root_causes}
-    # Either the tool itself or its parent agent (the propagated failure)
-    # must surface as a root cause — the analyzer picks the originating
-    # span, which depending on heuristics can be either. The contract is
-    # that the failure is NOT silently dropped.
-    assert failed_names & {"flaky-api", "worker-bad"}, (
-        f"at least one failing span must surface as a root cause; got {failed_names}"
+    # Root cause must be the originating *tool*, not the propagated parent
+    # agent. A failure analyzer that reports "worker-bad" when the real
+    # culprit is "flaky-api" wastes the user's time.
+    assert "flaky-api" in failed_names, (
+        f"root cause must be the deepest failing span; got {failed_names}"
     )
     # Score must reflect the failure, not come back at 100.
     assert report.score.overall < 100

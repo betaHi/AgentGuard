@@ -191,6 +191,10 @@ Agents, tools, subagents, LLM calls, handoffs, token usage, cache hit/miss, tool
 - [API reference](docs/api-reference.md)
 - [Examples](docs/examples.md)
 
+## Privacy
+
+AgentGuard runs entirely locally. It never uploads traces, prompts, or session content, and has no telemetry. See [SECURITY.md](SECURITY.md) for the full data-handling note.
+
 ## License
 
 MIT — see [LICENSE](LICENSE).

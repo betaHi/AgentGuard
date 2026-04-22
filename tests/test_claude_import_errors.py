@@ -37,7 +37,7 @@ def test_import_raises_actionable_error_when_session_empty(tmp_path, monkeypatch
     monkeypatch.delenv("CLAUDE_CONFIG_DIR", raising=False)
 
     fake = types.ModuleType("claude_agent_sdk")
-    fake.__version__ = "0.5.0"
+    fake.__version__ = "0.1.65"
     fake.get_session_messages = lambda sid, directory=None: []
     fake.get_session_info = lambda sid, directory=None: None
     monkeypatch.setitem(sys.modules, "claude_agent_sdk", fake)

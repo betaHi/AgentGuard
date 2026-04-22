@@ -19,5 +19,8 @@ def test_pyproject_description_matches_diagnostics_direction() -> None:
 
 def test_top_level_package_docstring_mentions_diagnostics() -> None:
     assert agentguard.__doc__ is not None
-    assert "diagnostics for multi-agent orchestration" in agentguard.__doc__.lower()
-    assert "claude live runtime capture" in agentguard.__doc__.lower()
+    doc = agentguard.__doc__.lower()
+    assert "diagnostics for multi-agent orchestration" in doc
+    # The docstring must point at the recommended entry point so new users
+    # can start without reading any other file.
+    assert "diagnose_claude_session" in doc

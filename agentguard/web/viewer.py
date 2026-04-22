@@ -897,6 +897,18 @@ def _render_context_flow_panel(ctx: Any) -> str:
             parts.append(
                 f'<div class="dim" style="margin-left:14px">keys lost: {preview}{more}</div>'
             )
+        source = getattr(p, "critical_key_source", "") or ""
+        critical_lost = getattr(p, "critical_keys_lost", None) or []
+        if critical_lost and source:
+            label = {
+                "explicit": "user-declared critical keys",
+                "learned":  "keys learned from ≥2 occurrences in this trace",
+                "heuristic": "keys matched by name heuristic",
+            }.get(source, source)
+            parts.append(
+                f'<div class="dim" style="margin-left:14px">'
+                f'why flagged: {_esc(label)}</div>'
+            )
     return "".join(parts)
 
 

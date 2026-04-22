@@ -1194,6 +1194,33 @@ def _doctor_check_claude_readiness(all_ok: bool) -> bool:
     except (ImportError, ValueError) as e:
         print(f"  {C.YELLOW}⚠{C.RESET} Pricing table date unreadable: {e}")
 
+    # (d) Claude Code plugin install (~/.claude/plugins/agentguard-claude-code).
+    plugin_dir = Path.home() / ".claude" / "plugins" / "agentguard-claude-code"
+    if plugin_dir.is_dir():
+        manifest = plugin_dir / ".claude-plugin" / "plugin.json"
+        if manifest.is_file():
+            try:
+                data = json.loads(manifest.read_text(encoding="utf-8"))
+                version = data.get("version", "?")
+                print(
+                    f"  {C.GREEN}✓{C.RESET} Claude Code plugin {version} "
+                    f"at {plugin_dir}"
+                )
+            except (OSError, json.JSONDecodeError) as e:
+                print(
+                    f"  {C.YELLOW}⚠{C.RESET} Plugin manifest unreadable: {e}"
+                )
+        else:
+            print(
+                f"  {C.YELLOW}⚠{C.RESET} Plugin directory present but "
+                f"manifest missing at {manifest}"
+            )
+    else:
+        print(
+            f"  {C.DIM}·{C.RESET} Claude Code plugin not installed "
+            f"(optional — /plugin install agentguard@agentguard)"
+        )
+
     return all_ok
 
 

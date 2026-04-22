@@ -27,7 +27,7 @@ from agentguard.core.trace import ExecutionTrace, Span, SpanStatus, SpanType
 # ``_BUILTIN_PRICING_DATE`` is the ISO date the built-in table was last
 # reviewed against vendor list prices. Bump it whenever the rates below
 # change. The viewer surfaces it so users can judge staleness at a glance.
-_BUILTIN_PRICING_DATE = "2025-01-15"
+_BUILTIN_PRICING_DATE = "2026-04-22"
 _BUILTIN_PRICING: list[tuple[str, dict[str, float]]] = [
     # Anthropic Claude family
     ("opus",   {"input": 15.0, "output": 75.0, "cache_read": 1.50, "cache_creation": 18.75}),
@@ -179,7 +179,7 @@ def list_claude_sessions(
     list_sessions = getattr(sdk, "list_sessions", None)
     if list_sessions is None:
         raise ClaudeSessionImportError(
-            "Installed claude-agent-sdk does not expose list_sessions()"
+            _sdk_helper_missing_message("list_sessions")
         )
     sessions = _coerce_list(
         _call_sdk_helper(
@@ -282,6 +282,26 @@ def import_claude_session(
     return trace
 
 
+def _sdk_helper_missing_message(helper_name: str) -> str:
+    """Standard wording for a required SDK helper being absent.
+
+    Users hitting this message are always in one of three states:
+    (1) SDK version too old for the helper, (2) SDK version too new
+    (helper was renamed), or (3) running against a fork. Every copy of
+    this message must spell all three out so the user can unstick
+    themselves without reading our source.
+    """
+    min_s = ".".join(str(p) for p in _SDK_MIN_VERSION)
+    max_s = ".".join(str(p) for p in _SDK_MAX_EXCLUSIVE)
+    return (
+        f"The installed claude-agent-sdk does not expose {helper_name}(). "
+        f"This usually means the SDK is older than the range AgentGuard "
+        f"supports. Fix with: pip install 'claude-agent-sdk>={min_s},<{max_s}'. "
+        f"If you're on a custom or vendored SDK fork, confirm it still "
+        f"exports {helper_name}()."
+    )
+
+
 def _load_sdk_module() -> Any:
     """Import the Claude SDK package lazily.
 
@@ -305,8 +325,8 @@ def _load_sdk_module() -> Any:
 # Narrow range we have verified. Must stay in sync with pyproject.toml's
 # ``claude`` extra. When bumping this, update tests/test_claude_sdk_contract.py
 # so new SDK shape regressions are caught.
-_SDK_MIN_VERSION: tuple[int, int, int] = (0, 5, 0)
-_SDK_MAX_EXCLUSIVE: tuple[int, int, int] = (0, 8, 0)
+_SDK_MIN_VERSION: tuple[int, int, int] = (0, 1, 0)
+_SDK_MAX_EXCLUSIVE: tuple[int, int, int] = (0, 2, 0)
 
 
 def _assert_sdk_version_supported(sdk: Any) -> None:
@@ -352,7 +372,7 @@ def _load_session_messages(sdk: Any, session_id: str, directory: str | None) -> 
     get_session_messages = getattr(sdk, "get_session_messages", None)
     if get_session_messages is None:
         raise ClaudeSessionImportError(
-            "Installed claude-agent-sdk does not expose get_session_messages()"
+            _sdk_helper_missing_message("get_session_messages")
         )
     messages = _call_sdk_helper(
         get_session_messages,
@@ -401,7 +421,9 @@ def _call_sdk_helper(
 ) -> Any:
     """Call a Claude SDK helper across minor signature differences."""
     if not callable(helper):
-        raise ClaudeSessionImportError(f"Claude SDK helper {helper_name}() is unavailable")
+        raise ClaudeSessionImportError(
+            _sdk_helper_missing_message(helper_name)
+        )
     try:
         supported_kwargs = {
             key: value
@@ -415,7 +437,10 @@ def _call_sdk_helper(
         directory = kwargs.get("directory")
         location = f" for directory '{directory}'" if directory else ""
         raise ClaudeSessionImportError(
-            f"Claude SDK {helper_name}() failed{location}: {exc}"
+            f"Claude SDK {helper_name}() failed{location}: {exc}. "
+            f"If this persists, re-run with --claude-projects-dir pointing at "
+            f"the directory that holds your .claude/projects/ tree, or "
+            f"check the JSONL file for corruption."
         ) from exc
 
 def _helper_accepts_keyword(helper: Any, keyword: str) -> bool:
@@ -442,13 +467,18 @@ def _coerce_list(value: Any, helper_name: str) -> list[Any]:
         return list(value)
     if isinstance(value, (str, bytes, dict)):
         raise ClaudeSessionImportError(
-            f"Claude SDK {helper_name}() returned a non-list result"
+            f"Claude SDK {helper_name}() returned a non-list result "
+            f"(got {type(value).__name__}). Expected list/tuple. "
+            f"This usually signals an SDK version mismatch — verify your "
+            f"claude-agent-sdk is in the range declared by AgentGuard."
         )
     try:
         return list(value)
     except TypeError as exc:
         raise ClaudeSessionImportError(
-            f"Claude SDK {helper_name}() returned a non-list result"
+            f"Claude SDK {helper_name}() returned a non-iterable result "
+            f"({type(value).__name__}). This usually signals an SDK version "
+            f"mismatch; please confirm your installed version."
         ) from exc
 
 

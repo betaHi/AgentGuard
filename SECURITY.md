@@ -22,3 +22,21 @@ AgentGuard is a diagnostics library — it reads trace data but does not execute
 - Trace data serialization/deserialization (pickle, JSON)
 - File system access (trace storage, HTML report generation)
 - CLI command injection (user-provided paths)
+
+## Data handling & privacy
+
+AgentGuard operates **entirely locally**. The core and SDK have zero external dependencies; the only optional dependency is `claude-agent-sdk`, which is itself a local-only client library.
+
+- **No network calls.** The library never uploads traces, prompts, tool calls, or any session content. There is no telemetry and no phone-home.
+- **Input surfaces.** When you run `agentguard diagnose-claude-session`, the tool reads `~/.claude/projects/<slug>/<id>.jsonl` — the same file Claude Code wrote to your disk. These JSONL files typically contain your prompts, tool outputs, and file contents. Treat every AgentGuard trace/report as being at least as sensitive as the original session.
+- **Output surfaces.** Two files are produced, both written to paths you control:
+  - A trace JSON (defaults under `.agentguard/traces/`).
+  - An HTML report (same directory as the trace unless overridden with `--report-output`).
+  Neither file is compressed or obfuscated — open them in a text editor to see exactly what would be shared if you emailed them to a colleague.
+- **Sharing reports.** Before passing a report outside your machine, remember it may contain:
+  - The first/last prompts of the session.
+  - Tool inputs/outputs (filenames, shell commands, code snippets, API responses).
+  - Model ids, token counts, and timing.
+  If you need to scrub sensitive fields, redact the source JSONL before importing.
+- **Pricing & cost numbers.** Cost figures are computed locally from the pricing table declared in `agentguard/runtime/claude/session_import.py::_BUILTIN_PRICING`. Override with `AGENTGUARD_PRICING_FILE=/path/to/pricing.json` if you need region- or contract-specific rates. No rates are fetched from the network.
+- **Running against shared / CI machines.** Treat `.agentguard/traces/` and any generated HTML as build artifacts: exclude them from git, or rely on the `.gitignore` patterns the `agentguard init` command sets up.

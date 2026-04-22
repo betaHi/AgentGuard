@@ -46,15 +46,15 @@ def _fake_sdk(version: str | None) -> object:
 
 
 def test_supported_version_passes():
-    _assert_sdk_version_supported(_fake_sdk("0.5.0"))
-    _assert_sdk_version_supported(_fake_sdk("0.7.9"))
+    _assert_sdk_version_supported(_fake_sdk("0.1.0"))
+    _assert_sdk_version_supported(_fake_sdk("0.1.65"))
 
 
 def test_too_old_version_is_rejected_with_install_hint():
     with pytest.raises(ClaudeSessionImportError) as excinfo:
-        _assert_sdk_version_supported(_fake_sdk("0.4.0"))
+        _assert_sdk_version_supported(_fake_sdk("0.0.23"))
     msg = str(excinfo.value)
-    assert "0.4.0" in msg
+    assert "0.0.23" in msg
     assert "pip install" in msg
     assert "claude-agent-sdk" in msg
 

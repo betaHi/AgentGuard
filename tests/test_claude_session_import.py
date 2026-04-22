@@ -254,12 +254,11 @@ def test_import_claude_session_skips_failed_subagent_imports(monkeypatch):
     assert any(span.name == "reviewer" for span in trace.agent_spans)
     assert all(span.name != "planner" for span in trace.agent_spans)
     assert trace.metadata["claude.subagent_imported_count"] == 1
-    assert trace.metadata["claude.subagent_import_skipped"] == [
-        {
-            "agent_id": "planner",
-            "reason": "Claude SDK get_subagent_messages() failed: subagent transcript missing",
-        }
-    ]
+    skipped = trace.metadata["claude.subagent_import_skipped"]
+    assert len(skipped) == 1
+    assert skipped[0]["agent_id"] == "planner"
+    assert "get_subagent_messages() failed" in skipped[0]["reason"]
+    assert "subagent transcript missing" in skipped[0]["reason"]
 
 
 def test_import_claude_session_enriches_spans_with_jsonl_timestamps(monkeypatch, tmp_path):

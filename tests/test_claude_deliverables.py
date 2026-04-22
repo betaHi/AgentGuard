@@ -73,7 +73,7 @@ def _install_stub_sdk(monkeypatch, records):
                 usage=msg.get("usage"),
             ))
     fake = types.ModuleType("claude_agent_sdk")
-    fake.__version__ = "0.5.0"
+    fake.__version__ = "0.1.65"
     fake.get_session_messages = lambda sid, directory=None: assistants
     fake.get_session_info = lambda sid, directory=None: types.SimpleNamespace(
         session_id=sid, cwd=None, task=None,

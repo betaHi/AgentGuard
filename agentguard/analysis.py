@@ -114,16 +114,45 @@ def _find_root_causes(
     parent_map: dict[str, str],
     failed_ids: set[str],
 ) -> list[Span]:
-    """Identify root cause failures — failed spans whose parent did NOT fail.
+    """Identify root cause failures — the deepest failing span in each chain.
 
-    A root cause is a failed span with no parent, or whose parent succeeded.
-    This separates originating failures from downstream propagation.
+    A "root cause" here is the span that actually broke, not the span
+    closest to the trace root. If an agent failed *because* its child tool
+    raised, the tool is the root cause — that is the span the user needs
+    to look at. We therefore walk down from each topmost failed span
+    following the chain of failed descendants, and pick the leaf-most
+    failed span in that chain.
     """
-    root_causes = []
+    parent_map_ids: dict[str, str] = {}
+    children_map: dict[str, list[Span]] = {}
+    # Build a child lookup restricted to the failed set to keep the walk
+    # cheap; the real children_map lives on the caller side.
     for s in failed:
-        parent_id = parent_map.get(s.span_id)
-        if parent_id is None or parent_id not in failed_ids:
-            root_causes.append(s)
+        pid = parent_map.get(s.span_id)
+        if pid is not None:
+            parent_map_ids[s.span_id] = pid
+    failed_by_id = {s.span_id: s for s in failed}
+    for s in failed:
+        pid = parent_map.get(s.span_id)
+        if pid in failed_by_id:
+            children_map.setdefault(pid, []).append(s)
+
+    root_causes: list[Span] = []
+    for s in failed:
+        pid = parent_map.get(s.span_id)
+        if pid is not None and pid in failed_ids:
+            # Not a top — its parent is already carrying the chain.
+            continue
+        # Walk down the chain of failed descendants, picking the leaf.
+        current = s
+        while True:
+            failed_kids = children_map.get(current.span_id, [])
+            if len(failed_kids) != 1:
+                # Zero failed kids → current is the leaf.
+                # >1 failed kids → ambiguous; stop here rather than guess.
+                break
+            current = failed_kids[0]
+        root_causes.append(current)
     return root_causes
 
 
@@ -871,6 +900,14 @@ class ContextFlowPoint:
     semantic_loss_reason: str = ""
     downstream_impact_score: float | None = None  # 0-1: higher = stronger downstream degradation evidence
     downstream_impact_reason: str = ""
+    # Provenance for the critical-key decision. One of:
+    #   "explicit" — user set critical_keys on the trace metadata
+    #   "learned"  — key appeared in ≥2 output_data blocks in this trace
+    #   "heuristic" — English keyword match on the key name
+    #   ""         — no critical keys identified
+    # Surface this in the viewer so users can see WHY the tool flagged a
+    # key as critical — and reject the verdict if the provenance is weak.
+    critical_key_source: str = ""
 
     @property
     def risk_score(self) -> float:
@@ -1033,10 +1070,24 @@ def _infer_critical_keys(data: Any, explicit_keys: list[str] | None = None) -> l
     heuristic is the final fallback so tests that don't set learned
     keys still get a reasonable answer.
     """
+    keys, _ = _infer_critical_keys_with_provenance(data, explicit_keys)
+    return keys
+
+
+def _infer_critical_keys_with_provenance(
+    data: Any, explicit_keys: list[str] | None = None,
+) -> tuple[list[str], str]:
+    """Same as ``_infer_critical_keys`` but also returns a provenance label.
+
+    Returned label is one of ``"explicit"`` / ``"learned"`` /
+    ``"heuristic"`` / ``""`` (when no keys were identified).
+    The label is used to expose the *why* behind each Q2 verdict in the
+    HTML viewer so users can judge the weight of the evidence.
+    """
     if explicit_keys:
-        return sorted({str(key) for key in explicit_keys if key})
+        return sorted({str(key) for key in explicit_keys if key}), "explicit"
     if not isinstance(data, dict):
-        return []
+        return [], ""
     payload_keys = {str(k) for k in data if isinstance(k, str)}
     learned = _current_learned_critical_keys() & payload_keys
     keywords = {
@@ -1053,7 +1104,14 @@ def _infer_critical_keys(data: Any, explicit_keys: list[str] | None = None) -> l
         tokens = _tokenize_key_name(str(key))
         if tokens & keywords:
             heuristic.add(str(key))
-    return sorted(learned | heuristic)
+    merged = sorted(learned | heuristic)
+    if not merged:
+        return [], ""
+    # Learned wins over heuristic for provenance because trace-specific
+    # evidence is stronger than name-guessing.
+    if learned:
+        return merged, "learned"
+    return merged, "heuristic"
 
 
 _LEARNED_KEYS_STATE: dict[str, frozenset[str]] = {}
@@ -1503,6 +1561,8 @@ def _trace_explicit_handoffs(
                 impact_score, impact_reason = _downstream_impact(receiver_span, trace, children_map)
         if impact_reason:
             reason = f"{reason}; downstream impact: {impact_reason}" if reason else f"downstream impact: {impact_reason}"
+        # Explicit handoffs always have the user's hand on the wheel.
+        critical_source = "explicit" if critical_sent else ""
         points.append(ContextFlowPoint(
             from_agent=fr, to_agent=to,
             keys_sent=ctx_keys, size_bytes=ctx_size,
@@ -1520,6 +1580,7 @@ def _trace_explicit_handoffs(
             semantic_loss_reason=reason,
             downstream_impact_score=impact_score,
             downstream_impact_reason=impact_reason,
+            critical_key_source=critical_source,
         ))
     return points
 
@@ -1598,6 +1659,9 @@ def _trace_inferred_handoffs(
                 impact_score, impact_reason = _downstream_impact(receiver, trace, children_map)
             if impact_reason:
                 semantic_reason = f"{semantic_reason}; downstream impact: {impact_reason}" if semantic_reason else f"downstream impact: {impact_reason}"
+            # Resolve the provenance of the critical-key decision so the
+            # viewer can show users *why* these keys were flagged.
+            _, critical_source = _infer_critical_keys_with_provenance(s_out, None)
             points.append(ContextFlowPoint(
                 from_agent=sender.name, to_agent=receiver.name,
                 keys_sent=s_keys, size_bytes=s_size,
@@ -1617,6 +1681,7 @@ def _trace_inferred_handoffs(
                 semantic_loss_reason=semantic_reason,
                 downstream_impact_score=impact_score,
                 downstream_impact_reason=impact_reason,
+                critical_key_source=critical_source,
             ))
     return points
 
