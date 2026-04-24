@@ -37,6 +37,16 @@ Each card in the report carries a one-line verdict so you can read it top-to-bot
   <img src="docs/screenshots/report-handoffs-agents.png" alt="Handoff sparkline and per-agent scorecard" width="960">
 </p>
 
+Or read it right in your terminal — dense, colored, one screen:
+
+<p align="center">
+  <img src="docs/screenshots/diagnose-demo.svg" alt="agentguard diagnose-claude-session — terminal output" width="860">
+</p>
+
+<p align="center">
+  <img src="docs/screenshots/list-sessions-demo.svg" alt="agentguard list-claude-sessions --group-by-project" width="860">
+</p>
+
 ## Install
 
 One prerequisite — [`uv`](https://docs.astral.sh/uv/), the cross-platform Python installer:

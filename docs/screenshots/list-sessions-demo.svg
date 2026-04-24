@@ -1,0 +1,106 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 860 560" font-family="ui-monospace, SFMono-Regular, Menlo, Consolas, monospace" font-size="13">
+  <style>
+    .bg { fill: #0d1117; }
+    .chrome { fill: #161b22; }
+    .dot-r { fill: #ff5f56; }
+    .dot-y { fill: #ffbd2e; }
+    .dot-g { fill: #27c93f; }
+    .title { fill: #8b949e; font-size: 12px; }
+    .fg { fill: #c9d1d9; }
+    .muted { fill: #6e7681; }
+    .bold { font-weight: 700; fill: #f0f6fc; }
+    .green { fill: #7ee787; }
+    .yellow { fill: #f2cc60; }
+    .blue { fill: #79c0ff; }
+    .magenta { fill: #d2a8ff; }
+    .cyan { fill: #56d4dd; }
+    .label { fill: #8b949e; }
+  </style>
+
+  <rect class="bg" width="860" height="560" rx="8"/>
+  <rect class="chrome" width="860" height="28" rx="8"/>
+  <rect class="chrome" y="20" width="860" height="8"/>
+  <circle class="dot-r" cx="16" cy="14" r="5"/>
+  <circle class="dot-y" cx="32" cy="14" r="5"/>
+  <circle class="dot-g" cx="48" cy="14" r="5"/>
+  <text class="title" x="430" y="18" text-anchor="middle">agentguard list-claude-sessions --group-by-project</text>
+
+  <g transform="translate(20 50)">
+    <text y="0"><tspan class="green">$</tspan><tspan class="fg" dx="6">agentguard list-claude-sessions </tspan><tspan class="yellow">--group-by-project</tspan><tspan class="fg" dx="4"> --limit 10</tspan></text>
+
+    <text y="28"><tspan class="bold">━━━ CLAUDE SESSIONS ━━━</tspan><tspan class="muted" dx="8">24 sessions across 3 projects · last 7 days</tspan></text>
+
+    <!-- project 1 -->
+    <text y="60"><tspan class="blue">▸ ~/code/acme-web</tspan><tspan class="muted" dx="6">(12 sessions)</tspan></text>
+    <text y="80">
+      <tspan class="cyan">  7f3a2c1e</tspan>
+      <tspan class="muted" dx="10">2026-04-24 09:42</tspan>
+      <tspan class="green" dx="14">feature/rate-limit</tspan>
+      <tspan class="fg" dx="14">refactor auth module + add rate limiting</tspan>
+    </text>
+    <text y="100">
+      <tspan class="cyan">  9b21d4a8</tspan>
+      <tspan class="muted" dx="10">2026-04-24 08:15</tspan>
+      <tspan class="green" dx="14">main              </tspan>
+      <tspan class="fg" dx="14">fix login redirect after SSO callback</tspan>
+    </text>
+    <text y="120">
+      <tspan class="cyan">  3e07f192</tspan>
+      <tspan class="muted" dx="10">2026-04-23 17:08</tspan>
+      <tspan class="green" dx="14">feature/dashboard </tspan>
+      <tspan class="fg" dx="14">build analytics dashboard widgets</tspan>
+    </text>
+    <text y="140">
+      <tspan class="cyan">  a4c8b051</tspan>
+      <tspan class="muted" dx="10">2026-04-23 14:21</tspan>
+      <tspan class="green" dx="14">main              </tspan>
+      <tspan class="fg" dx="14">bump deps + fix eslint warnings</tspan>
+    </text>
+    <text y="160"><tspan class="muted">  … +8 more</tspan><tspan class="muted" dx="8">(use --limit 20 to see all)</tspan></text>
+
+    <!-- project 2 -->
+    <text y="194"><tspan class="blue">▸ ~/code/agentguard</tspan><tspan class="muted" dx="6">(8 sessions)</tspan></text>
+    <text y="214">
+      <tspan class="cyan">  62bda84e</tspan>
+      <tspan class="muted" dx="10">2026-04-24 10:05</tspan>
+      <tspan class="green" dx="14">main              </tspan>
+      <tspan class="fg" dx="14">beautify terminal diagnose output</tspan>
+    </text>
+    <text y="234">
+      <tspan class="cyan">  d17c4f2b</tspan>
+      <tspan class="muted" dx="10">2026-04-23 22:47</tspan>
+      <tspan class="green" dx="14">release/v0.1.0    </tspan>
+      <tspan class="fg" dx="14">clean-room install verification</tspan>
+    </text>
+    <text y="254">
+      <tspan class="cyan">  0841e6aa</tspan>
+      <tspan class="muted" dx="10">2026-04-23 11:33</tspan>
+      <tspan class="green" dx="14">main              </tspan>
+      <tspan class="fg" dx="14">add sessionend hook + 6 trigger surfaces</tspan>
+    </text>
+    <text y="274"><tspan class="muted">  … +5 more</tspan></text>
+
+    <!-- project 3 -->
+    <text y="308"><tspan class="blue">▸ ~/scratch/ml-pipeline</tspan><tspan class="muted" dx="6">(4 sessions)</tspan></text>
+    <text y="328">
+      <tspan class="cyan">  5c9a2d71</tspan>
+      <tspan class="muted" dx="10">2026-04-22 16:12</tspan>
+      <tspan class="green" dx="14">experiment/v2     </tspan>
+      <tspan class="fg" dx="14">try lightgbm vs xgboost on tabular set</tspan>
+    </text>
+    <text y="348">
+      <tspan class="cyan">  e2f6b304</tspan>
+      <tspan class="muted" dx="10">2026-04-22 10:44</tspan>
+      <tspan class="green" dx="14">main              </tspan>
+      <tspan class="fg" dx="14">add parquet loader + unit tests</tspan>
+    </text>
+    <text y="368"><tspan class="muted">  … +2 more</tspan></text>
+
+    <!-- hint -->
+    <text y="410"><tspan class="muted">────────────────────────────────────────────────────────────────────────────</tspan></text>
+    <text y="432"><tspan class="label">hint:</tspan><tspan class="fg" dx="6">agentguard diagnose-claude-session </tspan><tspan class="cyan">&lt;id&gt;</tspan><tspan class="muted" dx="6">— deep-dive on any session</tspan></text>
+    <text y="452"><tspan class="label">     </tspan><tspan class="fg" dx="6">agentguard list-claude-sessions </tspan><tspan class="yellow" dx="4">--since 24h</tspan><tspan class="muted" dx="6">— only today's runs</tspan></text>
+
+    <text y="490"><tspan class="green">$</tspan><tspan class="fg" dx="6">_</tspan></text>
+  </g>
+</svg>
