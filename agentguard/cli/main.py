@@ -1353,47 +1353,83 @@ def cmd_list_claude_sessions(args) -> None:
 
     if compact:
         print("Claude Sessions")
-        print("-" * 50)
-    else:
-        print(f"\n{C.BOLD}  Claude Sessions{C.RESET}")
-        print(f"  {'─' * 50}")
+        print("─" * 60)
+        if not sessions:
+            scope = f" for {args.project}" if args.project else ""
+            print(f"No Claude sessions found{scope}.")
+            return
+        if group_by_project:
+            _print_sessions_grouped_by_project(sessions, compact=True)
+            return
+        for session in sessions:
+            _print_session_entry(session, compact=True)
+        return
+
+    # Pretty TTY output — mirrors the terminal prototype. Each grouped
+    # block leads with ``▸ cwd  (N sessions)`` in bold blue, followed by
+    # short-id + date + branch + title rows. A footer hint shows the
+    # exact command to run for a chosen id.
+    rule = "\u2500" * 73
+    parts: list[str] = []
+    if sessions:
+        n_proj = len({(s.cwd or "-") for s in sessions})
+        parts.append(
+            f"{len(sessions)} session{'s' if len(sessions) != 1 else ''} "
+            f"across {n_proj} project{'s' if n_proj != 1 else ''}"
+        )
+    if group_by_project:
+        parts.append("grouped by project")
+    header_meta = " \u00B7 ".join(parts)
+    print(f"\n  {C.BOLD}\U0001F4DA Claude Sessions{C.RESET}  {C.DIM}{header_meta}{C.RESET}")
+    print(f"  {C.DIM}{rule}{C.RESET}\n")
+
     if not sessions:
         scope = f" for {args.project}" if args.project else ""
-        if compact:
-            print(f"No Claude sessions found{scope}.")
-        else:
-            print(f"  {C.DIM}No Claude sessions found{scope}.{C.RESET}\n")
+        print(f"  {C.DIM}No Claude sessions found{scope}.{C.RESET}\n")
         return
 
     if group_by_project:
-        _print_sessions_grouped_by_project(sessions, compact=compact)
-        return
+        _print_sessions_grouped_by_project(sessions, compact=False)
+    else:
+        for session in sessions:
+            _print_session_entry(session, compact=False)
 
-    for session in sessions:
-        _print_session_entry(session, compact=compact)
+    print(f"  {C.DIM}{rule}{C.RESET}")
+    print(
+        f"  {C.DIM}hint:{C.RESET}  "
+        f"{C.CYAN}agentguard diagnose-claude-session <id>{C.RESET}"
+        f"   {C.DIM}\u2014 deep-dive on any session{C.RESET}"
+    )
+    print(
+        f"         "
+        f"{C.CYAN}agentguard list-claude-sessions {C.YELLOW}--project <path>{C.RESET}"
+        f"   {C.DIM}\u2014 filter by cwd{C.RESET}\n"
+    )
 
 
 def _print_session_entry(session, *, compact: bool = False) -> None:
-    """Print a single Claude session summary block."""
+    """Print a single Claude session summary block.
+
+    Compact mode emits a tab-separated line (pipeline-friendly) with the
+    full session id so downstream tools can copy-paste unambiguously.
+    Pretty mode mirrors the prototype: a short 8-char id prefix keeps
+    rows scannable; the full id is written in the compact / JSON paths
+    and via ``agentguard list-claude-sessions`` piped to a file.
+    """
     title = session.custom_title or session.summary
+    updated = _format_timestamp_ms(session.last_modified)
+    branch = session.git_branch or "-"
     if compact:
-        # One plain-text line per session. Designed for LLM / pipeline
-        # consumption: no ANSI, no emoji, stable column order.
-        updated = _format_timestamp_ms(session.last_modified)
         cwd = session.cwd or "-"
-        branch = session.git_branch or "-"
         print(f"{session.session_id}\t{updated}\t{branch}\t{cwd}\t{title}")
         return
-    print(f"  {C.BOLD}{title}{C.RESET}")
-    print(f"    {C.DIM}session:{C.RESET} {session.session_id}")
-    print(f"    {C.DIM}updated:{C.RESET} {_format_timestamp_ms(session.last_modified)}")
-    if session.cwd:
-        print(f"    {C.DIM}cwd:{C.RESET}     {session.cwd}")
-    if session.git_branch:
-        print(f"    {C.DIM}branch:{C.RESET}  {session.git_branch}")
-    if session.first_prompt and session.first_prompt != session.summary:
-        print(f"    {C.DIM}prompt:{C.RESET}  {session.first_prompt[:120]}")
-    print()
+    short = session.session_id[:8]
+    print(
+        f"   {C.CYAN}{short}{C.RESET}  "
+        f"{C.DIM}{updated}{C.RESET}  "
+        f"{C.GREEN}{branch}{C.RESET}  "
+        f"{C.BOLD}{title}{C.RESET}"
+    )
 
 
 def _print_sessions_grouped_by_project(sessions, *, compact: bool = False) -> None:
@@ -1410,8 +1446,10 @@ def _print_sessions_grouped_by_project(sessions, *, compact: bool = False) -> No
     ordered = sorted(groups.items(), key=_group_sort_key)
 
     if compact:
-        # Compact grouped format for pipelines / LLM ingestion: one header
-        # line per project, one line per session, no ANSI, no emoji.
+        # Compact grouped format for pipelines / LLM ingestion: bracketed
+        # cwd header and tab-separated session rows. This format is locked
+        # down by tests because downstream consumers (Claude Code bash
+        # tool, shell pipelines) split on these delimiters.
         for cwd, entries in ordered:
             plural = "s" if len(entries) != 1 else ""
             print(f"[{cwd}] ({len(entries)} session{plural})")
@@ -1423,14 +1461,18 @@ def _print_sessions_grouped_by_project(sessions, *, compact: bool = False) -> No
         return
 
     for cwd, entries in ordered:
-        print(f"  {C.BOLD}{cwd}{C.RESET}  {C.DIM}({len(entries)} session{'s' if len(entries) != 1 else ''}){C.RESET}")
-        for session in entries:
-            title = session.custom_title or session.summary
-            print(f"    {C.BOLD}•{C.RESET} {title}")
-            print(f"      {C.DIM}session:{C.RESET} {session.session_id}")
-            print(f"      {C.DIM}updated:{C.RESET} {_format_timestamp_ms(session.last_modified)}")
-            if session.git_branch:
-                print(f"      {C.DIM}branch:{C.RESET}  {session.git_branch}")
+        plural = "s" if len(entries) != 1 else ""
+        print(
+            f"{C.BLUE}\u25B8{C.RESET} {C.BOLD}{C.BLUE}{cwd}{C.RESET}"
+            f"  {C.DIM}({len(entries)} session{plural}){C.RESET}"
+        )
+        # Show at most 4 rows per group, collapse the rest into a count.
+        visible = entries[:4]
+        for session in visible:
+            _print_session_entry(session, compact=False)
+        overflow = len(entries) - len(visible)
+        if overflow > 0:
+            print(f"   {C.DIM}\u2026 +{overflow} more{C.RESET}")
         print()
 
 

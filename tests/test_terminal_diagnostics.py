@@ -42,9 +42,9 @@ def test_render_dense_diagnostics_includes_artifacts_and_sections() -> None:
     )
 
     assert "AGENTGUARD DIAGNOSE" in text
-    assert "[failures]" in text
-    assert "[context]" in text
-    assert "[cost-yield]" in text
-    assert "[decisions]" in text
+    assert "\u25B8 failures" in text
+    assert "\u25B8 context" in text
+    assert "\u25B8 cost-yield" in text
+    assert "\u25B8 decisions" in text
     assert "trace=/tmp/trace.json" in text
     assert "html=/tmp/report.html" in text

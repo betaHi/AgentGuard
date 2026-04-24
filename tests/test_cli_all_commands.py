@@ -152,7 +152,7 @@ class TestSpecialCommands:
             cli.cmd_diagnose(_A(file=f, report_output=str(report_path)))
             out = capsys.readouterr().out
             assert "AGENTGUARD DIAGNOSE" in out
-            assert "[failures]" in out
+            assert "\u25B8 failures" in out
             assert f"html={report_path}" in out
             assert report_path.exists()
         finally:

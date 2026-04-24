@@ -99,7 +99,7 @@
     <!-- hint -->
     <text y="410"><tspan class="muted">────────────────────────────────────────────────────────────────────────────</tspan></text>
     <text y="432"><tspan class="label">hint:</tspan><tspan class="fg" dx="6">agentguard diagnose-claude-session </tspan><tspan class="cyan">&lt;id&gt;</tspan><tspan class="muted" dx="6">— deep-dive on any session</tspan></text>
-    <text y="452"><tspan class="label">     </tspan><tspan class="fg" dx="6">agentguard list-claude-sessions </tspan><tspan class="yellow" dx="4">--since 24h</tspan><tspan class="muted" dx="6">— only today's runs</tspan></text>
+    <text y="452"><tspan class="label">     </tspan><tspan class="fg" dx="6">agentguard list-claude-sessions </tspan><tspan class="yellow" dx="4">--project &lt;path&gt;</tspan><tspan class="muted" dx="6">— filter by cwd</tspan></text>
 
     <text y="490"><tspan class="green">$</tspan><tspan class="fg" dx="6">_</tspan></text>
   </g>
