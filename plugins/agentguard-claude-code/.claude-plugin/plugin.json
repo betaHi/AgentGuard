@@ -1,7 +1,7 @@
 {
   "name": "agentguard",
   "description": "Dense orchestration diagnostics for Claude Code sessions and traces",
-  "version": "0.1.0",
+  "version": "0.2.0",
   "author": {
     "name": "AgentGuard"
   }

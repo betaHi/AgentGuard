@@ -6,8 +6,11 @@
 #   - the `bin/agentguard` launcher as a last-resort fallback
 #
 # Strategy:
-#   1. If agentguard is already on PATH, do nothing.
-#   2. Run `uv tool install` with the upstream git spec.
+#   1. Read the plugin version from ``plugin.json`` and use it to key the
+#      sentinel file. A plugin update from the marketplace bumps that
+#      version, invalidates the sentinel, and re-runs the install once.
+#   2. Run ``uv tool install --force`` with the upstream git spec so an
+#      already-installed-but-stale CLI is replaced cleanly.
 #
 # uv is the only supported auto-installer because it is the one method that
 # works identically across Linux/macOS/Windows, is a single static binary, and
@@ -26,21 +29,46 @@ if [ "${AGENTGUARD_AUTO_INSTALL:-1}" = "0" ]; then
   exit 0
 fi
 
-# Already installed? Nothing to do.
-if command -v agentguard >/dev/null 2>&1; then
-  exit 0
+# Resolve the plugin version so that an updated plugin (e.g. installed via
+# /plugin marketplace) can trigger a CLI upgrade even when ``agentguard``
+# is already on PATH. The sentinel below is keyed on this string; bumping
+# ``plugin.json``'s ``version`` invalidates the old sentinel and runs
+# ``uv tool install --reinstall`` once on the next session start.
+plugin_json="$(dirname "$0")/../.claude-plugin/plugin.json"
+plugin_version="unknown"
+if [ -r "$plugin_json" ]; then
+  plugin_version="$(
+    sed -n 's/.*"version"[[:space:]]*:[[:space:]]*"\([^"]*\)".*/\1/p' "$plugin_json" \
+      | head -n1
+  )"
+  [ -z "$plugin_version" ] && plugin_version="unknown"
 fi
 
 state_dir="${XDG_STATE_HOME:-$HOME/.local/state}/agentguard"
 mkdir -p "$state_dir" 2>/dev/null || true
-sentinel="$state_dir/bootstrap.attempted"
+sentinel="$state_dir/bootstrap.${plugin_version}.attempted"
 log_file="$state_dir/bootstrap.log"
 
-# One attempt per machine unless the user forces a retry.
+# Already installed AND already bootstrapped for this plugin version?
+# Nothing to do — the launcher will exec the on-PATH binary.
+if command -v agentguard >/dev/null 2>&1 \
+   && [ -f "$sentinel" ] \
+   && [ "${AGENTGUARD_FORCE_INSTALL:-0}" != "1" ]; then
+  exit 0
+fi
+
+# One attempt per (machine, plugin version) unless the user forces a retry.
 if [ -f "$sentinel" ] && [ "${AGENTGUARD_FORCE_INSTALL:-0}" != "1" ]; then
   exit 0
 fi
 touch "$sentinel" 2>/dev/null || true
+
+# Older sentinels (without a plugin-version suffix or for previous
+# versions) are stale once we get here; clean them so the directory
+# does not grow without bound.
+find "$state_dir" -maxdepth 1 -type f -name 'bootstrap.*.attempted' \
+  ! -name "bootstrap.${plugin_version}.attempted" -delete 2>/dev/null || true
+[ -f "$state_dir/bootstrap.attempted" ] && rm -f "$state_dir/bootstrap.attempted"
 
 ref="${AGENTGUARD_GIT_REF:-main}"
 spec="${AGENTGUARD_PKG_SPEC:-git+https://github.com/betaHi/AgentGuard.git@${ref}}"
@@ -69,8 +97,9 @@ MSG
   exit 1
 fi
 
-if "$uv_bin" tool install "$spec" --with claude-agent-sdk >>"$log_file" 2>&1; then
-  printf '[%s] uv tool install succeeded\n' "$(date -Is)" >>"$log_file" 2>&1 || true
+if "$uv_bin" tool install --force "$spec" --with claude-agent-sdk >>"$log_file" 2>&1; then
+  printf '[%s] uv tool install (--force) succeeded for plugin v%s\n' \
+    "$(date -Is)" "$plugin_version" >>"$log_file" 2>&1 || true
   exit 0
 fi
 
